@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use geo::{Geometry, MultiPolygon, Polygon};
 use vello::{
-    kurbo::{Affine, Stroke},
+    kurbo::{Affine, BezPath, Stroke},
     peniko::{Brush, color::palette},
 };
 
@@ -10,6 +10,7 @@ use crate::RenderedGeometry;
 
 use super::{GeometryRenderer, LineRenderer};
 
+#[derive(PartialEq, Eq, Hash, Debug)]
 pub enum LineKind {
     All,
     Exterior,
@@ -39,7 +40,7 @@ impl AreaRenderer {
     pub fn draw(&self, scene: &mut vello::Scene, transform: Affine, polygon: &Polygon) {
         let exterior = polygon.exterior();
         let interiors = polygon.interiors();
-        let exterior_path = LineRenderer::to_shape(exterior);
+        let exterior_path = AreaRenderer::to_shape(polygon);
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,
@@ -47,19 +48,6 @@ impl AreaRenderer {
             None,
             &exterior_path,
         );
-        let interior_paths = interiors
-            .iter()
-            .map(LineRenderer::to_shape)
-            .collect::<Vec<_>>();
-        interior_paths.iter().for_each(|path| {
-            scene.fill(
-                vello::peniko::Fill::NonZero,
-                transform,
-                palette::css::TRANSPARENT,
-                None,
-                path,
-            );
-        });
         let exterior_geom: &Geometry = &exterior.clone().into();
         let mut exterior_geom: RenderedGeometry = exterior_geom.into();
         let interior_geoms: Vec<Geometry> = interiors
@@ -75,10 +63,8 @@ impl AreaRenderer {
                 LineKind::All => {
                     renderers.iter().for_each(|renderer| {
                         renderer.draw(scene, transform, &mut exterior_geom);
-                    });
-                    renderers.iter().for_each(|render| {
                         interior_geoms.iter_mut().for_each(|mut interior| {
-                            render.draw(scene, transform, &mut interior);
+                            renderer.draw(scene, transform, &mut interior);
                         });
                     });
                 }
@@ -96,5 +82,17 @@ impl AreaRenderer {
                 }
             }
         }
+    }
+    pub fn to_shape(polygon: &Polygon) -> BezPath {
+        let exterior = polygon.exterior();
+        let interiors = polygon.interiors();
+        let mut exterior_path = LineRenderer::to_shape(exterior);
+        interiors.iter().for_each(|x| {
+            let p = LineRenderer::to_shape(x);
+            p.iter().for_each(|item| {
+                exterior_path.push(item);
+            });
+        });
+        exterior_path
     }
 }

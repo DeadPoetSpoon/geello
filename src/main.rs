@@ -21,9 +21,10 @@ const FS_FONT: &[u8] = include_bytes!("../assets/test/fsong_gb2312.ttf");
 #[pollster::main]
 async fn main() -> anyhow::Result<()> {
     // let rect = Rect::new((72.502355, 14.986898), (136.08722, 54.563624));
-    let rect = Rect::new((72.502355, 14.986898), (136.08722, 54.563624));
+    // let rect = Rect::new((72.502355, 14.986898), (136.08722, 54.563624));
+    let rect = Rect::new((83.221730391, 40.605857134), (90.358539000, 44.310998810));
     let (width_size, height_size) = (rect.width(), rect.height());
-    let size_per_pixel = 0.011f64;
+    let size_per_pixel = 0.00124f64;
     let (width, height) = (
         width_size / size_per_pixel + 1.,
         height_size / size_per_pixel + 1.,
@@ -31,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let (width, height) = (width as u32, height as u32);
     // let all_center = (bbox[0]/2f64+bbox[2]/2f64,bbox[1]/2f64+bbox[3]/2f64);
 
-    let mut file = File::open("assets/test/china.geo.json").unwrap();
+    let mut file = File::open("assets/test/polygon.geojson").unwrap();
     let mut geojson_str = String::new();
     let _ = file.read_to_string(&mut geojson_str);
     let geojson = geojson_str.parse::<GeoJson>().unwrap();
