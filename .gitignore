@@ -1,0 +1,5 @@
+/target
+assets/test/*
+!assets/test/.traced
+assets/output/*
+!assets/output/.traced
