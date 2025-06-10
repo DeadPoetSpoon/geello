@@ -9,7 +9,13 @@ futures-intrusive = "0.5.0"
 geo = "0.30.0"
 geo-types = { version = "0.7.16", features = ["multithreading", "rayon"] }
 geojson = "0.24.2"
-png = "0.17.16"
 pollster = { version = "0.4.0", features = ["macro"] }
+serde = { version = "1.0.219", features = ["derive"] }
 skrifa = "0.31.3"
 vello = "0.5.0"
+peniko = { version = "*", default-features = false, features = ["serde"] }
+ron = "0.10.1"
+image = { version = "0.25.6", features = ["serde"] }
+clap = { version = "4.5.40", features = ["derive"] }
+env_logger = "0.11.8"
+log = "0.4.27"

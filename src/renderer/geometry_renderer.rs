@@ -4,6 +4,7 @@ use crate::rendered_geometry::RenderedGeometry;
 
 use super::{AreaRenderer, LineRenderer, PointRenderer};
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum GeometryRenderer {
     Point(PointRenderer),
     Line(LineRenderer),
