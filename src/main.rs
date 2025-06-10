@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[pollster::main]
 async fn main() -> anyhow::Result<()> {
     // let mut option = RenderOption::default();
-    // option.region = RenderRegion::TileIndex(47, 8, 5);
+    // option.region = RenderRegion::TileIndex(26, 12, 5);
     // option
     //     .renderers
     //     .push(geello::GeometryRenderer::Area(AreaRenderer::default()));

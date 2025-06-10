@@ -1,5 +1,6 @@
 pub mod render_option;
-use std::{fs::File, io::Read, path::Path};
+mod utils;
+use std::{borrow::BorrowMut, fs::File, io::Read, path::Path};
 
 pub use render_option::*;
 pub mod rendered_geometry;
@@ -20,10 +21,12 @@ pub fn render_to_texture(
     transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<()> {
-    log::debug!("Rendering to texture：{:?}", option.region.get_rect());
+    log::debug!("Rendering to texture：{:?}", option.get_region_rect());
     let mut scene = vello::Scene::new();
     let transform = transform * option.get_transform();
+    let rect = option.get_region_rect();
     geoms.iter_mut().for_each(|geom| {
+        geom.with_rect(rect);
         geom.draw(&mut scene, transform, &option.renderers);
     });
     let device = &device_handle.device;
@@ -40,10 +43,12 @@ pub fn render_to_new_texture(
     device_handle: &mut DeviceHandle,
     option: &RenderOption,
 ) -> anyhow::Result<Texture> {
-    log::debug!("Rendering to new texture：{:?}", option.region.get_rect());
+    log::debug!("Rendering to new texture：{:?}", option.get_region_rect());
     let mut scene = vello::Scene::new();
+    let rect = option.get_region_rect();
     let transform = option.get_transform();
     geoms.iter_mut().for_each(|geom| {
+        geom.with_rect(rect);
         geom.draw(&mut scene, transform, &option.renderers);
     });
     let device = &device_handle.device;
@@ -143,15 +148,23 @@ pub async fn render_geojson_to_image<P: AsRef<Path>>(
 ) -> anyhow::Result<()> {
     match &geojson {
         GeoJson::Geometry(geometry) => {
-            let geometry = &geo_types::Geometry::<f64>::try_from(geometry)?;
-            render_to_image_with_default_device(&mut vec![geometry.into()], option, path).await?;
+            let mut geom = geo_types::Geometry::<f64>::try_from(geometry)?;
+            if option.need_proj_geom {
+                utils::transform(&mut geom, &option.tile_proj);
+            }
+            let geom = &geom;
+            render_to_image_with_default_device(&mut vec![geom.into()], option, path).await?;
         }
         GeoJson::Feature(feature) => {
             let geom = feature
                 .geometry
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("only feature has no geometry"))?;
-            let geom = &geo_types::Geometry::<f64>::try_from(geom)?;
+            let mut geom = geo_types::Geometry::<f64>::try_from(geom)?;
+            if option.need_proj_geom {
+                utils::transform(&mut geom, &option.tile_proj);
+            }
+            let geom = &geom;
             render_to_image_with_default_device(&mut vec![geom.into()], option, path).await?;
         }
         GeoJson::FeatureCollection(feature_collection) => {
@@ -163,6 +176,11 @@ pub async fn render_geojson_to_image<P: AsRef<Path>>(
                     .ok_or_else(|| anyhow::anyhow!("feature (index:{index}) has no geometry"))?;
                 let geom = geo_types::Geometry::<f64>::try_from(geom)?;
                 geoms.push(geom);
+            }
+            if option.need_proj_geom {
+                geoms.iter_mut().for_each(|mut geom| {
+                    utils::transform(&mut geom, &option.tile_proj);
+                });
             }
             let mut geoms: Vec<RenderedGeometry> = geoms.iter().map(|x| x.into()).collect();
             render_to_image_with_default_device(&mut geoms, option, path).await?;

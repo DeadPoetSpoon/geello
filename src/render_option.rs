@@ -4,7 +4,7 @@ use geo::Rect;
 use peniko::color::{AlphaColor, Srgb};
 use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
-use crate::GeometryRenderer;
+use crate::{GeometryRenderer, utils};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
@@ -24,6 +24,13 @@ impl Default for PixelOption {
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum TileProj {
+    #[default]
+    EPSG4326,
+    EPSG3857,
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum RenderRegion {
     #[default]
     All,
@@ -38,32 +45,24 @@ pub struct RenderOption {
     pub pixel_option: PixelOption,
     pub renderers: Vec<GeometryRenderer>,
     pub num_init_threads: Option<NonZero<usize>>,
+    pub tile_proj: TileProj,
+    pub need_proj_geom: bool,
 }
 
 impl RenderRegion {
-    pub fn get_rect(&self) -> Option<Rect> {
+    pub fn get_rect(&self, proj: &TileProj) -> Option<Rect> {
         match self {
             RenderRegion::All => None,
             RenderRegion::Rect(rect) => Some(*rect),
-            RenderRegion::TileIndex(x, y, z) => Some(RenderRegion::get_rect_from_xyz(*x, *y, *z)),
+            RenderRegion::TileIndex(x, y, z) => Some(utils::get_rect_from_xyz(*x, *y, *z, proj)),
             RenderRegion::PointBuffer(x, y, z) => Some(Rect::new((x - z, y - z), (x + z, y + z))),
         }
-    }
-    fn get_rect_from_xyz(x: u32, y: u32, z: u32) -> Rect {
-        let n = 2u32.pow(z);
-        let lon_deg = 360.0 / n as f64;
-        let lat_deg = 180.0 / n as f64;
-        let min_lon = x as f64 * lon_deg - 180.0;
-        let max_lat = 90.0 - y as f64 * lat_deg;
-        let max_lon = min_lon + lon_deg;
-        let min_lat = max_lat - lat_deg;
-        Rect::new((min_lon, min_lat), (max_lon, max_lat))
     }
 }
 
 impl RenderOption {
     pub fn get_transform(&self) -> Affine {
-        if let Some(rect) = self.region.get_rect() {
+        if let Some(rect) = self.get_region_rect() {
             let pixel_size = self.get_pixel_size();
             let scale_x = pixel_size.0 as f64 / rect.width();
             let scale_y = pixel_size.1 as f64 / rect.height();
@@ -71,6 +70,9 @@ impl RenderOption {
         } else {
             Affine::IDENTITY
         }
+    }
+    pub fn get_region_rect(&self) -> Option<Rect> {
+        self.region.get_rect(&self.tile_proj)
     }
     pub fn get_pixel_size(&self) -> (u32, u32) {
         (self.pixel_option.width, self.pixel_option.height)

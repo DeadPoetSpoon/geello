@@ -34,9 +34,11 @@ impl<'a> RenderedGeometry<'a> {
             ele.draw(scene, transform * affine, self);
         }
     }
-    pub fn with_rect(&mut self, rect: Rect) -> &mut Self {
-        self.render_rect = Some(rect);
-        self.has_calc_center_point = false;
+    pub fn with_rect(&mut self, rect: Option<Rect>) -> &mut Self {
+        if rect.is_some() {
+            self.render_rect = rect;
+            self.has_calc_center_point = false;
+        }
         self
     }
     pub fn lines(&mut self) -> Option<&MultiLineString> {
