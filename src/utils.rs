@@ -58,7 +58,7 @@ pub fn transform_3857_to_4326(geom: &mut Geometry) {
 pub fn transform_4326_to_3857(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
         let x = x * EPSG3857_XY_MAX / 180f64;
-        let y = ((y + 90f64) * PI / 360f64).tan().log2() / (PI / 180f64);
+        let y = ((y + 90f64) * PI / 360f64).tan().ln() / (PI / 180f64);
         let y = y * EPSG3857_XY_MAX / 180f64;
         Coord { x, y }
     });
