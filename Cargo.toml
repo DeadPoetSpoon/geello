@@ -5,17 +5,26 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.98"
-futures-intrusive = "0.5.0"
 geo = "0.30.0"
-geo-types = { version = "0.7.16", features = ["multithreading", "rayon"] }
-geojson = "0.24.2"
-pollster = { version = "0.4.0", features = ["macro"] }
+geo-types = { version = "0.7.16", features = [
+    "multithreading",
+    "rayon",
+    "serde",
+] }
 serde = { version = "1.0.219", features = ["derive"] }
 skrifa = "0.31.3"
 vello = "0.5.0"
 peniko = { version = "*", default-features = false, features = ["serde"] }
-ron = "0.10.1"
-image = { version = "0.25.6", features = ["serde"] }
-clap = { version = "4.5.40", features = ["derive"] }
-env_logger = "0.11.8"
 log = "0.4.27"
+tokio = { version = "1.45.1", features = ["full"] }
+
+
+image = { version = "0.25.6", features = ["serde"], optional = true }
+ron = { version = "0.10.1", optional = true }
+env_logger = { version = "0.11.8", optional = true }
+geojson = { version = "0.24.2", optional = true }
+rocket = { version = "0.5.1", optional = true }
+
+[features]
+default = ["server"]
+server = ["image", "ron", "env_logger", "geojson", "rocket"]
