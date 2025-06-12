@@ -1,0 +1,3 @@
+[default]
+data_path = "assets/test"
+log_level = "critical"

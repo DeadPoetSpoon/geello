@@ -44,7 +44,6 @@ pub struct RenderOption {
     pub region: RenderRegion,
     pub pixel_option: PixelOption,
     pub renderers: Vec<GeometryRenderer>,
-    pub num_init_threads: Option<NonZero<usize>>,
     pub tile_proj: TileProj,
     pub need_proj_geom: bool,
 }
@@ -103,17 +102,6 @@ impl RenderOption {
             height: self.pixel_option.height,
             antialiasing_method: vello::AaConfig::Area,
         }
-    }
-    pub fn get_vello_renderer_options(&self) -> vello::RendererOptions {
-        vello::RendererOptions {
-            num_init_threads: self.num_init_threads,
-            antialiasing_support: vello::AaSupport::area_only(),
-            ..Default::default()
-        }
-    }
-    pub fn get_vello_renderer(&self, device: &wgpu::Device) -> anyhow::Result<vello::Renderer> {
-        vello::Renderer::new(device, self.get_vello_renderer_options())
-            .or_else(|_| anyhow::bail!("Got non-Send/Sync error from creating renderer"))
     }
     pub fn get_padded_byte_width(&self) -> u32 {
         (self.pixel_option.width * 4).next_multiple_of(256)
