@@ -9,7 +9,7 @@ homepage = "https://github.com/DeadPoetSpoon/geello"
 documentation = "https://docs.rs/geello/"
 readme = "./README.md"
 repository = "https://github.com/DeadPoetSpoon/geello"
-keywords = ["gis", "geo", "map render", "2d", "vector-graphics"]
+keywords = ["gis", "geo", "map-render", "2d", "vector-graphics"]
 categories = ["science::geo"]
 
 [dependencies]
