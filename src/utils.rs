@@ -1,6 +1,7 @@
-use geo::{Coord, Geometry, MapCoordsInPlace, Rect};
-
 use crate::TileProj;
+use geo::Rect;
+#[cfg(feature = "server")]
+use geo::{Coord, Geometry, MapCoordsInPlace};
 const EARTH_RADIUS: f64 = 6378137.0;
 const PI: f64 = std::f64::consts::PI;
 const EPSG3857_XY_MAX: f64 = EARTH_RADIUS * PI;
@@ -41,12 +42,14 @@ pub fn get_rect_from_xyz_3857(x: u32, y: u32, z: u32) -> Rect {
     let min_lat = max_lat - deg;
     Rect::new((min_lon, min_lat), (max_lon, max_lat))
 }
+#[cfg(feature = "server")]
 pub fn transform(geom: &mut Geometry, proj: &TileProj) {
     match proj {
         TileProj::EPSG4326 => transform_3857_to_4326(geom),
         TileProj::EPSG3857 => transform_4326_to_3857(geom),
     }
 }
+#[cfg(feature = "server")]
 pub fn transform_3857_to_4326(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
         let x = x * 180f64 / EPSG3857_XY_MAX;
@@ -55,6 +58,7 @@ pub fn transform_3857_to_4326(geom: &mut Geometry) {
         Coord { x, y }
     });
 }
+#[cfg(feature = "server")]
 pub fn transform_4326_to_3857(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
         let x = x * EPSG3857_XY_MAX / 180f64;

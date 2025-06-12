@@ -1,18 +1,22 @@
 pub mod render_option;
 mod utils;
-use std::{borrow::BorrowMut, fs::File, io::Read, path::Path};
-
+#[cfg(feature = "server")]
+use geojson::GeoJson;
 pub use render_option::*;
+#[cfg(feature = "server")]
+use std::fs::File;
+#[cfg(feature = "server")]
+use std::io::Read;
+#[cfg(feature = "server")]
+use std::path::Path;
 pub mod rendered_geometry;
 pub use rendered_geometry::*;
 pub mod renderer;
-
-use geojson::{FeatureCollection, GeoJson, Geometry};
 pub use renderer::*;
 use vello::{
     Renderer,
-    kurbo::{Affine, StrokeOpts},
-    util::{DeviceHandle, RenderContext, block_on_wgpu},
+    kurbo::Affine,
+    util::block_on_wgpu,
     wgpu::{self, Device, ImageSubresourceRange, Queue, Texture, TextureAspect},
 };
 
@@ -25,7 +29,6 @@ pub fn render_to_texture(
     transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<()> {
-    log::debug!("Rendering to texture：{:?}", option.get_region_rect());
     let mut scene = vello::Scene::new();
     let transform = transform * option.get_transform();
     let rect = option.get_region_rect();
@@ -59,6 +62,7 @@ pub fn render_to_buffer(
     queue: &Queue,
     renderer: &mut Renderer,
     texture: &Texture,
+    transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<Vec<u8>> {
     let mut clear_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -75,15 +79,7 @@ pub fn render_to_buffer(
         },
     );
     queue.submit([clear_encoder.finish()]);
-    render_to_texture(
-        geoms,
-        device,
-        queue,
-        renderer,
-        texture,
-        Affine::IDENTITY,
-        option,
-    )?;
+    render_to_texture(geoms, device, queue, renderer, texture, transform, option)?;
     let padded_byte_width = option.get_padded_byte_width();
     let buffer_size = option.get_buffer_size();
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -132,9 +128,10 @@ pub fn render_to_buffer_with_new_texture(
     device: &Device,
     queue: &Queue,
     renderer: &mut Renderer,
+    transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<Vec<u8>> {
-    let texture = render_to_new_texture(geoms, device, queue, renderer, Affine::IDENTITY, option)?;
+    let texture = render_to_new_texture(geoms, device, queue, renderer, transform, option)?;
     let padded_byte_width = option.get_padded_byte_width();
     let buffer_size = option.get_buffer_size();
     let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -179,14 +176,56 @@ pub fn render_to_buffer_with_new_texture(
 }
 
 #[cfg(feature = "server")]
+pub async fn render_geojson_to_buffer_with_new_texture(
+    geojson: &GeoJson,
+    device: &Device,
+    queue: &Queue,
+    renderer: &mut Renderer,
+    transform: Affine,
+    option: &RenderOption,
+) -> anyhow::Result<Vec<u8>> {
+    let mut geom_to_render_vec = get_geom_from_geojson(geojson)?;
+    if option.need_proj_geom {
+        geom_to_render_vec.iter_mut().for_each(|mut geom| {
+            utils::transform(&mut geom, &option.tile_proj);
+        });
+    }
+    let mut geom_s: Vec<RenderedGeometry> =
+        geom_to_render_vec.iter().map(|geom| geom.into()).collect();
+    render_to_buffer_with_new_texture(&mut geom_s, device, queue, renderer, transform, option)
+}
+
+#[cfg(feature = "server")]
 pub async fn render_geojson_to_buffer(
     geojson: &GeoJson,
     device: &Device,
     queue: &Queue,
     renderer: &mut Renderer,
     texture: &Texture,
+    transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<Vec<u8>> {
+    let mut geom_to_render_vec = get_geom_from_geojson(geojson)?;
+    if option.need_proj_geom {
+        geom_to_render_vec.iter_mut().for_each(|mut geom| {
+            utils::transform(&mut geom, &option.tile_proj);
+        });
+    }
+    let mut geom_s: Vec<RenderedGeometry> =
+        geom_to_render_vec.iter().map(|geom| geom.into()).collect();
+    render_to_buffer(
+        &mut geom_s,
+        device,
+        queue,
+        renderer,
+        texture,
+        transform,
+        option,
+    )
+}
+
+#[cfg(feature = "server")]
+pub fn get_geom_from_geojson(geojson: &GeoJson) -> anyhow::Result<Vec<geo_types::Geometry>> {
     let mut geom_to_render_vec = Vec::new();
     match geojson {
         GeoJson::Geometry(geometry) => {
@@ -212,14 +251,7 @@ pub async fn render_geojson_to_buffer(
             }
         }
     };
-    if option.need_proj_geom {
-        geom_to_render_vec.iter_mut().for_each(|mut geom| {
-            utils::transform(&mut geom, &option.tile_proj);
-        });
-    }
-    let mut geom_s: Vec<RenderedGeometry> =
-        geom_to_render_vec.iter().map(|geom| geom.into()).collect();
-    render_to_buffer(&mut geom_s, device, queue, renderer, texture, option)
+    Ok(geom_to_render_vec)
 }
 
 #[cfg(feature = "server")]
@@ -235,7 +267,16 @@ pub async fn render_geojson_file_to_buffer<P: AsRef<Path>>(
     let mut geojson_str = String::new();
     let _ = file.read_to_string(&mut geojson_str);
     let geojson = geojson_str.parse::<GeoJson>().unwrap();
-    render_geojson_to_buffer(&geojson, device, queue, renderer, texture, option).await
+    render_geojson_to_buffer(
+        &geojson,
+        device,
+        queue,
+        renderer,
+        texture,
+        Affine::IDENTITY,
+        option,
+    )
+    .await
 }
 
 #[cfg(feature = "server")]
@@ -247,7 +288,14 @@ pub fn render_to_image<P: AsRef<Path>>(
     option: &RenderOption,
     path: P,
 ) -> anyhow::Result<()> {
-    let data = render_to_buffer_with_new_texture(geoms, device, queue, renderer, option)?;
+    let data = render_to_buffer_with_new_texture(
+        geoms,
+        device,
+        queue,
+        renderer,
+        Affine::IDENTITY,
+        option,
+    )?;
     let (width, height) = option.get_pixel_size();
     let image = image::RgbaImage::from_raw(width, height, data)
         .ok_or_else(|| anyhow::anyhow!("create image error."))?;

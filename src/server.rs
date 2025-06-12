@@ -1,6 +1,7 @@
-use geello::{AreaRenderer, LineRenderer, PointRenderer, RenderOption, RenderRegion};
+use core::f64;
+use geello::{RenderOption, RenderRegion, render_geojson_to_buffer_with_new_texture};
+use geo::BoundingRect;
 use geojson::GeoJson;
-use log::LevelFilter;
 use rocket::{
     Build, Rocket,
     fairing::AdHoc,
@@ -9,43 +10,63 @@ use rocket::{
         providers::{Env, Format, Serialized, Toml},
     },
     fs::FileServer,
-    response::Redirect,
 };
 use rocket::{State, fs::NamedFile};
-use ron::ser::PrettyConfig;
 use std::sync::{Arc, Mutex};
+use std::thread::sleep;
 use std::{fs::File, num::NonZero};
-use std::{
-    io::{BufReader, BufWriter},
-    thread::sleep,
-};
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
-use vello::wgpu::Device;
+use std::{path::PathBuf, str::FromStr};
 use vello::wgpu::Queue;
 use vello::wgpu::Texture;
 use vello::wgpu::{self, Extent3d};
+use vello::{kurbo::Affine, wgpu::Device};
 
-use image::{
-    DynamicImage, ImageBuffer, ImageReader,
-    codecs::png::{PngDecoder, PngEncoder},
-};
-use image::{ExtendedColorType, ImageEncoder};
+use image::ImageBuffer;
 use image::{ImageFormat, Rgba};
 use rocket::http::ContentType;
-use rocket::response::stream::ByteStream;
-use rocket::response::stream::ReaderStream;
 use std::io::{Cursor, Read};
-use tokio::io::BufStream;
-use tokio::sync::RwLock;
-use vello::Renderer;
 
-#[get("/wmts/real-time/<data_path>/<style_path>/<x>/<y>/<z>/<format>")]
+#[get("/wms?<data>&<style>&<width>&<height>&<format>")]
+async fn wms_real_time(
+    data: &str,
+    style: &str,
+    width: u32,
+    height: u32,
+    format: Option<&str>,
+    device: &State<Device>,
+    queue: &State<Queue>,
+    config: &State<Config>,
+) -> Result<(ContentType, Vec<u8>), String> {
+    let (geojson, mut render_option) = get_data_from_fs(config, data, style)?;
+    render_option.region = RenderRegion::All;
+    render_option.need_proj_geom = false;
+    render_option.pixel_option.width = width;
+    render_option.pixel_option.height = height;
+    let image = render_wms(&geojson, device, queue, config, &mut render_option).await?;
+    let image_format = match format {
+        Some(format) => {
+            let format = ImageFormat::from_extension(format);
+            match format {
+                Some(format) => format,
+                None => ImageFormat::Png,
+            }
+        }
+        None => ImageFormat::Png,
+    };
+    let size = image.width() * image.height() * 4;
+    let buffer = Vec::with_capacity(size as usize);
+    let mut cursor = Cursor::new(buffer);
+    image
+        .write_to(&mut cursor, image_format)
+        .map_err(|e| format!("encode image faild: {}", e.to_string()))?;
+    let content_type = ContentType::from_str(image_format.to_mime_type())
+        .map_err(|e| format!("error image format: {}", e.to_string()))?;
+    Ok((content_type, cursor.into_inner()))
+}
+#[get("/wmts/real-time?<data>&<style>&<x>&<y>&<z>&<format>")]
 async fn wmts_real_time(
-    data_path: &str,
-    style_path: &str,
+    data: &str,
+    style: &str,
     x: u32,
     y: u32,
     z: u32,
@@ -55,7 +76,7 @@ async fn wmts_real_time(
     config: &State<Config>,
     texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
 ) -> Result<(ContentType, Vec<u8>), String> {
-    let (geojson, mut render_option) = get_data_from_fs(config, data_path, style_path)?;
+    let (geojson, mut render_option) = get_data_from_fs(config, data, style)?;
     render_option.region = RenderRegion::TileIndex(x, y, z);
     let image =
         render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
@@ -80,29 +101,52 @@ async fn wmts_real_time(
     Ok((content_type, cursor.into_inner()))
 }
 
-// #[get("/wmts/cache/<data_path>/<style_path>/<x>/<y>/<z>")]
-// async fn wmts_cache(
-//     data_path: &str,
-//     style_path: &str,
-//     x: u32,
-//     y: u32,
-//     z: u32,
-//     device: &State<Device>,
-//     queue: &State<Queue>,
-//     config: &State<Config>,
-//     texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
-// ) -> Redirect {
-// }
+#[get("/wmts/cache?<data>&<style>&<x>&<y>&<z>")]
+async fn wmts_cache(
+    data: &str,
+    style: &str,
+    x: u32,
+    y: u32,
+    z: u32,
+    device: &State<Device>,
+    queue: &State<Queue>,
+    config: &State<Config>,
+    texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
+) -> Result<(ContentType, NamedFile), String> {
+    let (dir, file_name) = get_image_path(data, style, x, y, z, config);
+    let path = PathBuf::from(format!("{dir}/{file_name}"));
+    if path.exists() {
+        let f = NamedFile::open(path)
+            .await
+            .map_err(|e| format!("open image cache failed: {}", e.to_string()))?;
+        return Ok((ContentType::PNG, f));
+    }
+
+    let (geojson, mut render_option) = get_data_from_fs(config, data, style)?;
+    render_option.region = RenderRegion::TileIndex(x, y, z);
+    let image =
+        render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create dir failed: {}", e.to_string()))?;
+    image
+        .save(path.as_path())
+        .map_err(|e| format!("sava image failed: {}", e.to_string()))?;
+    let f = NamedFile::open(path)
+        .await
+        .map_err(|e| format!("open image cache failed: {}", e.to_string()))?;
+    return Ok((ContentType::PNG, f));
+}
 fn get_image_path(
     data_path: &str,
     style_path: &str,
     x: u32,
     y: u32,
     z: u32,
-    cache_path: &str,
+    config: &State<Config>,
 ) -> (String, String) {
+    let dir = config.data_path.join(&config.cache_path);
+    let dir = dir.to_str().unwrap_or("cache");
     (
-        format!("{cache_path}/{data_path}/{style_path}/{z}/{x}"),
+        format!("{dir}/{data_path}/{style_path}/{z}/{x}"),
         format!("{y}.png"),
     )
 }
@@ -152,6 +196,99 @@ fn get_data_from_fs(
     Ok((geojson, render_option))
 }
 
+async fn render_wms(
+    geojson: &GeoJson,
+    device: &State<Device>,
+    queue: &State<Queue>,
+    config: &State<Config>,
+    render_option: &mut RenderOption,
+) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
+    let rect = match render_option.region {
+        RenderRegion::All => match &geojson {
+            GeoJson::Geometry(geometry) => {
+                let geom = geo_types::Geometry::<f64>::try_from(geometry)
+                    .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                geom.bounding_rect()
+            }
+            GeoJson::Feature(feature) => match feature.geometry.as_ref() {
+                Some(geom) => {
+                    let geom = geo_types::Geometry::<f64>::try_from(geom)
+                        .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                    geom.bounding_rect()
+                }
+                None => None,
+            },
+            GeoJson::FeatureCollection(feature_collection) => {
+                let mut has_rect = false;
+                let mut b_x_min = f64::MAX;
+                let mut b_x_max = f64::MIN;
+                let mut b_y_min = f64::MAX;
+                let mut b_y_max = f64::MIN;
+                for feature in feature_collection.features.iter() {
+                    if let Some(geom) = &feature.geometry {
+                        let geom = geo_types::Geometry::<f64>::try_from(geom)
+                            .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                        if let Some(rect) = geom.bounding_rect() {
+                            let rect_min = rect.min();
+                            let rect_max = rect.max();
+                            (b_x_min, b_y_max, b_x_max, b_y_min) = (
+                                b_x_min.min(rect_min.x),
+                                b_y_max.max(rect_max.y),
+                                b_x_max.max(rect_max.x),
+                                b_y_min.min(rect_min.y),
+                            );
+                            has_rect = true;
+                        }
+                    }
+                }
+                if has_rect {
+                    Some(geo::Rect::new((b_x_min, b_y_max), (b_x_max, b_y_min)))
+                } else {
+                    None
+                }
+            }
+        },
+        _ => None,
+    };
+
+    if rect.is_some() {
+        render_option.region = RenderRegion::Rect(rect.unwrap());
+    }
+    let mut renderer = vello::Renderer::new(
+        &device,
+        vello::RendererOptions {
+            num_init_threads: config.shader_init_threads,
+            antialiasing_support: vello::AaSupport::area_only(),
+            ..Default::default()
+        },
+    )
+    .expect("Got non-Send/Sync error from creating renderer");
+    let buffer = render_geojson_to_buffer_with_new_texture(
+        geojson,
+        device,
+        queue,
+        &mut renderer,
+        Affine::IDENTITY,
+        render_option,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let (width, height) = render_option.get_pixel_size();
+    image::RgbaImage::from_raw(width, height, buffer).ok_or(String::from("render image error"))
+}
+fn get_one_texture(texture_vec: &Arc<Mutex<Vec<Texture>>>) -> Texture {
+    loop {
+        let mut v = texture_vec.lock().unwrap();
+        let x = v.pop();
+        if x.is_some() {
+            drop(v);
+            return x.unwrap();
+        }
+        drop(v);
+        let time = tokio::time::Duration::from_millis(100);
+        sleep(time);
+    }
+}
 async fn render_wmts_tile(
     geojson: &GeoJson,
     device: &State<Device>,
@@ -161,20 +298,7 @@ async fn render_wmts_tile(
     render_option: &RenderOption,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
     let texture_vec = Arc::clone(texture_vec);
-    let mut texture = None;
-    loop {
-        let mut v = texture_vec.lock().unwrap();
-        let x = v.pop();
-        if x.is_some() {
-            texture = x;
-            drop(v);
-            break;
-        }
-        drop(v);
-        let time = tokio::time::Duration::from_millis(100);
-        sleep(time);
-    }
-    let texture = texture.unwrap();
+    let texture = get_one_texture(&texture_vec);
     // vello::Renderer is !Sync can not be shared between threads
     let mut renderer = vello::Renderer::new(
         &device,
@@ -192,6 +316,7 @@ async fn render_wmts_tile(
         queue,
         &mut renderer,
         &texture,
+        Affine::IDENTITY,
         &render_option,
     )
     .await
@@ -200,81 +325,6 @@ async fn render_wmts_tile(
     v.push(texture);
     drop(v);
     image::RgbaImage::from_raw(256, 256, buffer).ok_or(String::from("render image error"))
-}
-
-#[get("/<x>/<y>/<z>")]
-async fn index(
-    x: u32,
-    y: u32,
-    z: u32,
-    device: &State<Device>,
-    queue: &State<Queue>,
-    config: &State<Config>,
-    texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
-) -> Result<(ContentType, Vec<u8>), String> {
-    // TODO: 添加 本地缓存 与 浏览器缓存
-
-    let geojson = PathBuf::from("assets/test/china.geo.json");
-    let render_option_path = PathBuf::from("assets/test/render_option.ron");
-    let option_str = std::fs::read_to_string(render_option_path).map_err(|e| e.to_string())?;
-    let mut render_option: RenderOption =
-        ron::de::from_str(&option_str).map_err(|e| e.to_string())?;
-    render_option.region = RenderRegion::TileIndex(x, y, z);
-    let out = PathBuf::from("assets/test/output.png");
-    // geello::render_geojson_file_to_image(geojson.as_path(), &render_option, out.as_path())
-    //     .await
-    //     .map_err(|e| String::from(e.to_string()))?;
-    let texture_vec = Arc::clone(texture_vec);
-    let mut texture = None;
-    loop {
-        let mut v = texture_vec.lock().unwrap();
-        let x = v.pop();
-        if x.is_some() {
-            texture = x;
-            drop(v);
-            break;
-        }
-        drop(v);
-        let time = tokio::time::Duration::from_millis(100);
-        sleep(time);
-    }
-    let texture = texture.unwrap();
-    // vello::Renderer is !Sync can not be shared between threads
-    let mut renderer = vello::Renderer::new(
-        &device,
-        vello::RendererOptions {
-            num_init_threads: config.shader_init_threads,
-            antialiasing_support: vello::AaSupport::area_only(),
-            ..Default::default()
-        },
-    )
-    .expect("Got non-Send/Sync error from creating renderer");
-
-    let buffer = geello::render_geojson_file_to_buffer(
-        geojson.as_path(),
-        device,
-        queue,
-        &mut renderer,
-        &texture,
-        &render_option,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    let mut v = texture_vec.lock().unwrap();
-    v.push(texture);
-    drop(v);
-    // let mut buffer_img = Vec::with_capacity(buffer.len());
-    // let dencoder = PngEncoder::new(&mut buffer_img);
-    // dencoder
-    //     .write_image(&buffer, 256, 256, ExtendedColorType::Rgba32F)
-    //     .map_err(|e| e.to_string())?;
-    let mut image_buffer = Vec::with_capacity(buffer.len() * 4);
-    let mut cursor = Cursor::new(&mut image_buffer);
-    let image = image::RgbaImage::from_raw(256, 256, buffer).unwrap();
-    image
-        .write_to(&mut cursor, ImageFormat::Png)
-        .map_err(|e| e.to_string())?;
-    Ok((ContentType::PNG, image_buffer))
 }
 
 pub async fn rocket() -> Rocket<Build> {
@@ -325,7 +375,7 @@ pub async fn rocket() -> Rocket<Build> {
             panic!("No compatible device found, geello need GPU to render");
         }
     };
-    rocket = rocket.mount("/", routes![index, wmts_real_time]);
+    rocket = rocket.mount("/", routes![wmts_real_time, wmts_cache, wms_real_time]);
     rocket
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use geo::{Geometry, MultiPolygon, Polygon};
 use vello::{
-    kurbo::{Affine, BezPath, Stroke},
+    kurbo::{Affine, BezPath},
     peniko::{Brush, color::palette},
 };
 

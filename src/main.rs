@@ -8,3 +8,7 @@ extern crate rocket;
 async fn rocket() -> _ {
     server::rocket().await
 }
+#[cfg(not(feature = "server"))]
+fn main() {
+    println!("Hello from Geello!");
+}

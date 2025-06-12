@@ -1,15 +1,12 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter::Map,
-};
+use std::collections::HashMap;
 
-use geo::{Convert, Geometry, LineString, MultiLineString, point};
+use geo::{Geometry, LineString, MultiLineString};
 use vello::{
     kurbo::{Affine, BezPath, PathEl, Point, Stroke},
     peniko::{Brush, color::palette},
 };
 
-use crate::{RenderedGeometry, rendered_geometry};
+use crate::RenderedGeometry;
 
 use super::GeometryRenderer;
 

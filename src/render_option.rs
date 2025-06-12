@@ -1,5 +1,3 @@
-use std::{default, num::NonZero};
-
 use geo::Rect;
 use peniko::color::{AlphaColor, Srgb};
 use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
@@ -54,7 +52,7 @@ impl RenderRegion {
             RenderRegion::All => None,
             RenderRegion::Rect(rect) => Some(*rect),
             RenderRegion::TileIndex(x, y, z) => Some(utils::get_rect_from_xyz(*x, *y, *z, proj)),
-            RenderRegion::PointBuffer(x, y, z) => Some(Rect::new((x - z, y - z), (x + z, y + z))),
+            RenderRegion::PointBuffer(x, y, z) => Some(Rect::new((x - z, y + z), (x + z, y - z))),
         }
     }
 }
