@@ -1,4 +1,4 @@
-use crate::TileProj;
+use crate::render_option::TileProj;
 use geo::Rect;
 #[cfg(feature = "server")]
 use geo::{Coord, Geometry, MapCoordsInPlace};
@@ -52,18 +52,29 @@ pub fn transform(geom: &mut Geometry, proj: &TileProj) {
 #[cfg(feature = "server")]
 pub fn transform_3857_to_4326(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
-        let x = x * 180f64 / EPSG3857_XY_MAX;
-        let y = y * 180f64 / EPSG3857_XY_MAX;
-        let y = ((y * (PI / 180f64)).exp().atan() * 360f64) / PI - 90f64;
+        let (x, y) = transform_3857_to_4326_point(x, y);
         Coord { x, y }
     });
 }
 #[cfg(feature = "server")]
 pub fn transform_4326_to_3857(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
-        let x = x * EPSG3857_XY_MAX / 180f64;
-        let y = ((y + 90f64) * PI / 360f64).tan().ln() / (PI / 180f64);
-        let y = y * EPSG3857_XY_MAX / 180f64;
+        let (x, y) = transform_4326_to_3857_point(x, y);
         Coord { x, y }
     });
+}
+#[cfg(feature = "server")]
+pub fn transform_4326_to_3857_point(x: f64, y: f64) -> (f64, f64) {
+    let x = x * EPSG3857_XY_MAX / 180f64;
+    let y = ((y + 90f64) * PI / 360f64).tan().ln() / (PI / 180f64);
+    let y = y * EPSG3857_XY_MAX / 180f64;
+    (x, y)
+}
+
+#[cfg(feature = "server")]
+pub fn transform_3857_to_4326_point(x: f64, y: f64) -> (f64, f64) {
+    let x = x * 180f64 / EPSG3857_XY_MAX;
+    let y = y * 180f64 / EPSG3857_XY_MAX;
+    let y = ((y * (PI / 180f64)).exp().atan() * 360f64) / PI - 90f64;
+    (x, y)
 }
