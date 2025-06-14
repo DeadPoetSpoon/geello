@@ -80,9 +80,92 @@ pub async fn rocket() -> Rocket<Build> {
     rocket = rocket.manage(Instant::now());
     rocket = rocket.mount(
         "/",
-        routes![wmts_real_time, wmts_cache, wms_real_time, anim_real_time],
+        routes![
+            wmts_real_time,
+            wmts_cache,
+            wms_real_time,
+            anim_real_time,
+            anim_real_time_websocket
+        ],
     );
     rocket
+}
+
+#[get("/ws/anim?<param..>")]
+async fn anim_real_time_websocket<'a>(
+    ws: rocket_ws::WebSocket,
+    param: WebMapServiceQueryParam,
+    device: &'a State<Device>,
+    queue: &'a State<Queue>,
+    instant: &'a State<Instant>,
+    config: &'a State<Config>,
+) -> rocket_ws::Stream!['a] {
+    let WebMapServiceQueryParam {
+        layers,
+        styles,
+        width,
+        height,
+        format,
+        bbox,
+    } = param;
+    let (geojson, mut render_option) =
+        get_data_from_fs(config, &layers, &styles).expect("read data faild");
+    render_option.pixel_option.width = width;
+    render_option.pixel_option.height = height;
+    render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
+    let image_format = convert_format(format);
+    let rect = get_render_rect(&geojson, &mut render_option);
+    if rect.is_some() {
+        render_option.region = RenderRegion::Rect(rect.unwrap());
+    };
+    log::error!("{:?}", render_option.region);
+    let mut renderer = vello::Renderer::new(
+        &device,
+        vello::RendererOptions {
+            num_init_threads: config.shader_init_threads,
+            antialiasing_support: vello::AaSupport::area_only(),
+            ..Default::default()
+        },
+    )
+    .expect("Got non-Send/Sync error from creating renderer");
+    let texture_desc = render_option.get_texture_descriptor();
+    let texture = device.create_texture(&texture_desc);
+    let size = width * height * 4;
+    let mut buffer = Vec::with_capacity(size as usize);
+    let time_instant = Instant::now();
+    rocket_ws::Stream! { ws =>
+        for await message in ws {
+            let message = message?;
+            if message.to_string() == "exit" {
+                break;
+            }
+            let i = (time_instant.elapsed().as_secs() % 10) ;
+            render_option
+                .renderers
+                .iter_mut()
+                .for_each(|type_renderer| match type_renderer {
+                    geello::GeometryRenderer::Point(point_renderer) => {
+                        if i == 0 {
+                            point_renderer.radius = 0.1;
+                            // log::error!("i: 0");
+                        }else{
+                            let i = i as f64;
+                            point_renderer.radius = point_renderer.radius + 0.001 * i;
+                        }
+
+                    }
+                    geello::GeometryRenderer::Line(_) => {}
+                    geello::GeometryRenderer::Area(_) => {}
+                });
+            let image = render_wms_on_texture(&geojson, device, queue,&mut renderer,&texture,  &mut render_option).await.expect("render errors.");
+
+            let mut cursor = Cursor::new(&mut buffer);
+            image
+                .write_to(&mut cursor, image_format)
+                .map_err(|e| format!("encode image faild: {}", e.to_string())).expect("encode errors.");
+            yield cursor.into_inner().clone().into();
+        }
+    }
 }
 
 #[get("/anim?<param..>")]
@@ -313,6 +396,7 @@ fn convert_bbox(bbox_str: Option<String>, need_proj: bool) -> RenderRegion {
         if need_proj {
             let (min_x, max_y) = transform_4326_to_3857_point(min_x, max_y);
             let (max_x, min_y) = transform_4326_to_3857_point(max_x, min_y);
+            log::error!("{} {} {} {}", min_x, min_y, max_x, max_y);
             RenderRegion::Rect(geo::Rect::new((min_x, max_y), (max_x, min_y)))
         } else {
             RenderRegion::Rect(geo::Rect::new((min_x, max_y), (max_x, min_y)))
@@ -384,24 +468,18 @@ fn get_data_from_fs(
     Ok((geojson, render_option))
 }
 
-async fn render_wms(
-    geojson: &GeoJson,
-    device: &State<Device>,
-    queue: &State<Queue>,
-    config: &State<Config>,
-    render_option: &mut RenderOption,
-) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
-    let rect = match render_option.region {
+fn get_render_rect(geojson: &GeoJson, render_option: &mut RenderOption) -> Option<geo::Rect> {
+    match render_option.region {
         RenderRegion::All => match &geojson {
             GeoJson::Geometry(geometry) => {
-                let geom = geo_types::Geometry::<f64>::try_from(geometry)
-                    .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                let geom = geo_types::Geometry::<f64>::try_from(geometry).expect("msg");
+                // .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
                 geom.bounding_rect()
             }
             GeoJson::Feature(feature) => match feature.geometry.as_ref() {
                 Some(geom) => {
-                    let geom = geo_types::Geometry::<f64>::try_from(geom)
-                        .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                    let geom = geo_types::Geometry::<f64>::try_from(geom).expect("msg");
+                    // .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
                     geom.bounding_rect()
                 }
                 None => None,
@@ -414,8 +492,8 @@ async fn render_wms(
                 let mut b_y_max = f64::MIN;
                 for feature in feature_collection.features.iter() {
                     if let Some(geom) = &feature.geometry {
-                        let geom = geo_types::Geometry::<f64>::try_from(geom)
-                            .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
+                        let geom = geo_types::Geometry::<f64>::try_from(geom).expect("msg");
+                        // .map_err(|e| format!("convert geojson failed: {}", e.to_string()))?;
                         if let Some(rect) = geom.bounding_rect() {
                             let rect_min = rect.min();
                             let rect_max = rect.max();
@@ -437,8 +515,40 @@ async fn render_wms(
             }
         },
         _ => None,
-    };
+    }
+}
 
+async fn render_wms_on_texture(
+    geojson: &GeoJson,
+    device: &State<Device>,
+    queue: &State<Queue>,
+    renderer: &mut vello::Renderer,
+    texture: &Texture,
+    render_option: &mut RenderOption,
+) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
+    let buffer = render_geojson_to_buffer(
+        geojson,
+        device,
+        queue,
+        renderer,
+        texture,
+        Affine::IDENTITY,
+        render_option,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let (width, height) = render_option.get_pixel_size();
+    image::RgbaImage::from_raw(width, height, buffer).ok_or(String::from("render image error"))
+}
+
+async fn render_wms(
+    geojson: &GeoJson,
+    device: &State<Device>,
+    queue: &State<Queue>,
+    config: &State<Config>,
+    render_option: &mut RenderOption,
+) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
+    let rect = get_render_rect(geojson, render_option);
     if rect.is_some() {
         render_option.region = RenderRegion::Rect(rect.unwrap());
     }
