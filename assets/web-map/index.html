@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Geello</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"
+            integrity="sha256-kLaT2GOSpHechhsozzB+flnD+zUyjE2LlfWPgU04xyI="
+            crossorigin=""
+        />
+        <script
+            src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"
+            integrity="sha256-WBkoXOwTeyKclOHuWtc+i2uENFpDZ9YPdf5Hf+D7ewM="
+            crossorigin=""
+        ></script>
+    </head>
+    <body style="overflow: hidden">
+        <div id="map" style="width: 100%; height: 99vh"></div>
+    </body>
+</html>
+<script>
+    // Initialize the map
+    const map = L.map("map", {
+        crs: L.CRS.EPSG4326,
+        center: [26, 110],
+        zoom: 3,
+    });
+
+    // Add a tile layer to the map
+    L.tileLayer(
+        "/wmts/cache?layers=world.zh.json&styles=render_option&x={x}&y={y}&z={z}",
+        {},
+    ).addTo(map);
+
+    // Add a anim overlay to the map
+    // create websocket
+    let minx = -10 + 110;
+    let miny = -10 + 26;
+    let maxx = 10 + 110;
+    let maxy = 10 + 26;
+    let imageBounds = [
+        [miny, minx],
+        [maxy, minx],
+        [maxy, maxx],
+        [miny, maxx],
+        [miny, minx],
+    ];
+    let width = 1920;
+    let scale = (maxy - miny) / (maxx - minx);
+    let height = width * scale;
+    height = height << 0;
+    let socket = new WebSocket(
+        `/ws/anim?LAYERS=world.zh.json&styles=render_option&format=image/png&width=${width}&height=${height}&BBOX=${minx}%2C${miny}%2C${maxx}%2C${maxy}`,
+    );
+    socket.onopen = () => {
+        sendMessage();
+    };
+    let overlay = null;
+    socket.onmessage = (event) => {
+        let url = URL.createObjectURL(event.data);
+        if (overlay) {
+            overlay.setUrl(url);
+        } else {
+            overlay = L.imageOverlay(url, imageBounds).addTo(map);
+        }
+        sendMessage();
+    };
+    socket.onclose = (event) => {
+        console.log(event);
+    };
+    socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+    };
+
+    // let overlay = L.imageOverlay(imageUrl, imageBounds).addTo(map);
+
+    function sendMessage() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send("n");
+        }
+    }
+    function sendCloseMessage() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send("exit");
+        }
+    }
+</script>

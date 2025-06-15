@@ -85,10 +85,16 @@ pub async fn rocket() -> Rocket<Build> {
             wmts_cache,
             wms_real_time,
             anim_real_time,
-            anim_real_time_websocket
+            anim_real_time_websocket,
+            web_map
         ],
     );
     rocket
+}
+
+#[get("/map")]
+async fn web_map() -> NamedFile {
+    NamedFile::open("assets/web-map/index.html").await.unwrap()
 }
 
 #[get("/ws/anim?<param..>")]

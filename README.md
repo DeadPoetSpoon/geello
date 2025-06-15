@@ -6,6 +6,16 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 > Geello is a testing project in an alpha state.
 >
 
+### v0.2.0 Work
+
+- [] Finish and Clean up the current code, such as split project and render
+- [] Calc image size with  x/y resolution or WMTS zoom
+- [] Handle web geojson
+- [] Make web map more flexible
+- [] More Renderer, such as graph renderer and animation renderer
+- [] Provider docker package
+- [] More README and docs
+
 ### As a library
 
 Geello can be used as a library to render geo data into a texture.
@@ -21,6 +31,7 @@ geello::render_to_texture(
     option: &RenderOption,
 )
 ```
+
 ### As a server
 
 Geello can be used as a server to provide map render (real-time/cache) services like WMTS/WMS.
@@ -29,18 +40,62 @@ Geello can be used as a server to provide map render (real-time/cache) services 
 cargo r --release --features server
 ```
 
-WMTS LIKE
-```url
+#### WMTS LIKE
 
-/wmts/real-time?data=/path/to/json&style=/path/to/render_option&x={x}&y={y}&z={z}&format=png
+```rust
+// real-time
+http://addr:port/wmts/real-time
 
-/wmts/cache?data=/path/to/json&style=/path/to/render_option&x={x}&y={y}&z={z}
+// cache
+http://addr:port/wmts/cache
 
+//params
+layers=${/path/to/json}
+styles=${/path/to/render_option}
+x=${x}
+y=${y}
+z=${z}
+format=${format} // like image/png or png
 ```
 
-WMS LIKE
-```url
+#### WMS LIKE
 
-/wms/real-time?data=/path/to/json&style=/path/to/render_option&format=png&width=360&height=1800
+```rust
+http://addr:port/wms
 
+// params
+layers=${/path/to/json}
+styles=${/path/to/render_option}
+format=${format} // like image/png or png
+width=${width}
+height=${height}
+bbox=${bbox}
 ```
+
+#### What's More -> Animation Or Dynamic Data
+
+Geelo use web socket to handle real-time animation or dynamic data.
+
+Such as a point that grows from small to large for representing importance.
+
+Or a real-time route of a car.
+
+```rust
+ws://addr:port/ws/anim
+
+// params
+layers=${/path/to/json}
+styles=${/path/to/render_option}
+format=${format} // like image/png or png
+width=${width}
+height=${height}
+bbox=${bbox}
+```
+
+### Contributing
+
+Please!
+
+### License
+
+The code is available under the [MIT license](./LICENSE).
