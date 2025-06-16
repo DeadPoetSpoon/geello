@@ -24,9 +24,6 @@ pub fn render_to_texture(
     let mut scene = vello::Scene::new();
     let rect = option.get_region_rect();
     let transform = transform * option.get_transform(&rect);
-    // geoms.iter_mut().for_each(|geom| {
-    //     geom.with_rect(rect);
-    // });
     option.renderers.iter().for_each(|renderer| {
         renderer.draw(&mut scene, transform, geoms, rect);
     });
@@ -100,7 +97,6 @@ pub fn render_to_buffer(
     queue.submit([encoder.finish()]);
     let buf_slice = buffer.slice(..);
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    // let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
     buf_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
     if let Ok(recv_result) = block_on_wgpu(device, receiver) {
         recv_result?;
@@ -152,7 +148,6 @@ pub fn render_to_buffer_with_new_texture(
     queue.submit([encoder.finish()]);
     let buf_slice = buffer.slice(..);
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    // let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
     buf_slice.map_async(wgpu::MapMode::Read, move |v| sender.send(v).unwrap());
     if let Ok(recv_result) = block_on_wgpu(device, receiver) {
         recv_result?;

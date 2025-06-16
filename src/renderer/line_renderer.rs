@@ -81,7 +81,6 @@ impl LineRenderer {
         }
     }
     pub fn draw_multi(&self, scene: &mut vello::Scene, transform: Affine, lines: &MultiLineString) {
-        // Render the point using the provided brush and radius
         for line in lines {
             self.draw(scene, transform, line);
         }
@@ -92,7 +91,6 @@ impl LineRenderer {
         transform: Affine,
         lines: Vec<&LineString>,
     ) {
-        // Render the point using the provided brush and radius
         for line in lines {
             self.draw(scene, transform, line);
         }

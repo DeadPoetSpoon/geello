@@ -21,7 +21,6 @@ impl std::default::Default for PointRenderer {
 
 impl PointRenderer {
     pub fn draw(&self, scene: &mut vello::Scene, transform: Affine, point: &Point) {
-        // Render the point using the provided brush and radius
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,

@@ -28,31 +28,6 @@ impl RenderedGeometry {
             has_calc_areas: false,
         }
     }
-
-    // Methods for rendering geometry
-    // pub fn draw(
-    //     &mut self,
-    //     scene: &mut Scene,
-    //     transform: Affine,
-    //     renderers: &Vec<GeometryRenderer>,
-    // ) {
-    //     // Implementation for rendering geometry
-    //     let affine = match self.render_rect {
-    //         Some(rect) => Affine::translate((-rect.min().x, -rect.max().y))
-    //             .then_scale_non_uniform(1f64, -1f64),
-    //         None => Affine::IDENTITY,
-    //     };
-    //     for ele in renderers {
-    //         ele.draw(scene, transform * affine, self);
-    //     }
-    // }
-    // pub fn with_rect(&mut self, rect: Option<Rect>) -> &mut Self {
-    //     if rect.is_some() {
-    //         self.render_rect = rect;
-    //         self.has_calc_center_point = false;
-    //     }
-    //     self
-    // }
     pub fn lines(&mut self) -> Option<&MultiLineString> {
         if self.has_calc_lines {
             return self.lines.as_ref();
