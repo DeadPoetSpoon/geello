@@ -26,7 +26,9 @@ pub fn render_to_texture(
     let transform = transform * option.get_transform(&rect);
     geoms.iter_mut().for_each(|geom| {
         geom.with_rect(rect);
-        geom.draw(&mut scene, transform, &option.renderers);
+    });
+    option.renderers.iter().for_each(|renderer| {
+        renderer.draw(&mut scene, transform, geoms);
     });
     let render_params = option.get_render_params();
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

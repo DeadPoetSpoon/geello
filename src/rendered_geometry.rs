@@ -1,10 +1,8 @@
+use crate::TileProj;
 use geo::{
     BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, Intersects,
     LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
 };
-use vello::{Scene, kurbo::Affine};
-
-use crate::{TileProj, renderer::GeometryRenderer};
 pub struct RenderedGeometry {
     inner_geom: Geometry,
     center_point: Option<Point>,
@@ -34,22 +32,22 @@ impl RenderedGeometry {
     }
 
     // Methods for rendering geometry
-    pub fn draw(
-        &mut self,
-        scene: &mut Scene,
-        transform: Affine,
-        renderers: &Vec<GeometryRenderer>,
-    ) {
-        // Implementation for rendering geometry
-        let affine = match self.render_rect {
-            Some(rect) => Affine::translate((-rect.min().x, -rect.max().y))
-                .then_scale_non_uniform(1f64, -1f64),
-            None => Affine::IDENTITY,
-        };
-        for ele in renderers {
-            ele.draw(scene, transform * affine, self);
-        }
-    }
+    // pub fn draw(
+    //     &mut self,
+    //     scene: &mut Scene,
+    //     transform: Affine,
+    //     renderers: &Vec<GeometryRenderer>,
+    // ) {
+    //     // Implementation for rendering geometry
+    //     let affine = match self.render_rect {
+    //         Some(rect) => Affine::translate((-rect.min().x, -rect.max().y))
+    //             .then_scale_non_uniform(1f64, -1f64),
+    //         None => Affine::IDENTITY,
+    //     };
+    //     for ele in renderers {
+    //         ele.draw(scene, transform * affine, self);
+    //     }
+    // }
     pub fn with_rect(&mut self, rect: Option<Rect>) -> &mut Self {
         if rect.is_some() {
             self.render_rect = rect;

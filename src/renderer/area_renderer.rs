@@ -50,7 +50,7 @@ impl AreaRenderer {
             &exterior_path,
         );
         let exterior_geom: Geometry = exterior.clone().into();
-        let mut exterior_geom: RenderedGeometry = RenderedGeometry::new(exterior_geom, &None);
+        let mut exterior_geom = vec![RenderedGeometry::new(exterior_geom, &None)];
         let interior_geoms: Vec<Geometry> = interiors
             .iter()
             .map(|interior| interior.clone().into())
@@ -64,9 +64,7 @@ impl AreaRenderer {
                 LineKind::All => {
                     renderers.iter().for_each(|renderer| {
                         renderer.draw(scene, transform, &mut exterior_geom);
-                        interior_geoms.iter_mut().for_each(|mut interior| {
-                            renderer.draw(scene, transform, &mut interior);
-                        });
+                        renderer.draw(scene, transform, &mut interior_geoms);
                     });
                 }
                 LineKind::Exterior => {
@@ -75,10 +73,8 @@ impl AreaRenderer {
                     });
                 }
                 LineKind::Interior => {
-                    renderers.iter().for_each(|render| {
-                        interior_geoms.iter_mut().for_each(|mut interior| {
-                            render.draw(scene, transform, &mut interior);
-                        });
+                    renderers.iter().for_each(|renderer| {
+                        renderer.draw(scene, transform, &mut interior_geoms);
                     });
                 }
             }

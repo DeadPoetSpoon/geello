@@ -16,24 +16,26 @@ impl GeometryRenderer {
         &self,
         scene: &mut Scene,
         transform: Affine,
-        rendered_geometry: &mut RenderedGeometry,
+        rendered_geometrys: &mut Vec<RenderedGeometry>,
     ) {
-        match self {
-            GeometryRenderer::Point(renderer) => {
-                if let Some(point) = rendered_geometry.center_point() {
-                    renderer.draw(scene, transform, point);
+        rendered_geometrys
+            .iter_mut()
+            .for_each(|rendered_geometry| match self {
+                GeometryRenderer::Point(renderer) => {
+                    if let Some(point) = rendered_geometry.center_point() {
+                        renderer.draw(scene, transform, point);
+                    }
                 }
-            }
-            GeometryRenderer::Line(renderer) => {
-                if let Some(lines) = rendered_geometry.lines() {
-                    renderer.draw_multi(scene, transform, lines);
+                GeometryRenderer::Line(renderer) => {
+                    if let Some(lines) = rendered_geometry.lines() {
+                        renderer.draw_multi(scene, transform, lines);
+                    }
                 }
-            }
-            GeometryRenderer::Area(renderer) => {
-                if let Some(areas) = rendered_geometry.areas() {
-                    renderer.draw_multi(scene, transform, areas);
+                GeometryRenderer::Area(renderer) => {
+                    if let Some(areas) = rendered_geometry.areas() {
+                        renderer.draw_multi(scene, transform, areas);
+                    }
                 }
-            }
-        }
+            });
     }
 }
