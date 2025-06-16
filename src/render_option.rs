@@ -58,7 +58,14 @@ impl RenderRegion {
 }
 
 impl RenderOption {
-    pub fn get_transform(&self, rect: &Option<Rect>) -> Affine {
+    pub fn get_view_transform(&self, rect: &Option<Rect>) -> Affine {
+        match rect {
+            Some(rect) => Affine::translate((-rect.min().x, -rect.max().y))
+                .then_scale_non_uniform(1f64, -1f64),
+            None => Affine::IDENTITY,
+        }
+    }
+    pub fn get_scale_transform(&self, rect: &Option<Rect>) -> Affine {
         if let Some(rect) = rect {
             let pixel_size = self.get_pixel_size();
             let scale_x = pixel_size.0 as f64 / rect.width();

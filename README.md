@@ -6,12 +6,12 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 > Geello is a testing project in an alpha state.
 >
 
-### v0.2.0 Work
+### v0.2.0 ~ v0.3.0 Work
 
 - [ ] Finish and Clean up the current code
-- [ ] Modify RenderedGeometry to split project and render
-- [ ] Exchange Geom order and Renderer order
-- [ ] Render Rect should stick to render
+- [x] Modify RenderedGeometry to split project and render
+- [x] Exchange Geom order and Renderer order
+- [x] Render Rect should stick to render
 - [ ] Multi Layers
 - [ ] Calc image size with x/y resolution or WMTS zoom
 - [ ] Handle web geojson

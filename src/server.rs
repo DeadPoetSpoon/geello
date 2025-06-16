@@ -70,7 +70,7 @@ pub async fn rocket() -> Rocket<Build> {
             rocket = rocket.manage(texture_vec);
         }
         None => {
-            log::error!("No compatible device found, geello need GPU to render");
+            ("No compatible device found, geello need GPU to render");
             panic!("No compatible device found, geello need GPU to render");
         }
     };
@@ -120,7 +120,6 @@ async fn anim_real_time_websocket<'a>(
     if rect.is_some() {
         render_option.region = RenderRegion::Rect(rect.unwrap());
     };
-    log::error!("{:?}", render_option.region);
     let mut renderer = vello::Renderer::new(
         &device,
         vello::RendererOptions {
@@ -715,50 +714,3 @@ fn get_geom_from_geojson(geojson: &GeoJson) -> anyhow::Result<Vec<geo_types::Geo
     };
     Ok(geom_to_render_vec)
 }
-
-// async fn render_geojson_file_to_buffer<P: AsRef<std::path::Path>>(
-//     path: P,
-//     device: &Device,
-//     queue: &Queue,
-//     renderer: &mut Renderer,
-//     texture: &Texture,
-//     option: &RenderOption,
-// ) -> anyhow::Result<Vec<u8>> {
-//     let mut file = File::open(path)?;
-//     let mut geojson_str = String::new();
-//     let _ = file.read_to_string(&mut geojson_str);
-//     let geojson = geojson_str.parse::<GeoJson>().unwrap();
-//     render_geojson_to_buffer(
-//         &geojson,
-//         device,
-//         queue,
-//         renderer,
-//         texture,
-//         Affine::IDENTITY,
-//         option,
-//     )
-//     .await
-// }
-
-// fn render_to_image<P: AsRef<std::path::Path>>(
-//     geoms: &mut Vec<RenderedGeometry>,
-//     device: &Device,
-//     queue: &Queue,
-//     renderer: &mut Renderer,
-//     option: &RenderOption,
-//     path: P,
-// ) -> anyhow::Result<()> {
-//     let data = geello::render_to_buffer_with_new_texture(
-//         geoms,
-//         device,
-//         queue,
-//         renderer,
-//         Affine::IDENTITY,
-//         option,
-//     )?;
-//     let (width, height) = option.get_pixel_size();
-//     let image = image::RgbaImage::from_raw(width, height, data)
-//         .ok_or_else(|| anyhow::anyhow!("create image error."))?;
-//     image.save(path)?;
-//     Ok(())
-// }
