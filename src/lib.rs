@@ -24,11 +24,11 @@ pub fn render_to_texture(
     let mut scene = vello::Scene::new();
     let rect = option.get_region_rect();
     let transform = transform * option.get_transform(&rect);
-    geoms.iter_mut().for_each(|geom| {
-        geom.with_rect(rect);
-    });
+    // geoms.iter_mut().for_each(|geom| {
+    //     geom.with_rect(rect);
+    // });
     option.renderers.iter().for_each(|renderer| {
-        renderer.draw(&mut scene, transform, geoms);
+        renderer.draw(&mut scene, transform, geoms, rect);
     });
     let render_params = option.get_render_params();
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

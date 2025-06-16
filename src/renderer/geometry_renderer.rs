@@ -1,3 +1,4 @@
+use geo::Rect;
 use vello::{Scene, kurbo::Affine};
 
 use crate::rendered_geometry::RenderedGeometry;
@@ -17,12 +18,13 @@ impl GeometryRenderer {
         scene: &mut Scene,
         transform: Affine,
         rendered_geometrys: &mut Vec<RenderedGeometry>,
+        render_rect: Option<Rect>,
     ) {
         rendered_geometrys
             .iter_mut()
             .for_each(|rendered_geometry| match self {
                 GeometryRenderer::Point(renderer) => {
-                    if let Some(point) = rendered_geometry.center_point() {
+                    if let Some(point) = rendered_geometry.center_point(render_rect) {
                         renderer.draw(scene, transform, point);
                     }
                 }

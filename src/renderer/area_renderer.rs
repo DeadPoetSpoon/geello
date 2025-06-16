@@ -63,18 +63,18 @@ impl AreaRenderer {
             match kind {
                 LineKind::All => {
                     renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut exterior_geom);
-                        renderer.draw(scene, transform, &mut interior_geoms);
+                        renderer.draw(scene, transform, &mut exterior_geom, None);
+                        renderer.draw(scene, transform, &mut interior_geoms, None);
                     });
                 }
                 LineKind::Exterior => {
                     renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut exterior_geom);
+                        renderer.draw(scene, transform, &mut exterior_geom, None);
                     });
                 }
                 LineKind::Interior => {
                     renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut interior_geoms);
+                        renderer.draw(scene, transform, &mut interior_geoms, None);
                     });
                 }
             }

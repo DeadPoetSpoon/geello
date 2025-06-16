@@ -51,27 +51,27 @@ impl LineRenderer {
                     match kind {
                         NodeKind::All => {
                             for renderer in renderers {
-                                renderer.draw(scene, transform, &mut rendered_geometry);
+                                renderer.draw(scene, transform, &mut rendered_geometry, None);
                             }
                         }
                         NodeKind::Mid => {
                             if !is_start && !is_end {
                                 for renderer in renderers {
-                                    renderer.draw(scene, transform, &mut rendered_geometry);
+                                    renderer.draw(scene, transform, &mut rendered_geometry, None);
                                 }
                             }
                         }
                         NodeKind::Start => {
                             if is_start {
                                 for renderer in renderers {
-                                    renderer.draw(scene, transform, &mut rendered_geometry);
+                                    renderer.draw(scene, transform, &mut rendered_geometry, None);
                                 }
                             }
                         }
                         NodeKind::End => {
                             if is_end {
                                 for renderer in renderers {
-                                    renderer.draw(scene, transform, &mut rendered_geometry);
+                                    renderer.draw(scene, transform, &mut rendered_geometry, None);
                                 }
                             }
                         }

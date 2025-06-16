@@ -11,7 +11,6 @@ pub struct RenderedGeometry {
     has_calc_lines: bool,
     areas: Option<MultiPolygon>,
     has_calc_areas: bool,
-    render_rect: Option<Rect>,
 }
 
 impl RenderedGeometry {
@@ -27,7 +26,6 @@ impl RenderedGeometry {
             has_calc_lines: false,
             areas: None,
             has_calc_areas: false,
-            render_rect: None,
         }
     }
 
@@ -48,13 +46,13 @@ impl RenderedGeometry {
     //         ele.draw(scene, transform * affine, self);
     //     }
     // }
-    pub fn with_rect(&mut self, rect: Option<Rect>) -> &mut Self {
-        if rect.is_some() {
-            self.render_rect = rect;
-            self.has_calc_center_point = false;
-        }
-        self
-    }
+    // pub fn with_rect(&mut self, rect: Option<Rect>) -> &mut Self {
+    //     if rect.is_some() {
+    //         self.render_rect = rect;
+    //         self.has_calc_center_point = false;
+    //     }
+    //     self
+    // }
     pub fn lines(&mut self) -> Option<&MultiLineString> {
         if self.has_calc_lines {
             return self.lines.as_ref();
@@ -175,11 +173,11 @@ impl RenderedGeometry {
         };
         polygons
     }
-    pub fn center_point(&mut self) -> Option<&Point> {
-        if self.has_calc_center_point {
+    pub fn center_point(&mut self, rect: Option<Rect>) -> Option<&Point> {
+        if rect.is_none() && self.has_calc_center_point {
             self.center_point.as_ref()
         } else {
-            let center = match self.render_rect {
+            let center = match rect {
                 Some(rect) => match &self.inner_geom {
                     Geometry::Point(point) => Some(point.clone()),
                     Geometry::Line(line) => {
@@ -250,8 +248,10 @@ impl RenderedGeometry {
                 },
                 None => self.inner_geom.centroid(),
             };
+            if rect.is_none() {
+                self.has_calc_center_point = true;
+            }
             self.center_point = center;
-            self.has_calc_center_point = true;
             self.center_point.as_ref()
         }
     }
