@@ -19,7 +19,7 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 - [ ] Server: add layers styles memory cache with expire time
 - [ ] More Renderer, such as graph renderer and animation renderer
 - [ ] Support read render value from props
-- [ ] Provider docker package
+- [x] Provide docker package
 - [x] More README
 - [ ] More docs
 
