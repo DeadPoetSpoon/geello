@@ -21,7 +21,7 @@ impl Default for PixelOption {
     }
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub enum TileProj {
     #[default]
     EPSG4326,

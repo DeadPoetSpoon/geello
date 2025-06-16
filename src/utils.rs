@@ -1,6 +1,5 @@
 use crate::render_option::TileProj;
 use geo::Rect;
-#[cfg(feature = "server")]
 use geo::{Coord, Geometry, MapCoordsInPlace};
 const EARTH_RADIUS: f64 = 6378137.0;
 const PI: f64 = std::f64::consts::PI;
@@ -42,28 +41,28 @@ pub fn get_rect_from_xyz_3857(x: u32, y: u32, z: u32) -> Rect {
     let min_lat = max_lat - deg;
     Rect::new((min_lon, min_lat), (max_lon, max_lat))
 }
-#[cfg(feature = "server")]
+
 pub fn transform(geom: &mut Geometry, proj: &TileProj) {
     match proj {
         TileProj::EPSG4326 => transform_3857_to_4326(geom),
         TileProj::EPSG3857 => transform_4326_to_3857(geom),
     }
 }
-#[cfg(feature = "server")]
+
 pub fn transform_3857_to_4326(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
         let (x, y) = transform_3857_to_4326_point(x, y);
         Coord { x, y }
     });
 }
-#[cfg(feature = "server")]
+
 pub fn transform_4326_to_3857(geom: &mut Geometry) {
     geom.map_coords_in_place(|Coord { x, y }| -> Coord {
         let (x, y) = transform_4326_to_3857_point(x, y);
         Coord { x, y }
     });
 }
-#[cfg(feature = "server")]
+
 pub fn transform_4326_to_3857_point(x: f64, y: f64) -> (f64, f64) {
     let x = x * EPSG3857_XY_MAX / 180f64;
     let y = ((y + 90f64) * PI / 360f64).tan().ln() / (PI / 180f64);
@@ -71,7 +70,6 @@ pub fn transform_4326_to_3857_point(x: f64, y: f64) -> (f64, f64) {
     (x, y)
 }
 
-#[cfg(feature = "server")]
 pub fn transform_3857_to_4326_point(x: f64, y: f64) -> (f64, f64) {
     let x = x * 180f64 / EPSG3857_XY_MAX;
     let y = y * 180f64 / EPSG3857_XY_MAX;

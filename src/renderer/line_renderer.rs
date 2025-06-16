@@ -43,8 +43,8 @@ impl LineRenderer {
             let points = line.points();
             let len = points.len();
             for (index, point) in line.points().enumerate() {
-                let geom: &Geometry = &point.into();
-                let mut rendered_geometry: RenderedGeometry = geom.into();
+                let geom: Geometry = point.into();
+                let mut rendered_geometry: RenderedGeometry = RenderedGeometry::new(geom, &None);
                 let is_start = index == 0;
                 let is_end = index == len - 1;
                 for (kind, renderers) in self.node_renderers.iter() {

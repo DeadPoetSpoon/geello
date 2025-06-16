@@ -1,7 +1,4 @@
-use geello::{
-    RenderOption, RenderRegion, RenderedGeometry,
-    utils::{self, transform_4326_to_3857_point},
-};
+use geello::{RenderOption, RenderRegion, RenderedGeometry, utils::transform_4326_to_3857_point};
 use geo::BoundingRect;
 use geojson::GeoJson;
 use rocket::{
@@ -640,14 +637,16 @@ async fn render_geojson_to_buffer_with_new_texture(
     transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<Vec<u8>> {
-    let mut geom_to_render_vec = get_geom_from_geojson(geojson)?;
-    if option.need_proj_geom {
-        geom_to_render_vec.iter_mut().for_each(|mut geom| {
-            utils::transform(&mut geom, &option.tile_proj);
-        });
-    }
-    let mut geom_s: Vec<RenderedGeometry> =
-        geom_to_render_vec.iter().map(|geom| geom.into()).collect();
+    let geom_to_render_vec = get_geom_from_geojson(geojson)?;
+    let proj = if option.need_proj_geom {
+        Some(option.tile_proj)
+    } else {
+        None
+    };
+    let mut geom_s: Vec<RenderedGeometry> = geom_to_render_vec
+        .iter()
+        .map(|geom| RenderedGeometry::new(geom.clone(), &proj))
+        .collect();
     geello::render_to_buffer_with_new_texture(
         &mut geom_s,
         device,
@@ -667,14 +666,16 @@ async fn render_geojson_to_buffer(
     transform: Affine,
     option: &RenderOption,
 ) -> anyhow::Result<Vec<u8>> {
-    let mut geom_to_render_vec = get_geom_from_geojson(geojson)?;
-    if option.need_proj_geom {
-        geom_to_render_vec.iter_mut().for_each(|mut geom| {
-            geello::utils::transform(&mut geom, &option.tile_proj);
-        });
-    }
-    let mut geom_s: Vec<RenderedGeometry> =
-        geom_to_render_vec.iter().map(|geom| geom.into()).collect();
+    let geom_to_render_vec = get_geom_from_geojson(geojson)?;
+    let proj = if option.need_proj_geom {
+        Some(option.tile_proj)
+    } else {
+        None
+    };
+    let mut geom_s: Vec<RenderedGeometry> = geom_to_render_vec
+        .iter()
+        .map(|geom| RenderedGeometry::new(geom.clone(), &proj))
+        .collect();
     geello::render_to_buffer(
         &mut geom_s,
         device,

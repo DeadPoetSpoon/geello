@@ -4,9 +4,9 @@ use geo::{
 };
 use vello::{Scene, kurbo::Affine};
 
-use crate::renderer::GeometryRenderer;
-pub struct RenderedGeometry<'a> {
-    inner_geom: &'a Geometry,
+use crate::{TileProj, renderer::GeometryRenderer};
+pub struct RenderedGeometry {
+    inner_geom: Geometry,
     center_point: Option<Point>,
     has_calc_center_point: bool,
     lines: Option<MultiLineString>,
@@ -16,7 +16,23 @@ pub struct RenderedGeometry<'a> {
     render_rect: Option<Rect>,
 }
 
-impl<'a> RenderedGeometry<'a> {
+impl RenderedGeometry {
+    pub fn new(mut inner_geom: Geometry, proj: &Option<TileProj>) -> Self {
+        if let Some(proj) = proj {
+            crate::utils::transform(&mut inner_geom, proj);
+        }
+        RenderedGeometry {
+            inner_geom,
+            center_point: None,
+            has_calc_center_point: false,
+            lines: None,
+            has_calc_lines: false,
+            areas: None,
+            has_calc_areas: false,
+            render_rect: None,
+        }
+    }
+
     // Methods for rendering geometry
     pub fn draw(
         &mut self,
@@ -45,7 +61,7 @@ impl<'a> RenderedGeometry<'a> {
         if self.has_calc_lines {
             return self.lines.as_ref();
         }
-        let lines = RenderedGeometry::get_lines_from_geom(self.inner_geom);
+        let lines = RenderedGeometry::get_lines_from_geom(&self.inner_geom);
         self.lines = if lines.len() > 0 {
             let multi = MultiLineString::new(lines);
             Some(multi)
@@ -59,7 +75,7 @@ impl<'a> RenderedGeometry<'a> {
         if self.has_calc_areas {
             return self.areas.as_ref();
         }
-        let areas = RenderedGeometry::get_areas_from_geom(self.inner_geom);
+        let areas = RenderedGeometry::get_areas_from_geom(&self.inner_geom);
         self.areas = if areas.len() > 0 {
             let multi = MultiPolygon::new(areas);
             Some(multi)
@@ -239,21 +255,6 @@ impl<'a> RenderedGeometry<'a> {
             self.center_point = center;
             self.has_calc_center_point = true;
             self.center_point.as_ref()
-        }
-    }
-}
-
-impl<'a> Into<RenderedGeometry<'a>> for &'a Geometry {
-    fn into(self) -> RenderedGeometry<'a> {
-        RenderedGeometry {
-            inner_geom: self,
-            center_point: None,
-            render_rect: None,
-            has_calc_center_point: false,
-            lines: None,
-            has_calc_lines: false,
-            areas: None,
-            has_calc_areas: false,
         }
     }
 }

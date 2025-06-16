@@ -13,7 +13,7 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 - [ ] Exchange Geom order and Renderer order
 - [ ] Render Rect should stick to render
 - [ ] Multi Layers
-- [ ] Calc image size with  x/y resolution or WMTS zoom
+- [ ] Calc image size with x/y resolution or WMTS zoom
 - [ ] Handle web geojson
 - [ ] Make web map more flexible
 - [ ] Server: add layers styles memory cache with expire time
