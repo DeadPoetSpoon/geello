@@ -22,8 +22,8 @@ pub fn render_to_texture(
     option: &RenderOption,
 ) -> anyhow::Result<()> {
     let mut scene = vello::Scene::new();
-    let transform = transform * option.get_transform();
     let rect = option.get_region_rect();
+    let transform = transform * option.get_transform(&rect);
     geoms.iter_mut().for_each(|geom| {
         geom.with_rect(rect);
         geom.draw(&mut scene, transform, &option.renderers);

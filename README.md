@@ -8,13 +8,19 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 
 ### v0.2.0 Work
 
-- [] Finish and Clean up the current code, such as split project and render
-- [] Calc image size with  x/y resolution or WMTS zoom
-- [] Handle web geojson
-- [] Make web map more flexible
-- [] More Renderer, such as graph renderer and animation renderer
-- [] Provider docker package
-- [] More README and docs
+- [ ] Finish and Clean up the current code
+- [ ] Modify RenderedGeometry to split project and render
+- [ ] Exchange Geom order and Renderer order
+- [ ] Render Rect should stick to render
+- [ ] Multi Layers
+- [ ] Calc image size with  x/y resolution or WMTS zoom
+- [ ] Handle web geojson
+- [ ] Make web map more flexible
+- [ ] Server: add layers styles memory cache with expire time
+- [ ] More Renderer, such as graph renderer and animation renderer
+- [ ] Support read render value from props
+- [ ] Provider docker package
+- [ ] More README and docs
 
 ### As a library
 
@@ -74,7 +80,7 @@ bbox=${bbox}
 
 #### What's More -> Animation Or Dynamic Data
 
-Geelo use web socket to handle real-time animation or dynamic data.
+Geello use web socket to handle real-time animation or dynamic data.
 
 Such as a point that grows from small to large for representing importance.
 

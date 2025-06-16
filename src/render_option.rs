@@ -58,8 +58,8 @@ impl RenderRegion {
 }
 
 impl RenderOption {
-    pub fn get_transform(&self) -> Affine {
-        if let Some(rect) = self.get_region_rect() {
+    pub fn get_transform(&self, rect: &Option<Rect>) -> Affine {
+        if let Some(rect) = rect {
             let pixel_size = self.get_pixel_size();
             let scale_x = pixel_size.0 as f64 / rect.width();
             let scale_y = pixel_size.1 as f64 / rect.height();

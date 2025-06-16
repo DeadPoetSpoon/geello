@@ -103,7 +103,6 @@ async fn anim_real_time_websocket<'a>(
     param: WebMapServiceQueryParam,
     device: &'a State<Device>,
     queue: &'a State<Queue>,
-    instant: &'a State<Instant>,
     config: &'a State<Config>,
 ) -> rocket_ws::Stream!['a] {
     let WebMapServiceQueryParam {
@@ -145,7 +144,7 @@ async fn anim_real_time_websocket<'a>(
             if message.to_string() == "exit" {
                 break;
             }
-            let i = (time_instant.elapsed().as_secs() % 10) ;
+            let i = time_instant.elapsed().as_secs() % 10;
             render_option
                 .renderers
                 .iter_mut()
