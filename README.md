@@ -15,19 +15,44 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 - [ ] Multi Layers
 - [ ] Calc image size with x/y resolution or WMTS zoom
 - [ ] Handle web geojson
-- [ ] Make web map more flexible
+- [x] Make web map example more flexible
 - [ ] Server: add layers styles memory cache with expire time
 - [ ] More Renderer, such as graph renderer and animation renderer
 - [ ] Support read render value from props
 - [ ] Provider docker package
-- [ ] More README and docs
+- [x] More README
+- [ ] More docs
 
 ### As a library
 
 Geello can be used as a library to render geo data into a texture.
 
+1. Use `RenderedGeometry::new()` to create new geometry.
+
+1. Read file or Create a `RenderOption`.
+
+1. Set some options, like `RenderRegion` or `Transform`.
+
+1. Get `Vello values` just like `Vello`.
+
+1. Run one of functions below, or with `_with_new_texture`.
+
+1. Use return value to draw on canvas or encode to file.
+
 ```rust
 geello::render_to_texture(
+    geoms: &mut Vec<RenderedGeometry>,
+    device: &Device,
+    queue: &Queue,
+    renderer: &mut Renderer,
+    texture: &Texture,
+    transform: Affine,
+    option: &RenderOption,
+)
+```
+
+```rust
+geello::render_to_buffer(
     geoms: &mut Vec<RenderedGeometry>,
     device: &Device,
     queue: &Queue,
@@ -97,6 +122,10 @@ width=${width}
 height=${height}
 bbox=${bbox}
 ```
+
+#### Web Map example
+
+When run as server, Geello provides a web map example by open http://addr:port/map in browser.
 
 ### Contributing
 

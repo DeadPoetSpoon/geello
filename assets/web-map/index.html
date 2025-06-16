@@ -2,6 +2,7 @@
 <html>
     <head>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Geello</title>
         <link
             rel="stylesheet"
@@ -14,9 +15,111 @@
             integrity="sha256-WBkoXOwTeyKclOHuWtc+i2uENFpDZ9YPdf5Hf+D7ewM="
             crossorigin=""
         ></script>
+        <!-- <link
+            href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.3/css/bootstrap.min.css"
+            rel="stylesheet"
+        /> -->
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+            integrity="sha384-4Q6Gf2aSP4eDXB8Miphtr37CMZZQ5oXLH2yaXMJ2w8e2ZtHTl7GptT4jmndRuHDT"
+            crossorigin="anonymous"
+        />
     </head>
     <body style="overflow: hidden">
-        <div id="map" style="width: 100%; height: 99vh"></div>
+        <div class="container-fluid">
+            <div class="row clearfix vh-100 p-3">
+                <div class="col-md-3 column">
+                    <p class="text-start badge text-bg-primary text-wrap fs-1">
+                        Geello
+                    </p>
+                    <div class="input-group mb-3">
+                        <input
+                            id="layer_input"
+                            type="text"
+                            class="form-control"
+                            placeholder="layer"
+                            aria-label="layer"
+                            aria-describedby="button-addon2"
+                        />
+                        <input
+                            id="style_input"
+                            type="text"
+                            class="form-control"
+                            placeholder="style"
+                            aria-label="style"
+                            aria-describedby="button-addon2"
+                        />
+                        <button
+                            class="btn btn-outline-secondary"
+                            type="button"
+                            id="button-addon2"
+                            onclick="addlayer()"
+                        >
+                            Add
+                        </button>
+                    </div>
+                    <div class="input-group mb-3">
+                        <input
+                            id="minx_input"
+                            type="number"
+                            class="form-control"
+                            placeholder="Min Lng"
+                        />
+                        <input
+                            id="miny_input"
+                            type="number"
+                            class="form-control"
+                            placeholder="Min Lat"
+                        />
+                        <input
+                            id="maxx_input"
+                            type="number"
+                            class="form-control"
+                            placeholder="Max Lng"
+                        />
+                        <input
+                            id="maxy_input"
+                            type="number"
+                            class="form-control"
+                            placeholder="Max Lat"
+                        />
+                    </div>
+                    <div class="input-group mb-3 w-100">
+                        <button
+                            class="btn btn-outline-secondary w-50"
+                            type="button"
+                            id="showAnimButton"
+                            onclick="showAnim()"
+                        >
+                            Open Anim
+                        </button>
+                        <button
+                            class="btn btn-outline-secondary w-50"
+                            type="button"
+                            id="closeAnimButton"
+                            onclick="sendCloseMessage()"
+                        >
+                            Close Anim
+                        </button>
+                    </div>
+                    <ul
+                        id="layer_list_group"
+                        class="list-group list-group-numbered list-group-flush"
+                    ></ul>
+                </div>
+                <div id="map" class="col-md-9 column"></div>
+            </div>
+        </div>
+        <!-- <script
+            src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.3/js/bootstrap.bundle.min.js"
+            crossorigin="anonymous"
+        ></script> -->
+        <script
+            src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-j1CDi7MgGQ12Z7Qab0qlWQ/Qqz24Gc6BM0thvEMVjHnfYGF0rmFCozFSxQBxwHKO"
+            crossorigin="anonymous"
+        ></script>
     </body>
 </html>
 <script>
@@ -25,56 +128,123 @@
         crs: L.CRS.EPSG4326,
         center: [26, 110],
         zoom: 3,
+        maxBounds: [
+            [90, -180],
+            [-90, 180],
+        ],
     });
 
     // Add a tile layer to the map
-    L.tileLayer(
-        "/wmts/cache?layers=world.zh.json&styles=render_option&x={x}&y={y}&z={z}",
-        {},
-    ).addTo(map);
-
-    // Add a anim overlay to the map
-    // create websocket
-    let minx = -10 + 110;
-    let miny = -10 + 26;
-    let maxx = 10 + 110;
-    let maxy = 10 + 26;
-    let imageBounds = [
-        [miny, minx],
-        [maxy, minx],
-        [maxy, maxx],
-        [miny, maxx],
-        [miny, minx],
-    ];
-    let width = 1920;
-    let scale = (maxy - miny) / (maxx - minx);
-    let height = width * scale;
-    height = height << 0;
-    let socket = new WebSocket(
-        `/ws/anim?LAYERS=world.zh.json&styles=render_option&format=image/png&width=${width}&height=${height}&BBOX=${minx}%2C${miny}%2C${maxx}%2C${maxy}`,
-    );
-    socket.onopen = () => {
-        sendMessage();
-    };
-    let overlay = null;
-    socket.onmessage = (event) => {
-        let url = URL.createObjectURL(event.data);
-        if (overlay) {
-            overlay.setUrl(url);
-        } else {
-            overlay = L.imageOverlay(url, imageBounds).addTo(map);
+    let layer_map = new Map();
+    function addlayer() {
+        let layer_input = document.getElementById("layer_input").value.trim();
+        let style_input = document.getElementById("style_input").value.trim();
+        let layer_name = `${layer_input}(${style_input})`;
+        if (layer_map.has(layer_name)) {
+            alert(`${layer_name} already exists`);
+            return;
         }
-        sendMessage();
-    };
-    socket.onclose = (event) => {
-        console.log(event);
-    };
-    socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-    };
+        let layer = L.tileLayer(
+            `/wmts/cache?layers=${layer_input}&styles=${style_input}&x={x}&y={y}&z={z}`,
+            {},
+        ).addTo(map);
+        layer_map.set(layer_name, layer);
+        updateLayer();
+        console.log(`${layer_input}(${style_input}) added successfully`);
+    }
 
-    // let overlay = L.imageOverlay(imageUrl, imageBounds).addTo(map);
+    // // Add a anim overlay to the map
+    // // create websocket
+    let socket = null;
+    let overlay = null;
+    function showAnim() {
+        let layer_input = document.getElementById("layer_input").value.trim();
+        let style_input = document.getElementById("style_input").value.trim();
+        let minx = document.getElementById("minx_input").value;
+        let miny = document.getElementById("miny_input").value;
+        let maxx = document.getElementById("maxx_input").value;
+        let maxy = document.getElementById("maxy_input").value;
+        let imageBounds = [
+            [miny, minx],
+            [maxy, minx],
+            [maxy, maxx],
+            [miny, maxx],
+            [miny, minx],
+        ];
+        let width = 1920;
+        let scale = (maxy - miny) / (maxx - minx);
+        let height = width * scale;
+        height = height << 0;
+        socket = new WebSocket(
+            `/ws/anim?LAYERS=${layer_input}&styles=${style_input}&format=image/png&width=${width}&height=${height}&BBOX=${minx}%2C${miny}%2C${maxx}%2C${maxy}`,
+        );
+        socket.onopen = () => {
+            console.log("Open Web Socket and start receiving data");
+            sendMessage();
+        };
 
+        socket.onmessage = (event) => {
+            let url = URL.createObjectURL(event.data);
+            if (overlay) {
+                overlay.setUrl(url);
+            } else {
+                overlay = L.imageOverlay(url, imageBounds).addTo(map);
+            }
+            sendMessage();
+        };
+        socket.onclose = (event) => {
+            if (overlay) {
+                overlay.remove();
+                overlay = null;
+            }
+            console.log("Close Web Socket");
+        };
+        socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+        };
+    }
+    function updateLayer() {
+        let layer_list_group = document.getElementById("layer_list_group");
+        layer_list_group.innerHTML = "";
+        layer_map.forEach((value, key, map) => {
+            let layer_name = key;
+            let li_elem = document.createElement("li");
+            li_elem.setAttribute("class", "list-group-item");
+
+            let show_checked_button = document.createElement("input");
+            show_checked_button.setAttribute("type", "checkbox");
+            show_checked_button.setAttribute("id", `ShowBtn_${layer_name}`);
+            show_checked_button.setAttribute("class", "form-check-input me-1");
+            show_checked_button.setAttribute("value", "true");
+            show_checked_button.setAttribute("checked", "true");
+            show_checked_button.setAttribute(
+                "onchange",
+                `toggleLayerVisibility('${layer_name}')`,
+            );
+            li_elem.appendChild(show_checked_button);
+
+            let show_checked_button_label = document.createElement("label");
+            show_checked_button_label.setAttribute("class", "form-check-label");
+            show_checked_button_label.setAttribute(
+                "for",
+                `ShowBtn_${layer_name}`,
+            );
+            show_checked_button_label.textContent = `WMTS: ${layer_name}`;
+            li_elem.appendChild(show_checked_button_label);
+
+            let close_button = document.createElement("button");
+            close_button.setAttribute("type", "button");
+            close_button.setAttribute("class", "btn btn-link");
+            close_button.setAttribute("aria-label", "Close");
+            close_button.setAttribute(
+                "onclick",
+                `removeLayer('${layer_name}')`,
+            );
+            close_button.innerHTML = "Remove";
+            li_elem.appendChild(close_button);
+            layer_list_group.appendChild(li_elem);
+        });
+    }
     function sendMessage() {
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send("n");
@@ -83,6 +253,26 @@
     function sendCloseMessage() {
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send("exit");
+        }
+    }
+    function removeLayer(layer_name) {
+        let layer = layer_map.get(layer_name);
+        if (layer) {
+            layer.remove();
+            layer_map.delete(layer_name);
+        }
+        updateLayer();
+    }
+    function toggleLayerVisibility(layer_name) {
+        let id = `ShowBtn_${layer_name}`;
+        let checked = document.getElementById(id).value;
+        let layer = layer_map.get(layer_name);
+        if (layer) {
+            if (map.hasLayer(layer)) {
+                layer.remove();
+            } else {
+                layer.addTo(map);
+            }
         }
     }
 </script>

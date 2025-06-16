@@ -13,7 +13,6 @@ keywords = ["gis", "geo", "map-render", "2d", "vector-graphics"]
 categories = ["science::geo"]
 
 [dependencies]
-anyhow = "1.0.98"
 geo = "0.30.0"
 geo-types = { version = "0.7.16", features = [
     "multithreading",
@@ -28,7 +27,7 @@ peniko = { version = "0.4.0", default-features = false, features = ["serde"] }
 log = "0.4.27"
 tokio = { version = "1.45.1", features = ["full"] }
 
-
+# server
 image = { version = "0.25.6", features = ["serde"], optional = true }
 ron = { version = "0.10.1", optional = true }
 geojson = { version = "0.24.2", optional = true }

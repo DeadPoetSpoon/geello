@@ -635,8 +635,9 @@ async fn render_geojson_to_buffer_with_new_texture(
     renderer: &mut Renderer,
     transform: Affine,
     option: &RenderOption,
-) -> anyhow::Result<Vec<u8>> {
-    let geom_to_render_vec = get_geom_from_geojson(geojson)?;
+) -> Result<Vec<u8>, String> {
+    let geom_to_render_vec = get_geom_from_geojson(geojson)
+        .map_err(|e| format!("read geojson error: {}", e.to_string()))?;
     let proj = if option.need_proj_geom {
         Some(option.tile_proj)
     } else {
@@ -664,8 +665,9 @@ async fn render_geojson_to_buffer(
     texture: &Texture,
     transform: Affine,
     option: &RenderOption,
-) -> anyhow::Result<Vec<u8>> {
-    let geom_to_render_vec = get_geom_from_geojson(geojson)?;
+) -> Result<Vec<u8>, String> {
+    let geom_to_render_vec = get_geom_from_geojson(geojson)
+        .map_err(|e| format!("read geojson error: {}", e.to_string()))?;
     let proj = if option.need_proj_geom {
         Some(option.tile_proj)
     } else {
@@ -686,19 +688,21 @@ async fn render_geojson_to_buffer(
     )
 }
 
-fn get_geom_from_geojson(geojson: &GeoJson) -> anyhow::Result<Vec<geo_types::Geometry>> {
+fn get_geom_from_geojson(geojson: &GeoJson) -> Result<Vec<geo_types::Geometry>, String> {
     let mut geom_to_render_vec = Vec::new();
     match geojson {
         GeoJson::Geometry(geometry) => {
-            let geom = geo_types::Geometry::<f64>::try_from(geometry)?;
+            let geom = geo_types::Geometry::<f64>::try_from(geometry)
+                .map_err(|e| format!("convert geometry error: {}", e.to_string()))?;
             geom_to_render_vec.push(geom);
         }
         GeoJson::Feature(feature) => {
             let geom = feature
                 .geometry
                 .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("only feature has no geometry"))?;
-            let geom = geo_types::Geometry::<f64>::try_from(geom)?;
+                .ok_or_else(|| format!("only feature has no geometry"))?;
+            let geom = geo_types::Geometry::<f64>::try_from(geom)
+                .map_err(|e| format!("convert geometry error: {}", e.to_string()))?;
             geom_to_render_vec.push(geom);
         }
         GeoJson::FeatureCollection(feature_collection) => {
@@ -706,8 +710,9 @@ fn get_geom_from_geojson(geojson: &GeoJson) -> anyhow::Result<Vec<geo_types::Geo
                 let geom = feature
                     .geometry
                     .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("feature (index:{index}) has no geometry"))?;
-                let geom = geo_types::Geometry::<f64>::try_from(geom)?;
+                    .ok_or_else(|| format!("feature (index:{index}) has no geometry"))?;
+                let geom = geo_types::Geometry::<f64>::try_from(geom)
+                    .map_err(|e| format!("convert geometry error: {}", e.to_string()))?;
                 geom_to_render_vec.push(geom);
             }
         }
