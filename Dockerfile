@@ -4,6 +4,6 @@ WORKDIR /geello
 
 COPY ./assets ./assets
 
-RUN cargo install -F server geello
+RUN apt update && apt install -y libvulkan1 && cargo install -F server geello
 
 CMD ["geello"]
