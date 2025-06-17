@@ -127,6 +127,28 @@ bbox=${bbox}
 
 When run as server, Geello provides a web map example by open http://addr:port/map in browser.
 
+### Docker
+
+Package Page: [geello](https://github.com/DeadPoetSpoon/geello/pkgs/container/geello)
+
+Run the docker image:
+
+> [!WARNING]
+> Need [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
+>
+> Some how docker need xhost to Xserver access, WGPU need that to use GPU otherwise will use CPU, find some issues and docs:
+>
+> [wgpu/issues/2123-1012233430](https://github.com/gfx-rs/wgpu/issues/2123#issuecomment-1012233430): get the reason
+>
+> [wgpu/issues/2123-1428961445](https://github.com/gfx-rs/wgpu/issues/2123#issuecomment-1428961445): answer the question
+>
+> [archlinux docs](https://wiki.archlinux.org/title/Docker#Run_graphical_programs_inside_a_container): how to enable Xserver access, need [xhost](https://wiki.archlinuxcn.org/wiki/Xhost) installed
+>
+
+```bash
+docker run --rm --gpus all -e "DISPLAY=:0.0" --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix --device=/dev/dri:/dev/dri -p 8080:8080 ghcr.io/deadpoetspoon/geello:latest
+```
+
 ### Contributing
 
 Please!
