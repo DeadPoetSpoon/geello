@@ -1,5 +1,7 @@
 FROM rust:latest
 
+ENV XDG_RUNTIME_DIR /geello
+
 WORKDIR /geello
 
 COPY ./assets ./assets
