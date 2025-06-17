@@ -299,6 +299,7 @@ struct Config {
     wmts_texture_count: u32,
     shader_init_threads: Option<NonZero<usize>>,
     cache_path: PathBuf,
+    address: std::net::IpAddr,
 }
 
 impl Default for Config {
@@ -308,6 +309,7 @@ impl Default for Config {
             wmts_texture_count: 100,
             shader_init_threads: None,
             cache_path: "cache".into(),
+            address: std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)),
         }
     }
 }
