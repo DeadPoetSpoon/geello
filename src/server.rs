@@ -81,7 +81,6 @@ pub async fn rocket() -> Rocket<Build> {
             wmts_real_time,
             wmts_cache,
             wms_real_time,
-            anim_real_time,
             anim_real_time_websocket,
             web_map
         ],
@@ -90,8 +89,14 @@ pub async fn rocket() -> Rocket<Build> {
 }
 
 #[get("/map")]
-async fn web_map() -> NamedFile {
-    NamedFile::open("assets/web-map/index.html").await.unwrap()
+async fn web_map(config: &State<Config>) -> Result<NamedFile, String> {
+    let mut path = PathBuf::from("assets/web-map/index.html");
+    if !path.exists() {
+        path = config.data_path.join("web-map").join("index.html");
+    }
+    NamedFile::open(path)
+        .await
+        .map_err(|e| format!("open index.html error: {}", e.to_string()))
 }
 
 #[get("/ws/anim?<param..>")]
@@ -169,50 +174,6 @@ async fn anim_real_time_websocket<'a>(
     }
 }
 
-#[get("/anim?<param..>")]
-async fn anim_real_time(
-    param: WebMapServiceQueryParam,
-    device: &State<Device>,
-    queue: &State<Queue>,
-    instant: &State<Instant>,
-    config: &State<Config>,
-) -> Result<(ContentType, Vec<u8>), String> {
-    let WebMapServiceQueryParam {
-        layers,
-        styles,
-        width,
-        height,
-        format,
-        bbox,
-    } = param;
-    let (geojson, mut render_option) = get_data_from_fs(config, &layers, &styles)?;
-    render_option.pixel_option.width = width;
-    render_option.pixel_option.height = height;
-    render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
-    let i = (instant.elapsed().as_secs() % 10) as f64;
-    render_option
-        .renderers
-        .iter_mut()
-        .for_each(|type_renderer| match type_renderer {
-            geello::GeometryRenderer::Point(point_renderer) => {
-                point_renderer.radius = point_renderer.radius * i;
-            }
-            geello::GeometryRenderer::Line(_) => {}
-            geello::GeometryRenderer::Area(_) => {}
-        });
-    let image = render_wms(&geojson, device, queue, config, &mut render_option).await?;
-    let image_format = convert_format(format);
-    let size = image.width() * image.height() * 4;
-    let buffer = Vec::with_capacity(size as usize);
-    let mut cursor = Cursor::new(buffer);
-    image
-        .write_to(&mut cursor, image_format)
-        .map_err(|e| format!("encode image faild: {}", e.to_string()))?;
-    let content_type = ContentType::from_str(image_format.to_mime_type())
-        .map_err(|e| format!("error image format: {}", e.to_string()))?;
-    Ok((content_type, cursor.into_inner()))
-}
-
 #[get("/wms?<param..>")]
 async fn wms_real_time(
     param: WebMapServiceQueryParam,
@@ -229,7 +190,6 @@ async fn wms_real_time(
         bbox,
     } = param;
     let (geojson, mut render_option) = get_data_from_fs(config, &layers, &styles)?;
-    render_option.need_proj_geom = false;
     render_option.pixel_option.width = width;
     render_option.pixel_option.height = height;
     render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
@@ -395,9 +355,9 @@ fn convert_bbox(bbox_str: Option<String>, need_proj: bool) -> RenderRegion {
         parts[3].parse::<f64>(),
     ) {
         if need_proj {
+            // !WARN: May get invalid BBOX
             let (min_x, max_y) = transform_4326_to_3857_point(min_x, max_y);
             let (max_x, min_y) = transform_4326_to_3857_point(max_x, min_y);
-            log::error!("{} {} {} {}", min_x, min_y, max_x, max_y);
             RenderRegion::Rect(geo::Rect::new((min_x, max_y), (max_x, min_y)))
         } else {
             RenderRegion::Rect(geo::Rect::new((min_x, max_y), (max_x, min_y)))

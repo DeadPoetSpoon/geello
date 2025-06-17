@@ -1,4 +1,2 @@
 [default]
 data_path = "assets/test"
-log_level = "critical"
-wmts_texture_count = 10

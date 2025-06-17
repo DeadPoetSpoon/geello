@@ -33,6 +33,7 @@ ron = { version = "0.10.1", optional = true }
 geojson = { version = "0.24.2", optional = true }
 rocket = { version = "0.5.1", optional = true }
 rocket_ws = { version = "0.1.1", optional = true }
+reqwest = { version = "0.12.20", optional = true }
 
 [features]
-server = ["image", "ron", "geojson", "rocket", "rocket_ws"]
+server = ["image", "ron", "geojson", "rocket", "rocket_ws", "reqwest"]
