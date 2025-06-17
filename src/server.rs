@@ -324,7 +324,7 @@ struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
-            data_path: "data".into(),
+            data_path: "assets".into(),
             wmts_texture_count: 100,
             shader_init_threads: None,
             cache_path: "cache".into(),
