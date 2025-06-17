@@ -1,9 +1,10 @@
-use crate::TileProj;
+use crate::{RenderedGeometryFilter, TileProj};
 use geo::{
     BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, Intersects,
     LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
 };
 pub struct RenderedGeometry {
+    layer: Option<String>,
     inner_geom: Geometry,
     center_point: Option<Point>,
     has_calc_center_point: bool,
@@ -14,11 +15,15 @@ pub struct RenderedGeometry {
 }
 
 impl RenderedGeometry {
-    pub fn new(mut inner_geom: Geometry, proj: &Option<TileProj>) -> Self {
+    pub fn new_temp(inner_geom: Geometry) -> Self {
+        RenderedGeometry::new(None, inner_geom, &None)
+    }
+    pub fn new(layer: Option<String>, mut inner_geom: Geometry, proj: &Option<TileProj>) -> Self {
         if let Some(proj) = proj {
             crate::utils::transform(&mut inner_geom, proj);
         }
         RenderedGeometry {
+            layer,
             inner_geom,
             center_point: None,
             has_calc_center_point: false,
@@ -26,6 +31,18 @@ impl RenderedGeometry {
             has_calc_lines: false,
             areas: None,
             has_calc_areas: false,
+        }
+    }
+    pub fn fit_filter(&self, filter: &RenderedGeometryFilter) -> bool {
+        match filter {
+            RenderedGeometryFilter::None => true,
+            RenderedGeometryFilter::Layer(other_layer) => {
+                if let Some(self_layer) = &self.layer {
+                    self_layer == other_layer
+                } else {
+                    true
+                }
+            }
         }
     }
     pub fn lines(&mut self) -> Option<&MultiLineString> {

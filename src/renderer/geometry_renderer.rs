@@ -5,11 +5,24 @@ use crate::rendered_geometry::RenderedGeometry;
 
 use super::{AreaRenderer, LineRenderer, PointRenderer};
 
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum RenderedGeometryFilter {
+    #[default]
+    None,
+    Layer(String),
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum GeometryRenderer {
-    Point(PointRenderer),
-    Line(LineRenderer),
-    Area(AreaRenderer),
+    Point(RenderedGeometryFilter, PointRenderer),
+    Line(RenderedGeometryFilter, LineRenderer),
+    Area(RenderedGeometryFilter, AreaRenderer),
+}
+
+impl Default for GeometryRenderer {
+    fn default() -> Self {
+        GeometryRenderer::Point(RenderedGeometryFilter::None, PointRenderer::default())
+    }
 }
 
 impl GeometryRenderer {
@@ -20,24 +33,34 @@ impl GeometryRenderer {
         rendered_geometrys: &mut Vec<RenderedGeometry>,
         render_rect: Option<Rect>,
     ) {
-        rendered_geometrys
-            .iter_mut()
-            .for_each(|rendered_geometry| match self {
-                GeometryRenderer::Point(renderer) => {
-                    if let Some(point) = rendered_geometry.center_point(render_rect) {
-                        renderer.draw(scene, transform, point);
+        match self {
+            GeometryRenderer::Point(filter, renderer) => {
+                for rendered_geometry in rendered_geometrys {
+                    if rendered_geometry.fit_filter(filter) {
+                        if let Some(point) = rendered_geometry.center_point(render_rect) {
+                            renderer.draw(scene, transform, point);
+                        }
                     }
                 }
-                GeometryRenderer::Line(renderer) => {
-                    if let Some(lines) = rendered_geometry.lines() {
-                        renderer.draw_multi(scene, transform, lines);
+            }
+            GeometryRenderer::Line(filter, renderer) => {
+                for rendered_geometry in rendered_geometrys {
+                    if rendered_geometry.fit_filter(filter) {
+                        if let Some(lines) = rendered_geometry.lines() {
+                            renderer.draw_multi(scene, transform, lines);
+                        }
                     }
                 }
-                GeometryRenderer::Area(renderer) => {
-                    if let Some(areas) = rendered_geometry.areas() {
-                        renderer.draw_multi(scene, transform, areas);
+            }
+            GeometryRenderer::Area(filter, renderer) => {
+                for rendered_geometry in rendered_geometrys {
+                    if rendered_geometry.fit_filter(filter) {
+                        if let Some(areas) = rendered_geometry.areas() {
+                            renderer.draw_multi(scene, transform, areas);
+                        }
                     }
                 }
-            });
+            }
+        }
     }
 }

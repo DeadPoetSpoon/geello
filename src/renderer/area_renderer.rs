@@ -50,14 +50,14 @@ impl AreaRenderer {
             &exterior_path,
         );
         let exterior_geom: Geometry = exterior.clone().into();
-        let mut exterior_geom = vec![RenderedGeometry::new(exterior_geom, &None)];
+        let mut exterior_geom = vec![RenderedGeometry::new_temp(exterior_geom)];
         let interior_geoms: Vec<Geometry> = interiors
             .iter()
             .map(|interior| interior.clone().into())
             .collect();
         let mut interior_geoms: Vec<RenderedGeometry> = interior_geoms
             .iter()
-            .map(|interior| RenderedGeometry::new(interior.clone(), &None))
+            .map(|interior| RenderedGeometry::new_temp(interior.clone()))
             .collect();
         for (kind, renderers) in self.line_renderers.iter() {
             match kind {

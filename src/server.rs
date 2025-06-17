@@ -82,10 +82,30 @@ pub async fn rocket() -> Rocket<Build> {
             wmts_cache,
             wms_real_time,
             anim_real_time_websocket,
-            web_map
+            web_map,
+            get_render_option_example
         ],
     );
     rocket
+}
+
+#[get("/render-option-example")]
+async fn get_render_option_example() -> Result<String, String> {
+    let mut option = geello::RenderOption::default();
+    option.renderers.push(geello::GeometryRenderer::Area(
+        geello::RenderedGeometryFilter::None,
+        geello::AreaRenderer::default(),
+    ));
+    option.renderers.push(geello::GeometryRenderer::Line(
+        geello::RenderedGeometryFilter::None,
+        geello::LineRenderer::default(),
+    ));
+    option.renderers.push(geello::GeometryRenderer::Point(
+        geello::RenderedGeometryFilter::Layer("some_layer".to_string()),
+        geello::PointRenderer::default(),
+    ));
+    ron::ser::to_string_pretty(&option, ron::ser::PrettyConfig::default())
+        .map_err(|e| format!("Ser error: {}", e.to_string()))
 }
 
 #[get("/map")]
@@ -121,7 +141,7 @@ async fn anim_real_time_websocket<'a>(
     render_option.pixel_option.height = height;
     render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
     let image_format = convert_format(format);
-    let rect = get_render_rect(&geojson, &mut render_option);
+    let rect = get_all_render_rect(&geojson, &mut render_option);
     if rect.is_some() {
         render_option.region = RenderRegion::Rect(rect.unwrap());
     };
@@ -150,7 +170,7 @@ async fn anim_real_time_websocket<'a>(
                 .renderers
                 .iter_mut()
                 .for_each(|type_renderer| match type_renderer {
-                    geello::GeometryRenderer::Point(point_renderer) => {
+                    geello::GeometryRenderer::Point(_,point_renderer) => {
                         if i == 0 {
                             point_renderer.radius = 0.1;
                             // log::error!("i: 0");
@@ -160,8 +180,8 @@ async fn anim_real_time_websocket<'a>(
                         }
 
                     }
-                    geello::GeometryRenderer::Line(_) => {}
-                    geello::GeometryRenderer::Area(_) => {}
+                    geello::GeometryRenderer::Line(_,_) => {}
+                    geello::GeometryRenderer::Area(_,_) => {}
                 });
             let image = render_wms_on_texture(&geojson, device, queue,&mut renderer,&texture,  &mut render_option).await.expect("render errors.");
 
@@ -387,22 +407,27 @@ fn get_data_from_fs(
     config: &State<Config>,
     data_path: &str,
     style_path: &str,
-) -> Result<(GeoJson, RenderOption), String> {
-    let geojson_path = config.data_path.join(data_path);
-    if !geojson_path.exists() {
-        return Err(format!("can not find {}", data_path));
+) -> Result<(Vec<(String, GeoJson)>, RenderOption), String> {
+    let mut geojson_data_vec = Vec::new();
+    let geojson_path_vec = data_path.split(',');
+    for geojson_path_str in geojson_path_vec {
+        let geojson_path = config.data_path.join(geojson_path_str);
+        if !geojson_path.exists() {
+            return Err(format!("can not find {}", data_path));
+        }
+        let mut file = File::open(geojson_path.as_path())
+            .map_err(|e| format!("open {} failed: {}", geojson_path.display(), e.to_string()))?;
+        let mut geojson_str = String::new();
+        let _ = file.read_to_string(&mut geojson_str);
+        let geojson = geojson_str.parse::<GeoJson>().map_err(|e| {
+            format!(
+                "convert {} failed: {}",
+                geojson_path.display(),
+                e.to_string()
+            )
+        })?;
+        geojson_data_vec.push((geojson_path_str.to_string(), geojson));
     }
-    let mut file = File::open(geojson_path.as_path())
-        .map_err(|e| format!("open {} failed: {}", geojson_path.display(), e.to_string()))?;
-    let mut geojson_str = String::new();
-    let _ = file.read_to_string(&mut geojson_str);
-    let geojson = geojson_str.parse::<GeoJson>().map_err(|e| {
-        format!(
-            "convert {} failed: {}",
-            geojson_path.display(),
-            e.to_string()
-        )
-    })?;
 
     let style_path = match style_path.ends_with(".ron") {
         true => style_path.to_string(),
@@ -426,10 +451,42 @@ fn get_data_from_fs(
             e.to_string()
         )
     })?;
-    Ok((geojson, render_option))
+    Ok((geojson_data_vec, render_option))
 }
 
-fn get_render_rect(geojson: &GeoJson, render_option: &mut RenderOption) -> Option<geo::Rect> {
+fn get_all_render_rect(
+    geojson: &Vec<(String, GeoJson)>,
+    render_option: &RenderOption,
+) -> Option<geo::Rect> {
+    match render_option.region {
+        RenderRegion::All => {
+            let mut has_rect = false;
+            let mut b_x_min = f64::MAX;
+            let mut b_x_max = f64::MIN;
+            let mut b_y_min = f64::MAX;
+            let mut b_y_max = f64::MIN;
+            for geo in geojson {
+                if let Some(rect) = get_render_rect(&geo.1, render_option) {
+                    has_rect = true;
+                    let min = rect.min();
+                    let max = rect.max();
+                    b_x_min = b_x_min.min(min.x);
+                    b_x_max = b_x_max.max(max.x);
+                    b_y_min = b_y_min.min(min.y);
+                    b_y_max = b_y_max.max(max.y);
+                }
+            }
+            if has_rect {
+                Some(geo::Rect::new((b_x_min, b_y_min), (b_x_max, b_y_max)))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn get_render_rect(geojson: &GeoJson, render_option: &RenderOption) -> Option<geo::Rect> {
     match render_option.region {
         RenderRegion::All => match &geojson {
             GeoJson::Geometry(geometry) => {
@@ -480,7 +537,7 @@ fn get_render_rect(geojson: &GeoJson, render_option: &mut RenderOption) -> Optio
 }
 
 async fn render_wms_on_texture(
-    geojson: &GeoJson,
+    geojson: &Vec<(String, GeoJson)>,
     device: &State<Device>,
     queue: &State<Queue>,
     renderer: &mut vello::Renderer,
@@ -503,13 +560,13 @@ async fn render_wms_on_texture(
 }
 
 async fn render_wms(
-    geojson: &GeoJson,
+    geojson: &Vec<(String, GeoJson)>,
     device: &State<Device>,
     queue: &State<Queue>,
     config: &State<Config>,
     render_option: &mut RenderOption,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
-    let rect = get_render_rect(geojson, render_option);
+    let rect = get_all_render_rect(geojson, render_option);
     if rect.is_some() {
         render_option.region = RenderRegion::Rect(rect.unwrap());
     }
@@ -545,13 +602,13 @@ fn get_one_texture(texture_vec: &Arc<Mutex<Vec<Texture>>>) -> Texture {
             return x.unwrap();
         }
         drop(v);
-        let time = tokio::time::Duration::from_millis(100);
+        let time = tokio::time::Duration::from_millis(10);
         sleep(time);
     }
 }
 
 async fn render_wmts_tile(
-    geojson: &GeoJson,
+    geojson: &Vec<(String, GeoJson)>,
     device: &State<Device>,
     queue: &State<Queue>,
     config: &State<Config>,
@@ -589,24 +646,16 @@ async fn render_wmts_tile(
 }
 
 async fn render_geojson_to_buffer_with_new_texture(
-    geojson: &GeoJson,
+    geojson: &Vec<(String, GeoJson)>,
     device: &Device,
     queue: &Queue,
     renderer: &mut Renderer,
     transform: Affine,
     option: &RenderOption,
 ) -> Result<Vec<u8>, String> {
-    let geom_to_render_vec = get_geom_from_geojson(geojson)
+    let geom_to_render_vec = get_geom_from_geojson_vec(geojson)
         .map_err(|e| format!("read geojson error: {}", e.to_string()))?;
-    let proj = if option.need_proj_geom {
-        Some(option.tile_proj)
-    } else {
-        None
-    };
-    let mut geom_s: Vec<RenderedGeometry> = geom_to_render_vec
-        .iter()
-        .map(|geom| RenderedGeometry::new(geom.clone(), &proj))
-        .collect();
+    let mut geom_s = get_rendered_geometry(geom_to_render_vec, option);
     geello::render_to_buffer_with_new_texture(
         &mut geom_s,
         device,
@@ -618,7 +667,7 @@ async fn render_geojson_to_buffer_with_new_texture(
 }
 
 async fn render_geojson_to_buffer(
-    geojson: &GeoJson,
+    geojson: &Vec<(String, GeoJson)>,
     device: &Device,
     queue: &Queue,
     renderer: &mut Renderer,
@@ -626,17 +675,9 @@ async fn render_geojson_to_buffer(
     transform: Affine,
     option: &RenderOption,
 ) -> Result<Vec<u8>, String> {
-    let geom_to_render_vec = get_geom_from_geojson(geojson)
+    let geom_to_render_vec = get_geom_from_geojson_vec(geojson)
         .map_err(|e| format!("read geojson error: {}", e.to_string()))?;
-    let proj = if option.need_proj_geom {
-        Some(option.tile_proj)
-    } else {
-        None
-    };
-    let mut geom_s: Vec<RenderedGeometry> = geom_to_render_vec
-        .iter()
-        .map(|geom| RenderedGeometry::new(geom.clone(), &proj))
-        .collect();
+    let mut geom_s = get_rendered_geometry(geom_to_render_vec, option);
     geello::render_to_buffer(
         &mut geom_s,
         device,
@@ -646,6 +687,36 @@ async fn render_geojson_to_buffer(
         transform,
         option,
     )
+}
+
+fn get_rendered_geometry(
+    geom_vec: Vec<(String, Vec<geo_types::Geometry>)>,
+    option: &RenderOption,
+) -> Vec<RenderedGeometry> {
+    let proj = if option.need_proj_geom {
+        Some(option.tile_proj)
+    } else {
+        None
+    };
+    let mut rendered_geom = Vec::new();
+    for (layer, geom) in geom_vec {
+        for g in geom {
+            let rg = RenderedGeometry::new(Some(layer.clone()), g.clone(), &proj);
+            rendered_geom.push(rg);
+        }
+    }
+    rendered_geom
+}
+
+fn get_geom_from_geojson_vec(
+    geojson: &Vec<(String, GeoJson)>,
+) -> Result<Vec<(String, Vec<geo_types::Geometry>)>, String> {
+    let mut geom_to_render_vec = Vec::new();
+    for (layer, geo) in geojson {
+        let gg = get_geom_from_geojson(geo)?;
+        geom_to_render_vec.push((layer.clone(), gg));
+    }
+    Ok(geom_to_render_vec)
 }
 
 fn get_geom_from_geojson(geojson: &GeoJson) -> Result<Vec<geo_types::Geometry>, String> {

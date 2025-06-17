@@ -12,7 +12,7 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 - [x] Modify RenderedGeometry to split project and render
 - [x] Exchange Geom order and Renderer order
 - [x] Render Rect should stick to render
-- [ ] Multi Layers
+- [x] Multi Layers
 - [ ] Calc image size with x/y resolution or WMTS zoom
 - [ ] Handle web geojson
 - [x] Make web map example more flexible
@@ -81,8 +81,8 @@ http://addr:port/wmts/real-time
 http://addr:port/wmts/cache
 
 //params
-layers=${/path/to/json}
-styles=${/path/to/render_option}
+layers=${/path/to/json} // use `,` split multi layer, render as order
+styles=${/path/to/render_option} // render_option to filter rendered geometry
 x=${x}
 y=${y}
 z=${z}
@@ -95,8 +95,8 @@ format=${format} // like image/png or png
 http://addr:port/wms
 
 // params
-layers=${/path/to/json}
-styles=${/path/to/render_option}
+layers=${/path/to/json} // use `,` split multi layer, render as order
+styles=${/path/to/render_option} // render_option to filter rendered geometry
 format=${format} // like image/png or png
 width=${width}
 height=${height}
@@ -115,8 +115,8 @@ Or a real-time route of a car.
 ws://addr:port/ws/anim
 
 // params
-layers=${/path/to/json}
-styles=${/path/to/render_option}
+layers=${/path/to/json} // use `,` split multi layer, render as order
+styles=${/path/to/render_option} // render_option to filter rendered geometry
 format=${format} // like image/png or png
 width=${width}
 height=${height}
