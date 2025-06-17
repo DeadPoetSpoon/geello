@@ -146,7 +146,7 @@ Run the docker image:
 >
 
 ```bash
-docker run --rm --gpus all -e "DISPLAY=:0.0" --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix --device=/dev/dri:/dev/dri -p 8080:8080 ghcr.io/deadpoetspoon/geello:latest
+docker run --rm --gpus all -e "DISPLAY=:0.0" -e "GEELLO_ADDRESS=0.0.0.0" --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix --device=/dev/dri:/dev/dri -p 8000:8000 ghcr.io/deadpoetspoon/geello:latest
 ```
 
 ### Contributing
