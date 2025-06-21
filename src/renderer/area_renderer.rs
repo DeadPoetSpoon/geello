@@ -10,14 +10,14 @@ use crate::RenderedGeometry;
 
 use super::{GeometryRenderer, LineRenderer};
 
-#[derive(PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum LineKind {
     All,
     Exterior,
     Interior,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AreaRenderer {
     pub brush: Brush,
     pub line_renderers: HashMap<LineKind, Vec<GeometryRenderer>>,

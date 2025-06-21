@@ -10,7 +10,7 @@ use crate::RenderedGeometry;
 
 use super::GeometryRenderer;
 
-#[derive(PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NodeKind {
     All,
     Mid,
@@ -18,7 +18,7 @@ pub enum NodeKind {
     End,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LineRenderer {
     pub stroke: Stroke,
     pub brush: Brush,

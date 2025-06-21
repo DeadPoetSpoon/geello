@@ -14,9 +14,9 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 - [x] Render Rect should stick to render
 - [x] Multi Layers
 - [ ] Calc image size with x/y resolution or WMTS zoom
-- [ ] Handle web geojson
+- [x] Handle web online geojson and style
 - [x] Make web map example more flexible
-- [ ] Server: add layers styles memory cache with expire time
+- [x] Server: add layers styles memory cache with expire time
 - [ ] More Renderer, such as graph renderer and animation renderer
 - [ ] Support read render value from props
 - [x] Provide docker package

@@ -5,14 +5,14 @@ use crate::rendered_geometry::RenderedGeometry;
 
 use super::{AreaRenderer, LineRenderer, PointRenderer};
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum RenderedGeometryFilter {
     #[default]
     None,
     Layer(String),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum GeometryRenderer {
     Point(RenderedGeometryFilter, PointRenderer),
     Line(RenderedGeometryFilter, LineRenderer),

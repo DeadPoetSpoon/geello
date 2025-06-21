@@ -10,12 +10,9 @@ use rocket::{
     },
 };
 use rocket::{State, fs::NamedFile};
-use std::thread::sleep;
+use std::{collections::HashMap, thread::sleep, time::Duration};
 use std::{fs::File, num::NonZero, path::PathBuf, str::FromStr};
-use std::{
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::{sync::Arc, time::Instant};
 use vello::wgpu::Texture;
 use vello::wgpu::{self, Extent3d};
 use vello::{Renderer, wgpu::Queue};
@@ -25,6 +22,7 @@ use image::ImageBuffer;
 use image::{ImageFormat, Rgba};
 use rocket::http::ContentType;
 use std::io::{Cursor, Read};
+use tokio::sync::{Mutex, RwLock};
 
 pub async fn rocket() -> Rocket<Build> {
     let figment = Figment::from(rocket::Config::default())
@@ -39,9 +37,7 @@ pub async fn rocket() -> Rocket<Build> {
     let mut context = vello::util::RenderContext::new();
     match context.device(None).await {
         Some(device_id) => {
-            let texture_vec = Arc::new(Mutex::new(Vec::new()));
-            let init = Arc::clone(&texture_vec);
-            let mut texture_vec_mut = init.lock().unwrap();
+            let mut texture_vec = Vec::new();
             for i in 0..config.wmts_texture_count {
                 let label = format!("WMTS Rendered Texture {}", i);
                 let texture_desc = wgpu::TextureDescriptor {
@@ -61,8 +57,9 @@ pub async fn rocket() -> Rocket<Build> {
                 let texture = context.devices[device_id]
                     .device
                     .create_texture(&texture_desc);
-                texture_vec_mut.push(texture);
+                texture_vec.push(texture);
             }
+            let texture_vec = Arc::new(Mutex::new(texture_vec));
             let device = context.devices[device_id].device.clone();
             let queen = context.devices[device_id].queue.clone();
             rocket = rocket.manage(device);
@@ -75,6 +72,19 @@ pub async fn rocket() -> Rocket<Build> {
         }
     };
     rocket = rocket.manage(Instant::now());
+    let data_cache = Arc::new(RwLock::new(DataCache::default()));
+    let data_cache_check = Arc::clone(&data_cache);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let mut data_cache = data_cache_check.write().await;
+            data_cache.check_expired_cache();
+            drop(data_cache);
+        }
+    });
+    rocket = rocket.manage(data_cache);
     rocket = rocket.mount(
         "/",
         routes![
@@ -83,10 +93,32 @@ pub async fn rocket() -> Rocket<Build> {
             wms_real_time,
             anim_real_time_websocket,
             web_map,
-            get_render_option_example
+            get_render_option_example,
+            show_data_cache,
         ],
     );
     rocket
+}
+
+#[get("/show-data-cache")]
+async fn show_data_cache(data_cache: &State<Arc<RwLock<DataCache>>>) -> Result<String, String> {
+    let cache = data_cache.read().await;
+    let mut cache_str = vec!["layers:".to_string()];
+    cache.layer_map.iter().for_each(|(name, layer)| {
+        cache_str.push(format!(
+            "name:{:?},kind:{:?},expira:{:?}",
+            name, layer.kind, layer.expiration
+        ));
+    });
+    cache_str.push("styles:".to_string());
+    cache.style_map.iter().for_each(|(name, style)| {
+        cache_str.push(format!(
+            "name:{:?},kind:{:?},expira:{:?}",
+            name, style.kind, style.expiration
+        ));
+    });
+    drop(cache);
+    Ok(cache_str.join("\n"))
 }
 
 #[get("/render-option-example")]
@@ -126,6 +158,7 @@ async fn anim_real_time_websocket<'a>(
     device: &'a State<Device>,
     queue: &'a State<Queue>,
     config: &'a State<Config>,
+    data_cache: &State<Arc<RwLock<DataCache>>>,
 ) -> rocket_ws::Stream!['a] {
     let WebMapServiceQueryParam {
         layers,
@@ -135,8 +168,12 @@ async fn anim_real_time_websocket<'a>(
         format,
         bbox,
     } = param;
-    let (geojson, mut render_option) =
-        get_data_from_fs(config, &layers, &styles).expect("read data faild");
+    let geojson = get_data_from_cache(config, &layers, data_cache, None)
+        .await
+        .expect("read data error.");
+    let mut render_option = get_style_from_cache(config, &styles, data_cache, None)
+        .await
+        .expect("read style error.");
     render_option.pixel_option.width = width;
     render_option.pixel_option.height = height;
     render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
@@ -200,6 +237,7 @@ async fn wms_real_time(
     device: &State<Device>,
     queue: &State<Queue>,
     config: &State<Config>,
+    data_cache: &State<Arc<RwLock<DataCache>>>,
 ) -> Result<(ContentType, Vec<u8>), String> {
     let WebMapServiceQueryParam {
         layers,
@@ -209,7 +247,8 @@ async fn wms_real_time(
         format,
         bbox,
     } = param;
-    let (geojson, mut render_option) = get_data_from_fs(config, &layers, &styles)?;
+    let geojson = get_data_from_cache(config, &layers, data_cache, None).await?;
+    let mut render_option = get_style_from_cache(config, &styles, data_cache, None).await?;
     render_option.pixel_option.width = width;
     render_option.pixel_option.height = height;
     render_option.region = convert_bbox(bbox, render_option.need_proj_geom);
@@ -233,6 +272,7 @@ async fn wmts_real_time(
     queue: &State<Queue>,
     config: &State<Config>,
     texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
+    data_cache: &State<Arc<RwLock<DataCache>>>,
 ) -> Result<(ContentType, Vec<u8>), String> {
     let WebMapTileServiceQueryParam {
         layers,
@@ -242,7 +282,8 @@ async fn wmts_real_time(
         z,
         format,
     } = param;
-    let (geojson, mut render_option) = get_data_from_fs(config, &layers, &styles)?;
+    let geojson = get_data_from_cache(config, &layers, data_cache, None).await?;
+    let mut render_option = get_style_from_cache(config, &styles, data_cache, None).await?;
     render_option.region = RenderRegion::TileIndex(x, y, z);
     let image =
         render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
@@ -265,6 +306,7 @@ async fn wmts_cache(
     queue: &State<Queue>,
     config: &State<Config>,
     texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
+    data_cache: &State<Arc<RwLock<DataCache>>>,
 ) -> Result<(ContentType, NamedFile), String> {
     let WebMapTileServiceQueryParam {
         layers,
@@ -277,7 +319,8 @@ async fn wmts_cache(
     let (dir, file_name) = get_image_path(&layers, &styles, x, y, z, config);
     let path = PathBuf::from(format!("{dir}/{file_name}"));
     if !path.exists() {
-        let (geojson, mut render_option) = get_data_from_fs(config, &layers, &styles)?;
+        let geojson = get_data_from_cache(config, &layers, data_cache, None).await?;
+        let mut render_option = get_style_from_cache(config, &styles, data_cache, None).await?;
         render_option.region = RenderRegion::TileIndex(x, y, z);
         let image =
             render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
@@ -291,6 +334,222 @@ async fn wmts_cache(
         .await
         .map_err(|e| format!("open image cache failed: {}", e.to_string()))?;
     return Ok((ContentType::PNG, f));
+}
+
+#[derive(Debug)]
+struct DataCache {
+    layer_map: HashMap<String, LayerCache>,
+    style_map: HashMap<String, StyleCache>,
+}
+
+impl Default for DataCache {
+    fn default() -> DataCache {
+        DataCache {
+            layer_map: HashMap::new(),
+            style_map: HashMap::new(),
+        }
+    }
+}
+
+impl DataCache {
+    pub fn check_expired_cache(&mut self) {
+        let now = Instant::now();
+        let layer_name: Vec<String> = self
+            .layer_map
+            .iter()
+            .filter_map(|(name, layer)| {
+                if layer.expiration.is_expired(&now) {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for name in layer_name {
+            self.layer_map.remove(&name);
+        }
+        let style_name: Vec<String> = self
+            .style_map
+            .iter()
+            .filter_map(|(name, style)| {
+                if style.expiration.is_expired(&now) {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for name in style_name {
+            self.style_map.remove(&name);
+        }
+    }
+    pub fn layer_cache(&self, name: &str) -> Option<GeoJson> {
+        self.layer_map
+            .get(name)
+            .map_or(None, |cache| Some(cache.inner.clone()))
+    }
+    pub fn style_cache(&self, name: &str) -> Option<RenderOption> {
+        self.style_map
+            .get(name)
+            .map_or(None, |cache| Some(cache.inner.clone()))
+    }
+    pub async fn read_geojson_form_link(link: &str) -> Result<GeoJson, String> {
+        let geojson_str = reqwest::get(link)
+            .await
+            .map_err(|e| format!("request data error: {}", e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| format!("recive data read error: {}", e.to_string()))?;
+        geojson_str
+            .parse::<GeoJson>()
+            .map_err(|e| format!("convert {} failed: {}", link, e.to_string()))
+    }
+    pub fn read_geojson_form_fs(
+        config: &State<Config>,
+        geojson_path_str: &str,
+    ) -> Result<GeoJson, String> {
+        let geojson_path = config.data_path.join(geojson_path_str);
+        if !geojson_path.exists() {
+            return Err(format!("can not find {}", geojson_path_str));
+        }
+        let mut file = File::open(geojson_path.as_path())
+            .map_err(|e| format!("open {} failed: {}", geojson_path.display(), e.to_string()))?;
+        let mut geojson_str = String::new();
+        let _ = file.read_to_string(&mut geojson_str);
+        geojson_str.parse::<GeoJson>().map_err(|e| {
+            format!(
+                "convert {} failed: {}",
+                geojson_path.display(),
+                e.to_string()
+            )
+        })
+    }
+    pub async fn read_style_form_link(link: &str) -> Result<RenderOption, String> {
+        let option_str = reqwest::get(link)
+            .await
+            .map_err(|e| format!("request data error: {}", e.to_string()))?
+            .text()
+            .await
+            .map_err(|e| format!("recive data read error: {}", e.to_string()))?;
+        ron::de::from_str(&option_str)
+            .map_err(|e| format!("convert {} failed: {}", link, e.to_string()))
+    }
+    pub fn read_style_form_fs(
+        config: &State<Config>,
+        style_path: &str,
+    ) -> Result<RenderOption, String> {
+        let style_path = match style_path.ends_with(".ron") {
+            true => style_path.to_string(),
+            false => format!("{}.ron", style_path),
+        };
+        let render_option_path = config.data_path.join(style_path);
+        if !render_option_path.exists() {
+            return Err(format!("can not find {}", render_option_path.display()));
+        }
+        let option_str = std::fs::read_to_string(render_option_path.as_path()).map_err(|e| {
+            format!(
+                "open {} failed: {}",
+                render_option_path.display(),
+                e.to_string()
+            )
+        })?;
+        ron::de::from_str(&option_str).map_err(|e| {
+            format!(
+                "convert {} failed: {}",
+                render_option_path.display(),
+                e.to_string()
+            )
+        })
+    }
+    pub async fn read_layer(
+        &mut self,
+        config: &State<Config>,
+        geojson_path_str: &str,
+        expiration: Expiration,
+    ) -> Result<GeoJson, String> {
+        let is_link = geojson_path_str.to_lowercase().starts_with("http");
+        let geojson = if is_link {
+            Self::read_geojson_form_link(geojson_path_str).await?
+        } else {
+            Self::read_geojson_form_fs(config, geojson_path_str)?
+        };
+        let cache = LayerCache {
+            inner: geojson.clone(),
+            kind: if is_link {
+                DataKind::Link
+            } else {
+                DataKind::File
+            },
+            expiration: expiration,
+        };
+        self.layer_map.insert(geojson_path_str.to_string(), cache);
+        Ok(geojson)
+    }
+    pub async fn read_style(
+        &mut self,
+        config: &State<Config>,
+        style_path: &str,
+        expiration: Expiration,
+    ) -> Result<RenderOption, String> {
+        let is_link = style_path.to_lowercase().starts_with("http");
+        let style = if is_link {
+            Self::read_style_form_link(style_path).await?
+        } else {
+            Self::read_style_form_fs(config, style_path)?
+        };
+        let cache = StyleCache {
+            inner: style.clone(),
+            kind: if is_link {
+                DataKind::Link
+            } else {
+                DataKind::File
+            },
+            expiration: expiration,
+        };
+        self.style_map.insert(style_path.to_string(), cache);
+        Ok(style)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DataKind {
+    File,
+    Link,
+}
+#[derive(Debug, Clone)]
+enum Expiration {
+    Never,
+    At(Instant),
+}
+
+impl Expiration {
+    pub fn is_expired(&self, instant: &Instant) -> bool {
+        match self {
+            Expiration::Never => false,
+            Expiration::At(expiration) => expiration > instant,
+        }
+    }
+}
+
+impl Default for Expiration {
+    fn default() -> Expiration {
+        let dur = Duration::from_secs(60 * 60 * 24);
+        let expiration = Instant::now() + dur;
+        Expiration::At(expiration)
+    }
+}
+
+#[derive(Debug)]
+struct LayerCache {
+    inner: GeoJson,
+    kind: DataKind,
+    expiration: Expiration,
+}
+#[derive(Debug)]
+struct StyleCache {
+    inner: RenderOption,
+    kind: DataKind,
+    expiration: Expiration,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -389,6 +648,8 @@ fn convert_bbox(bbox_str: Option<String>, need_proj: bool) -> RenderRegion {
     }
 }
 
+const CHAR_NOT_ALLOWED_IN_PATH: [char; 9] = ['\\', ',', ':', '*', '<', '>', '?', '|', '\"'];
+
 fn get_image_path(
     data_path: &str,
     style_path: &str,
@@ -398,6 +659,8 @@ fn get_image_path(
     config: &State<Config>,
 ) -> (String, String) {
     let dir = config.data_path.join(&config.cache_path);
+    let data_path = data_path.replace(CHAR_NOT_ALLOWED_IN_PATH, "/");
+    let style_path = style_path.replace(CHAR_NOT_ALLOWED_IN_PATH, "/");
     let dir = dir.to_str().unwrap_or("cache");
     (
         format!("{dir}/{data_path}/{style_path}/{z}/{x}"),
@@ -405,55 +668,54 @@ fn get_image_path(
     )
 }
 
-fn get_data_from_fs(
+async fn get_style_from_cache(
+    config: &State<Config>,
+    style_path: &str,
+    data_cache: &State<Arc<RwLock<DataCache>>>,
+    expiration: Option<Expiration>,
+) -> Result<RenderOption, String> {
+    let data_cache = Arc::clone(data_cache);
+    let cache = data_cache.read().await;
+    let render_option_cache = cache.style_cache(style_path);
+    drop(cache);
+    if render_option_cache.is_none() {
+        let expiration = expiration.unwrap_or(Expiration::Never);
+        let mut cache = data_cache.write().await;
+        let render_option = cache.read_style(config, style_path, expiration).await?;
+        drop(cache);
+        Ok(render_option)
+    } else {
+        Ok(render_option_cache.unwrap())
+    }
+}
+
+async fn get_data_from_cache(
     config: &State<Config>,
     data_path: &str,
-    style_path: &str,
-) -> Result<(Vec<(String, GeoJson)>, RenderOption), String> {
+    data_cache: &State<Arc<RwLock<DataCache>>>,
+    expiration: Option<Expiration>,
+) -> Result<Vec<(String, GeoJson)>, String> {
+    let data_cache = Arc::clone(data_cache);
     let mut geojson_data_vec = Vec::new();
     let geojson_path_vec = data_path.split(',');
+    let expiration = expiration.unwrap_or(Expiration::default());
     for geojson_path_str in geojson_path_vec {
-        let geojson_path = config.data_path.join(geojson_path_str);
-        if !geojson_path.exists() {
-            return Err(format!("can not find {}", data_path));
+        let cache = data_cache.read().await;
+        let geojson = cache.layer_cache(geojson_path_str);
+        drop(cache);
+        if geojson.is_none() {
+            let mut cache = data_cache.write().await;
+            let geojson = cache
+                .read_layer(config, geojson_path_str, expiration.clone())
+                .await?;
+            drop(cache);
+            geojson_data_vec.push((geojson_path_str.to_string(), geojson));
+        } else {
+            geojson_data_vec.push((geojson_path_str.to_string(), geojson.unwrap()));
         }
-        let mut file = File::open(geojson_path.as_path())
-            .map_err(|e| format!("open {} failed: {}", geojson_path.display(), e.to_string()))?;
-        let mut geojson_str = String::new();
-        let _ = file.read_to_string(&mut geojson_str);
-        let geojson = geojson_str.parse::<GeoJson>().map_err(|e| {
-            format!(
-                "convert {} failed: {}",
-                geojson_path.display(),
-                e.to_string()
-            )
-        })?;
-        geojson_data_vec.push((geojson_path_str.to_string(), geojson));
     }
 
-    let style_path = match style_path.ends_with(".ron") {
-        true => style_path.to_string(),
-        false => format!("{}.ron", style_path),
-    };
-    let render_option_path = config.data_path.join(style_path);
-    if !render_option_path.exists() {
-        return Err(format!("can not find {}", render_option_path.display()));
-    }
-    let option_str = std::fs::read_to_string(render_option_path.as_path()).map_err(|e| {
-        format!(
-            "open {} failed: {}",
-            render_option_path.display(),
-            e.to_string()
-        )
-    })?;
-    let render_option: RenderOption = ron::de::from_str(&option_str).map_err(|e| {
-        format!(
-            "convert {} failed: {}",
-            render_option_path.display(),
-            e.to_string()
-        )
-    })?;
-    Ok((geojson_data_vec, render_option))
+    Ok(geojson_data_vec)
 }
 
 fn get_all_render_rect(
@@ -595,9 +857,9 @@ async fn render_wms(
     image::RgbaImage::from_raw(width, height, buffer).ok_or(String::from("render image error"))
 }
 
-fn get_one_texture(texture_vec: &Arc<Mutex<Vec<Texture>>>) -> Texture {
+async fn get_one_texture(texture_vec: &Arc<Mutex<Vec<Texture>>>) -> Texture {
     loop {
-        let mut v = texture_vec.lock().unwrap();
+        let mut v = texture_vec.lock().await;
         let x = v.pop();
         if x.is_some() {
             drop(v);
@@ -618,7 +880,7 @@ async fn render_wmts_tile(
     render_option: &RenderOption,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
     let texture_vec = Arc::clone(texture_vec);
-    let texture = get_one_texture(&texture_vec);
+    let texture = get_one_texture(&texture_vec).await;
     // vello::Renderer is !Sync can not be shared between threads
     let mut renderer = vello::Renderer::new(
         &device,
@@ -641,7 +903,7 @@ async fn render_wmts_tile(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let mut v = texture_vec.lock().unwrap();
+    let mut v = texture_vec.lock().await;
     v.push(texture);
     drop(v);
     image::RgbaImage::from_raw(256, 256, buffer).ok_or(String::from("render image error"))

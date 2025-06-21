@@ -4,7 +4,7 @@ use vello::{
     peniko::{Brush, color::palette},
 };
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PointRenderer {
     pub radius: f64,
     pub brush: Brush,

@@ -4,7 +4,7 @@ use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
 use crate::{GeometryRenderer, utils};
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
     pub width: u32,
     pub height: u32,
@@ -28,7 +28,7 @@ pub enum TileProj {
     EPSG3857,
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum RenderRegion {
     #[default]
     All,
@@ -37,7 +37,7 @@ pub enum RenderRegion {
     TileIndex(u32, u32, u32),
 }
 
-#[derive(Default, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RenderOption {
     pub region: RenderRegion,
     pub pixel_option: PixelOption,
