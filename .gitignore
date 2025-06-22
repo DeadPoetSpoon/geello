@@ -1,3 +1,5 @@
 /target
 assets/test/*
 !assets/test/.traced
+/.cargo
+/vendor
