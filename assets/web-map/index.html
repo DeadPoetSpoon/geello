@@ -54,9 +54,17 @@
                             class="btn btn-outline-secondary"
                             type="button"
                             id="button-addon2"
-                            onclick="addlayer()"
+                            onclick="addlayer('cache')"
                         >
-                            Add
+                            +
+                        </button>
+                        <button
+                            class="btn btn-outline-secondary"
+                            type="button"
+                            id="button-addon2"
+                            onclick="addlayer('real-time')"
+                        >
+                            RT
                         </button>
                     </div>
                     <div class="input-group mb-3">
@@ -136,7 +144,7 @@
 
     // Add a tile layer to the map
     let layer_map = new Map();
-    function addlayer() {
+    function addlayer(type) {
         let layer_input = document.getElementById("layer_input").value.trim();
         let style_input = document.getElementById("style_input").value.trim();
         let layer_name = `${layer_input}(${style_input})`;
@@ -145,7 +153,7 @@
             return;
         }
         let layer = L.tileLayer(
-            `/wmts/cache?layers=${layer_input}&styles=${style_input}&x={x}&y={y}&z={z}`,
+            `/wmts/${type}?layers=${layer_input}&styles=${style_input}&x={x}&y={y}&z={z}`,
             {},
         ).addTo(map);
         layer_map.set(layer_name, layer);

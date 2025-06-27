@@ -2,7 +2,7 @@ use geo::Rect;
 use peniko::color::{AlphaColor, Srgb};
 use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
-use crate::{GeometryRenderer, MagicValue, utils};
+use crate::{GeometryRenderer, MagicFetcher, MagicValue, utils};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
@@ -37,15 +37,6 @@ pub enum RenderRegion {
     TileIndex(u32, u32, u32),
 }
 
-#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RenderOption {
-    pub region: RenderRegion,
-    pub pixel_option: PixelOption,
-    pub renderers: Vec<MagicValue<GeometryRenderer>>,
-    pub tile_proj: TileProj,
-    pub need_proj_geom: bool,
-}
-
 impl RenderRegion {
     pub fn get_rect(&self, proj: &TileProj) -> Option<Rect> {
         match self {
@@ -54,6 +45,29 @@ impl RenderRegion {
             RenderRegion::TileIndex(x, y, z) => Some(utils::get_rect_from_xyz(*x, *y, *z, proj)),
             RenderRegion::PointBuffer(x, y, z) => Some(Rect::new((x - z, y + z), (x + z, y - z))),
         }
+    }
+}
+
+#[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RenderOption {
+    #[serde(default)]
+    pub region: RenderRegion,
+    #[serde(default)]
+    pub pixel_option: PixelOption,
+    #[serde(default)]
+    pub renderers: Vec<MagicValue<GeometryRenderer>>,
+    #[serde(default)]
+    pub tile_proj: TileProj,
+    #[serde(default)]
+    pub need_proj_geom: bool,
+}
+
+impl MagicFetcher for RenderOption {
+    fn fetch(&mut self) -> Result<(), String> {
+        for renderer in self.renderers.iter_mut() {
+            renderer.fetch()?;
+        }
+        Ok(())
     }
 }
 

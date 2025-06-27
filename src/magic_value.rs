@@ -1,6 +1,40 @@
 use std::collections::HashMap;
 
+use peniko::Brush;
 use serde::{Deserialize, Serialize};
+use vello::kurbo::Stroke;
+
+pub trait MagicConverter {
+    fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String>;
+}
+
+impl MagicConverter for Brush {
+    fn convert(&mut self, _: &HashMap<String, PropValue>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MagicConverter for Stroke {
+    fn convert(&mut self, _: &HashMap<String, PropValue>) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+pub trait MagicFetcher {
+    fn fetch(&mut self) -> Result<(), String>;
+}
+
+impl MagicFetcher for Brush {
+    fn fetch(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MagicFetcher for Stroke {
+    fn fetch(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum StrEncoding {
@@ -33,6 +67,19 @@ pub struct MagicValue<T> {
     need_scale: bool,
 }
 
+impl<T> MagicValue<T>
+where
+    T: Default,
+{
+    pub fn new_ron(path: String) -> Self {
+        Self {
+            inner: Default::default(),
+            kind: MagicValueKind::Ron(path),
+            need_scale: false,
+        }
+    }
+}
+
 impl<T> MagicValue<T> {
     pub fn new(inner: T) -> Self {
         Self {
@@ -52,6 +99,19 @@ impl<T> MagicValue<T> {
     }
 }
 
+impl<T> Default for MagicValue<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+            kind: MagicValueKind::Fixed,
+            need_scale: false,
+        }
+    }
+}
+
 impl<T> From<T> for MagicValue<T> {
     fn from(value: T) -> Self {
         MagicValue::new(value)
@@ -59,14 +119,14 @@ impl<T> From<T> for MagicValue<T> {
 }
 
 impl MagicValue<PropValue> {
-    pub fn to_f32(self) -> Result<f32, String> {
-        self.inner.try_into()
+    pub fn to_f32(&self) -> Result<f32, String> {
+        self.inner.clone().try_into()
     }
-    pub fn to_f64(self) -> Result<f64, String> {
-        self.inner.try_into()
+    pub fn to_f64(&self) -> Result<f64, String> {
+        self.inner.clone().try_into()
     }
-    pub fn to_string(self) -> Result<String, String> {
-        self.inner.try_into()
+    pub fn to_string(&self) -> Result<String, String> {
+        self.inner.clone().try_into()
     }
     pub fn wrap<D: Into<PropValue>>(value: D) -> Self {
         Self {
@@ -79,7 +139,7 @@ impl MagicValue<PropValue> {
 
 impl<T> MagicValue<T>
 where
-    T: for<'de> Deserialize<'de> + Default,
+    T: for<'de> Deserialize<'de> + Default + MagicFetcher + MagicConverter,
 {
     pub fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
         match &self.kind {
@@ -97,7 +157,11 @@ where
                         }
                     };
                     v.fetch()?;
-                    self.inner = v.unwrap();
+                    v.convert(props)?;
+                    let mut v = v.unwrap();
+                    v.fetch()?;
+                    v.convert(props)?;
+                    self.inner = v;
                     Ok(())
                 } else {
                     return Err(format!("No {} found in props", name));
@@ -106,6 +170,12 @@ where
             _ => Ok(()),
         }
     }
+}
+
+impl<T> MagicValue<T>
+where
+    T: for<'de> Deserialize<'de> + Default + MagicFetcher,
+{
     pub fn fetch(&mut self) -> Result<(), String> {
         let inner = match &self.kind {
             MagicValueKind::Ron(path) => {
@@ -114,7 +184,9 @@ where
                 let mut value: MagicValue<T> = ron::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
-                Some(value.unwrap())
+                let mut value = value.unwrap();
+                value.fetch()?;
+                Some(value)
             }
             #[cfg(feature = "from_json")]
             MagicValueKind::Json(path) => {
@@ -123,7 +195,9 @@ where
                 let mut value: MagicValue<T> = serde_json::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
-                Some(value.unwrap())
+                let mut value = value.unwrap();
+                value.fetch()?;
+                Some(value)
             }
             #[cfg(feature = "from_http")]
             MagicValueKind::Http(url, encoding) => {
@@ -142,7 +216,9 @@ where
                     })?,
                 };
                 value.fetch()?;
-                Some(value.unwrap())
+                let mut value = value.unwrap();
+                value.fetch()?;
+                Some(value)
             }
             _ => None,
         };
@@ -153,8 +229,9 @@ where
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum PropValue {
+    #[default]
     None,
     String(String),
     Float64(f64),
@@ -162,6 +239,18 @@ pub enum PropValue {
     Int32(i32),
     Int64(i64),
     Boolean(bool),
+}
+
+impl MagicFetcher for PropValue {
+    fn fetch(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+impl MagicConverter for PropValue {
+    fn convert(&mut self, _: &HashMap<String, PropValue>) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 impl From<&str> for PropValue {

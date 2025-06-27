@@ -1,4 +1,7 @@
-use geello::{RenderOption, RenderRegion, RenderedGeometry, utils::transform_4326_to_3857_point};
+use geello::{
+    MagicFetcher, MagicValue, RenderOption, RenderRegion, RenderedGeometry,
+    utils::transform_4326_to_3857_point,
+};
 use geo::BoundingRect;
 use geojson::GeoJson;
 use rocket::{
@@ -124,27 +127,24 @@ async fn show_data_cache(data_cache: &State<Arc<RwLock<DataCache>>>) -> Result<S
 #[get("/render-option-example")]
 async fn get_render_option_example() -> Result<String, String> {
     let mut option = geello::RenderOption::default();
-    option.renderers.push(
-        geello::GeometryRenderer::Area(
-            geello::RenderedGeometryFilter::None,
-            geello::AreaRenderer::default(),
-        )
-        .into(),
-    );
+    option
+        .renderers
+        .push(MagicValue::new_ron("assets/test/area.ron".to_string()));
     option.renderers.push(
         geello::GeometryRenderer::Line(
-            geello::RenderedGeometryFilter::None,
-            geello::LineRenderer::default(),
+            geello::RenderedGeometryFilter::None.into(),
+            geello::LineRenderer::default().into(),
         )
         .into(),
     );
     option.renderers.push(
         geello::GeometryRenderer::Point(
-            geello::RenderedGeometryFilter::Layer("some_layer".to_string()),
-            geello::PointRenderer::default(),
+            geello::RenderedGeometryFilter::Layer("some_layer".to_string()).into(),
+            geello::PointRenderer::default().into(),
         )
         .into(),
     );
+    let option: MagicValue<RenderOption> = option.into();
     ron::ser::to_string_pretty(&option, ron::ser::PrettyConfig::default())
         .map_err(|e| format!("Ser error: {}", e.to_string()))
 }
@@ -219,12 +219,13 @@ async fn anim_real_time_websocket<'a>(
                     let inner = type_renderer.as_mut();
                     match inner {
                         geello::GeometryRenderer::Point(_,point_renderer) => {
+                            let point_renderer = point_renderer.as_mut();
                             if i == 0 {
-                                point_renderer.radius = 0.1;
-                                // log::error!("i: 0");
+                                point_renderer.radius = MagicValue::wrap(0.1);
                             }else{
                                 let i = i as f64;
-                                point_renderer.radius = point_renderer.radius + 0.001 * i;
+                                let old = point_renderer.radius.to_f64().unwrap();
+                                point_renderer.radius = MagicValue::wrap(old + 0.001 * i);
                             }
 
                         }
@@ -450,7 +451,7 @@ impl DataCache {
             )
         })
     }
-    pub async fn read_style_form_link(link: &str) -> Result<RenderOption, String> {
+    pub async fn read_style_form_link(link: &str) -> Result<MagicValue<RenderOption>, String> {
         let option_str = reqwest::get(link)
             .await
             .map_err(|e| format!("request data error: {}", e.to_string()))?
@@ -463,7 +464,7 @@ impl DataCache {
     pub fn read_style_form_fs(
         config: &State<Config>,
         style_path: &str,
-    ) -> Result<RenderOption, String> {
+    ) -> Result<MagicValue<RenderOption>, String> {
         let style_path = match style_path.ends_with(".ron") {
             true => style_path.to_string(),
             false => format!("{}.ron", style_path),
@@ -506,7 +507,7 @@ impl DataCache {
             } else {
                 DataKind::File
             },
-            expiration: expiration,
+            expiration,
         };
         self.layer_map.insert(geojson_path_str.to_string(), cache);
         Ok(geojson)
@@ -518,11 +519,14 @@ impl DataCache {
         expiration: Expiration,
     ) -> Result<RenderOption, String> {
         let is_link = style_path.to_lowercase().starts_with("http");
-        let style = if is_link {
+        let mut style = if is_link {
             Self::read_style_form_link(style_path).await?
         } else {
             Self::read_style_form_fs(config, style_path)?
         };
+        style.fetch()?;
+        let mut style = style.unwrap();
+        style.fetch()?;
         let cache = StyleCache {
             inner: style.clone(),
             kind: if is_link {
@@ -530,7 +534,7 @@ impl DataCache {
             } else {
                 DataKind::File
             },
-            expiration: expiration,
+            expiration,
         };
         self.style_map.insert(style_path.to_string(), cache);
         Ok(style)
@@ -991,7 +995,8 @@ fn get_rendered_geometry(
     let mut rendered_geom = Vec::new();
     for (layer, geom) in geom_vec {
         for g in geom {
-            let rg = RenderedGeometry::new(Some(layer.clone()), g.clone(), &proj);
+            let rg =
+                RenderedGeometry::new(Some(layer.clone()), Default::default(), g.clone(), &proj);
             rendered_geom.push(rg);
         }
     }

@@ -1,10 +1,13 @@
-use crate::{RenderedGeometryFilter, TileProj};
+use std::collections::HashMap;
+
+use crate::{PropValue, RenderedGeometryFilter, TileProj};
 use geo::{
     BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, Intersects,
     LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
 };
 pub struct RenderedGeometry {
     layer: Option<String>,
+    props: HashMap<String, PropValue>,
     inner_geom: Geometry,
     center_point: Option<Point>,
     has_calc_center_point: bool,
@@ -15,16 +18,22 @@ pub struct RenderedGeometry {
 }
 
 impl RenderedGeometry {
-    pub fn new_temp(inner_geom: Geometry) -> Self {
-        RenderedGeometry::new(None, inner_geom, &None)
+    pub fn new_temp(props: HashMap<String, PropValue>, inner_geom: Geometry) -> Self {
+        RenderedGeometry::new(None, props, inner_geom, &None)
     }
-    pub fn new(layer: Option<String>, mut inner_geom: Geometry, proj: &Option<TileProj>) -> Self {
+    pub fn new(
+        layer: Option<String>,
+        props: HashMap<String, PropValue>,
+        mut inner_geom: Geometry,
+        proj: &Option<TileProj>,
+    ) -> Self {
         if let Some(proj) = proj {
             crate::utils::transform(&mut inner_geom, proj);
         }
         RenderedGeometry {
             layer,
             inner_geom,
+            props,
             center_point: None,
             has_calc_center_point: false,
             lines: None,
@@ -32,6 +41,9 @@ impl RenderedGeometry {
             areas: None,
             has_calc_areas: false,
         }
+    }
+    pub fn props(&self) -> &HashMap<String, PropValue> {
+        &self.props
     }
     pub fn fit_filter(&self, filter: &RenderedGeometryFilter) -> bool {
         match filter {

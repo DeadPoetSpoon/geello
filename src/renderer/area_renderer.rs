@@ -6,7 +6,7 @@ use vello::{
     peniko::{Brush, color::palette},
 };
 
-use crate::RenderedGeometry;
+use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue, RenderedGeometry};
 
 use super::{GeometryRenderer, LineRenderer};
 
@@ -19,66 +19,121 @@ pub enum LineKind {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AreaRenderer {
-    pub brush: Brush,
-    pub line_renderers: HashMap<LineKind, Vec<GeometryRenderer>>,
+    pub brush: MagicValue<Brush>,
+    pub line_renderers: MagicValue<HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>>>,
 }
 
 impl std::default::Default for AreaRenderer {
     fn default() -> Self {
         Self {
-            brush: Brush::Solid(palette::css::SEA_GREEN),
-            line_renderers: HashMap::default(),
+            brush: Brush::Solid(palette::css::SEA_GREEN).into(),
+            line_renderers: HashMap::default().into(),
         }
     }
 }
 
-impl AreaRenderer {
-    pub fn draw_multi(&self, scene: &mut vello::Scene, transform: Affine, polygons: &MultiPolygon) {
-        for polygon in polygons {
-            self.draw(scene, transform, polygon);
-        }
+impl MagicFetcher for AreaRenderer {
+    fn fetch(&mut self) -> Result<(), String> {
+        self.brush.fetch()?;
+        self.line_renderers.fetch()?;
+        Ok(())
     }
-    pub fn draw(&self, scene: &mut vello::Scene, transform: Affine, polygon: &Polygon) {
+}
+
+impl MagicConverter for AreaRenderer {
+    fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
+        self.brush.convert(props)?;
+        self.line_renderers.convert(props)?;
+        Ok(())
+    }
+}
+
+impl MagicFetcher for HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>> {
+    fn fetch(&mut self) -> Result<(), String> {
+        for (_, renderers) in self.iter_mut() {
+            for renderer in renderers {
+                renderer.fetch()?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl MagicConverter for HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>> {
+    fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
+        for (_, renderers) in self.iter_mut() {
+            for renderer in renderers {
+                renderer.convert(props)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl AreaRenderer {
+    pub fn draw_multi(
+        &mut self,
+        scene: &mut vello::Scene,
+        transform: Affine,
+        polygons: &MultiPolygon,
+    ) -> Result<(), String> {
+        for polygon in polygons {
+            self.draw(scene, transform, polygon)?;
+        }
+        Ok(())
+    }
+    pub fn draw(
+        &mut self,
+        scene: &mut vello::Scene,
+        transform: Affine,
+        polygon: &Polygon,
+    ) -> Result<(), String> {
+        let brush = self.brush.as_ref();
+        let line_renderers = self.line_renderers.as_mut();
         let exterior = polygon.exterior();
         let interiors = polygon.interiors();
         let exterior_path = AreaRenderer::to_shape(polygon);
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,
-            &self.brush,
+            brush,
             None,
             &exterior_path,
         );
         let exterior_geom: Geometry = exterior.clone().into();
-        let mut exterior_geom = vec![RenderedGeometry::new_temp(exterior_geom)];
+        let mut exterior_geom = vec![RenderedGeometry::new_temp(
+            Default::default(),
+            exterior_geom,
+        )];
         let interior_geoms: Vec<Geometry> = interiors
             .iter()
             .map(|interior| interior.clone().into())
             .collect();
         let mut interior_geoms: Vec<RenderedGeometry> = interior_geoms
             .iter()
-            .map(|interior| RenderedGeometry::new_temp(interior.clone()))
+            .map(|interior| RenderedGeometry::new_temp(Default::default(), interior.clone()))
             .collect();
-        for (kind, renderers) in self.line_renderers.iter() {
+        for (kind, renderers) in line_renderers.iter_mut() {
             match kind {
                 LineKind::All => {
-                    renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut exterior_geom, None);
-                        renderer.draw(scene, transform, &mut interior_geoms, None);
-                    });
+                    for renderer in renderers.iter_mut().map(|x| x.as_mut()) {
+                        renderer.draw(scene, transform, &mut exterior_geom, None)?;
+                        renderer.draw(scene, transform, &mut interior_geoms, None)?;
+                    }
                 }
                 LineKind::Exterior => {
-                    renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut exterior_geom, None);
-                    });
+                    for renderer in renderers.iter_mut().map(|x| x.as_mut()) {
+                        renderer.draw(scene, transform, &mut exterior_geom, None)?;
+                    }
                 }
                 LineKind::Interior => {
-                    renderers.iter().for_each(|renderer| {
-                        renderer.draw(scene, transform, &mut interior_geoms, None);
-                    });
+                    for renderer in renderers.iter_mut().map(|x| x.as_mut()) {
+                        renderer.draw(scene, transform, &mut interior_geoms, None)?;
+                    }
                 }
             }
         }
+        Ok(())
     }
     pub fn to_shape(polygon: &Polygon) -> BezPath {
         let exterior = polygon.exterior();

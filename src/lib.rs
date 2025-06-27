@@ -27,10 +27,10 @@ pub fn render_to_texture(
     let rect = option.get_region_rect();
     let g_transform = option.get_view_transform(&rect);
     let g_transform = option.get_scale_transform(&rect) * g_transform;
-    option.renderers.iter_mut().for_each(|renderer| {
+    for renderer in option.renderers.iter_mut() {
         let renderer = renderer.as_mut();
-        renderer.draw(&mut scene, transform * g_transform, geoms, rect);
-    });
+        renderer.draw(&mut scene, transform * g_transform, geoms, rect)?;
+    }
     let render_params = option.get_render_params();
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
     renderer
