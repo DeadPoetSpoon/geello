@@ -124,18 +124,27 @@ async fn show_data_cache(data_cache: &State<Arc<RwLock<DataCache>>>) -> Result<S
 #[get("/render-option-example")]
 async fn get_render_option_example() -> Result<String, String> {
     let mut option = geello::RenderOption::default();
-    option.renderers.push(geello::GeometryRenderer::Area(
-        geello::RenderedGeometryFilter::None,
-        geello::AreaRenderer::default(),
-    ));
-    option.renderers.push(geello::GeometryRenderer::Line(
-        geello::RenderedGeometryFilter::None,
-        geello::LineRenderer::default(),
-    ));
-    option.renderers.push(geello::GeometryRenderer::Point(
-        geello::RenderedGeometryFilter::Layer("some_layer".to_string()),
-        geello::PointRenderer::default(),
-    ));
+    option.renderers.push(
+        geello::GeometryRenderer::Area(
+            geello::RenderedGeometryFilter::None,
+            geello::AreaRenderer::default(),
+        )
+        .into(),
+    );
+    option.renderers.push(
+        geello::GeometryRenderer::Line(
+            geello::RenderedGeometryFilter::None,
+            geello::LineRenderer::default(),
+        )
+        .into(),
+    );
+    option.renderers.push(
+        geello::GeometryRenderer::Point(
+            geello::RenderedGeometryFilter::Layer("some_layer".to_string()),
+            geello::PointRenderer::default(),
+        )
+        .into(),
+    );
     ron::ser::to_string_pretty(&option, ron::ser::PrettyConfig::default())
         .map_err(|e| format!("Ser error: {}", e.to_string()))
 }
@@ -206,19 +215,22 @@ async fn anim_real_time_websocket<'a>(
             render_option
                 .renderers
                 .iter_mut()
-                .for_each(|type_renderer| match type_renderer {
-                    geello::GeometryRenderer::Point(_,point_renderer) => {
-                        if i == 0 {
-                            point_renderer.radius = 0.1;
-                            // log::error!("i: 0");
-                        }else{
-                            let i = i as f64;
-                            point_renderer.radius = point_renderer.radius + 0.001 * i;
-                        }
+                .for_each(|type_renderer| {
+                    let inner = type_renderer.as_mut();
+                    match inner {
+                        geello::GeometryRenderer::Point(_,point_renderer) => {
+                            if i == 0 {
+                                point_renderer.radius = 0.1;
+                                // log::error!("i: 0");
+                            }else{
+                                let i = i as f64;
+                                point_renderer.radius = point_renderer.radius + 0.001 * i;
+                            }
 
+                        }
+                        geello::GeometryRenderer::Line(_,_) => {}
+                        geello::GeometryRenderer::Area(_,_) => {}
                     }
-                    geello::GeometryRenderer::Line(_,_) => {}
-                    geello::GeometryRenderer::Area(_,_) => {}
                 });
             let image = render_wms_on_texture(&geojson, device, queue,&mut renderer,&texture,  &mut render_option).await.expect("render errors.");
 
@@ -285,8 +297,15 @@ async fn wmts_real_time(
     let geojson = get_data_from_cache(config, &layers, data_cache, None).await?;
     let mut render_option = get_style_from_cache(config, &styles, data_cache, None).await?;
     render_option.region = RenderRegion::TileIndex(x, y, z);
-    let image =
-        render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
+    let image = render_wmts_tile(
+        &geojson,
+        device,
+        queue,
+        config,
+        texture_vec,
+        &mut render_option,
+    )
+    .await?;
     let image_format = convert_format(format);
     let size = image.width() * image.height() * 4;
     let buffer = Vec::with_capacity(size as usize);
@@ -322,8 +341,15 @@ async fn wmts_cache(
         let geojson = get_data_from_cache(config, &layers, data_cache, None).await?;
         let mut render_option = get_style_from_cache(config, &styles, data_cache, None).await?;
         render_option.region = RenderRegion::TileIndex(x, y, z);
-        let image =
-            render_wmts_tile(&geojson, device, queue, config, texture_vec, &render_option).await?;
+        let image = render_wmts_tile(
+            &geojson,
+            device,
+            queue,
+            config,
+            texture_vec,
+            &mut render_option,
+        )
+        .await?;
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("create dir failed: {}", e.to_string()))?;
         image
@@ -877,7 +903,7 @@ async fn render_wmts_tile(
     queue: &State<Queue>,
     config: &State<Config>,
     texture_vec: &State<Arc<Mutex<Vec<Texture>>>>,
-    render_option: &RenderOption,
+    render_option: &mut RenderOption,
 ) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, String> {
     let texture_vec = Arc::clone(texture_vec);
     let texture = get_one_texture(&texture_vec).await;
@@ -899,7 +925,7 @@ async fn render_wmts_tile(
         &mut renderer,
         &texture,
         Affine::IDENTITY,
-        &render_option,
+        render_option,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -915,7 +941,7 @@ async fn render_geojson_to_buffer_with_new_texture(
     queue: &Queue,
     renderer: &mut Renderer,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<Vec<u8>, String> {
     let geom_to_render_vec = get_geom_from_geojson_vec(geojson)
         .map_err(|e| format!("read geojson error: {}", e.to_string()))?;
@@ -937,7 +963,7 @@ async fn render_geojson_to_buffer(
     renderer: &mut Renderer,
     texture: &Texture,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<Vec<u8>, String> {
     let geom_to_render_vec = get_geom_from_geojson_vec(geojson)
         .map_err(|e| format!("read geojson error: {}", e.to_string()))?;

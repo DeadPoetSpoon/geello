@@ -4,6 +4,8 @@ pub mod utils;
 pub use rendered_geometry::*;
 pub mod renderer;
 pub use render_option::*;
+pub mod magic_value;
+pub use magic_value::*;
 pub use renderer::*;
 use vello::{
     Renderer,
@@ -19,13 +21,14 @@ pub fn render_to_texture(
     renderer: &mut Renderer,
     texture: &Texture,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<(), String> {
     let mut scene = vello::Scene::new();
     let rect = option.get_region_rect();
     let g_transform = option.get_view_transform(&rect);
     let g_transform = option.get_scale_transform(&rect) * g_transform;
-    option.renderers.iter().for_each(|renderer| {
+    option.renderers.iter_mut().for_each(|renderer| {
+        let renderer = renderer.as_mut();
         renderer.draw(&mut scene, transform * g_transform, geoms, rect);
     });
     let render_params = option.get_render_params();
@@ -42,7 +45,7 @@ pub fn render_to_texture_with_new_texture(
     queue: &Queue,
     renderer: &mut Renderer,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<Texture, String> {
     let texture_desc = option.get_texture_descriptor();
     let texture = device.create_texture(&texture_desc);
@@ -57,7 +60,7 @@ pub fn render_to_buffer(
     renderer: &mut Renderer,
     texture: &Texture,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<Vec<u8>, String> {
     let mut clear_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("Clear Texture"),
@@ -128,7 +131,7 @@ pub fn render_to_buffer_with_new_texture(
     queue: &Queue,
     renderer: &mut Renderer,
     transform: Affine,
-    option: &RenderOption,
+    option: &mut RenderOption,
 ) -> Result<Vec<u8>, String> {
     let texture_desc = option.get_texture_descriptor();
     let texture = device.create_texture(&texture_desc);

@@ -2,7 +2,7 @@ use geo::Rect;
 use peniko::color::{AlphaColor, Srgb};
 use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
-use crate::{GeometryRenderer, utils};
+use crate::{GeometryRenderer, MagicValue, utils};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
@@ -41,7 +41,7 @@ pub enum RenderRegion {
 pub struct RenderOption {
     pub region: RenderRegion,
     pub pixel_option: PixelOption,
-    pub renderers: Vec<GeometryRenderer>,
+    pub renderers: Vec<MagicValue<GeometryRenderer>>,
     pub tile_proj: TileProj,
     pub need_proj_geom: bool,
 }

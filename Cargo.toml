@@ -26,14 +26,17 @@ vello = "0.5.0"
 peniko = { version = "0.4.0", default-features = false, features = ["serde"] }
 log = "0.4.27"
 tokio = { version = "1.45.1", features = ["full"] }
-
+ron = "0.10.1"
 # server
 image = { version = "0.25.6", features = ["serde"], optional = true }
-ron = { version = "0.10.1", optional = true }
+
 geojson = { version = "0.24.2", optional = true }
 rocket = { version = "0.5.1", optional = true }
 rocket_ws = { version = "0.1.1", optional = true }
-reqwest = { version = "0.12.20", optional = true }
+reqwest = { version = "0.12.20", features = ["blocking"], optional = true }
+serde_json = { version = "1.0.140", optional = true }
 
 [features]
-server = ["image", "ron", "geojson", "rocket", "rocket_ws", "reqwest"]
+server = ["image", "geojson", "rocket", "rocket_ws", "reqwest"]
+from_http = ["reqwest"]
+from_json = ["serde_json"]
