@@ -184,9 +184,7 @@ where
                 let mut value: MagicValue<T> = ron::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
-                let mut value = value.unwrap();
-                value.fetch()?;
-                Some(value)
+                Some(value.unwrap())
             }
             #[cfg(feature = "from_json")]
             MagicValueKind::Json(path) => {
@@ -195,9 +193,7 @@ where
                 let mut value: MagicValue<T> = serde_json::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
-                let mut value = value.unwrap();
-                value.fetch()?;
-                Some(value)
+                Some(value.unwrap())
             }
             #[cfg(feature = "from_http")]
             MagicValueKind::Http(url, encoding) => {
@@ -216,15 +212,14 @@ where
                     })?,
                 };
                 value.fetch()?;
-                let mut value = value.unwrap();
-                value.fetch()?;
-                Some(value)
+                Some(value.unwrap())
             }
             _ => None,
         };
         if inner.is_some() {
             self.inner = inner.unwrap();
         }
+        self.inner.fetch()?;
         Ok(())
     }
 }
