@@ -124,36 +124,47 @@ async fn show_data_cache(data_cache: &State<Arc<RwLock<DataCache>>>) -> Result<S
     Ok(cache_str.join("\n"))
 }
 
-#[get("/render-option-example")]
-async fn get_render_option_example() -> Result<String, String> {
-    let mut option = geello::RenderOption::default();
-    option
-        .renderers
-        .push(MagicValue::new_ron("assets/test/area.ron".to_string()));
-    option.renderers.push(
-        geello::GeometryRenderer::Line(
+#[get("/example/<name>")]
+async fn get_render_option_example(name: String) -> Result<String, String> {
+    if name == "area-renderer" {
+        let area_renderer = geello::AreaRenderer::default();
+        let area_renderer = geello::GeometryRenderer::Area(
             geello::RenderedGeometryFilter::None.into(),
-            geello::LineRenderer::default().into(),
-        )
-        .into(),
-    );
-    option.renderers.push(
-        geello::GeometryRenderer::Point(
-            geello::RenderedGeometryFilter::Layer("some_layer".to_string()).into(),
-            geello::PointRenderer::default().into(),
-        )
-        .into(),
-    );
-    let option: MagicValue<RenderOption> = option.into();
-    ron::ser::to_string_pretty(&option, ron::ser::PrettyConfig::default())
-        .map_err(|e| format!("Ser error: {}", e.to_string()))
+            area_renderer.into(),
+        );
+        let area_renderer = MagicValue::new(area_renderer);
+        ron::ser::to_string_pretty(&area_renderer, ron::ser::PrettyConfig::default())
+            .map_err(|e| format!("Ser error: {}", e.to_string()))
+    } else {
+        let mut option = geello::RenderOption::default();
+        option
+            .renderers
+            .push(MagicValue::new_ron("assets/test/area.ron".to_string()));
+        option.renderers.push(
+            geello::GeometryRenderer::Line(
+                geello::RenderedGeometryFilter::None.into(),
+                geello::LineRenderer::default().into(),
+            )
+            .into(),
+        );
+        option.renderers.push(
+            geello::GeometryRenderer::Point(
+                geello::RenderedGeometryFilter::Layer("some_layer".to_string()).into(),
+                geello::PointRenderer::default().into(),
+            )
+            .into(),
+        );
+        let option: MagicValue<RenderOption> = option.into();
+        ron::ser::to_string_pretty(&option, ron::ser::PrettyConfig::default())
+            .map_err(|e| format!("Ser error: {}", e.to_string()))
+    }
 }
 
-#[get("/map")]
-async fn web_map(config: &State<Config>) -> Result<NamedFile, String> {
-    let mut path = PathBuf::from("assets/web-map/index.html");
+#[get("/map/<path>")]
+async fn web_map(path: PathBuf, config: &State<Config>) -> Result<NamedFile, String> {
+    let mut path = PathBuf::from("assets/web-map").join(path);
     if !path.exists() {
-        path = config.data_path.join("web-map").join("index.html");
+        path = config.data_path.join("web-map").join(path);
     }
     NamedFile::open(path)
         .await
@@ -224,13 +235,12 @@ async fn anim_real_time_websocket<'a>(
                                 point_renderer.radius = MagicValue::wrap(0.1);
                             }else{
                                 let i = i as f64;
-                                let old = point_renderer.radius.to_f64().unwrap();
+                                let old:f64 = point_renderer.radius.inner_try_into().unwrap();
                                 point_renderer.radius = MagicValue::wrap(old + 0.001 * i);
                             }
 
                         }
-                        geello::GeometryRenderer::Line(_,_) => {}
-                        geello::GeometryRenderer::Area(_,_) => {}
+                        _ => {}
                     }
                 });
             let image = render_wms_on_texture(&geojson, device, queue,&mut renderer,&texture,  &mut render_option).await.expect("render errors.");

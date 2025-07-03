@@ -5,6 +5,10 @@ const EARTH_RADIUS: f64 = 6378137.0;
 const PI: f64 = std::f64::consts::PI;
 const EPSG3857_XY_MAX: f64 = EARTH_RADIUS * PI;
 
+pub fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    value == &T::default()
+}
+
 pub fn get_rect_from_xyz(x: u32, y: u32, z: u32, proj: &TileProj) -> Rect {
     match proj {
         TileProj::EPSG3857 => get_rect_from_xyz_3857(x, y, z),

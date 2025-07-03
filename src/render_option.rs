@@ -4,7 +4,7 @@ use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
 use crate::{GeometryRenderer, MagicFetcher, MagicValue, utils};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
     pub width: u32,
     pub height: u32,
@@ -21,14 +21,14 @@ impl Default for PixelOption {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TileProj {
     #[default]
     EPSG4326,
     EPSG3857,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RenderRegion {
     #[default]
     All,
@@ -51,14 +51,18 @@ impl RenderRegion {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RenderOption {
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     pub region: RenderRegion,
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     pub pixel_option: PixelOption,
     #[serde(default)]
     pub renderers: Vec<MagicValue<GeometryRenderer>>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     pub tile_proj: TileProj,
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     pub need_proj_geom: bool,
 }
 

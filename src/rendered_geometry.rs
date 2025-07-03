@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::{PropValue, RenderedGeometryFilter, TileProj};
 use geo::{
-    BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, Intersects,
-    LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
+    BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, InteriorPoint,
+    Intersects, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
 };
 pub struct RenderedGeometry {
     layer: Option<String>,
@@ -199,12 +199,12 @@ impl RenderedGeometry {
                         let multi_line = MultiLineString::new(vec![line_string.clone()]);
                         let rect_polygon = rect.to_polygon();
                         let intersection = rect_polygon.clip(&multi_line, false);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                     Geometry::Polygon(polygon) => {
                         let rect_polygon = rect.to_polygon();
                         let intersection = rect_polygon.intersection(polygon);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                     Geometry::MultiPoint(multi_point) => {
                         let mut inter_point = Vec::new();
@@ -219,17 +219,17 @@ impl RenderedGeometry {
                     Geometry::MultiLineString(multi_line_string) => {
                         let rect_polygon = rect.to_polygon();
                         let intersection = rect_polygon.clip(&multi_line_string, false);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                     Geometry::MultiPolygon(multi_polygon) => {
                         let rect_polygon = rect.to_polygon();
                         let intersection = rect_polygon.intersection(multi_polygon);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                     Geometry::GeometryCollection(geometry_collection) => {
                         let mut inter_point = Vec::new();
                         for geom in geometry_collection {
-                            let point = geom.centroid().unwrap_or_default();
+                            let point = geom.interior_point().unwrap_or_default();
                             if rect.contains(&point) {
                                 inter_point.push(point);
                             }
@@ -241,16 +241,16 @@ impl RenderedGeometry {
                         let rect_polygon = rect.to_polygon();
                         let o_rect_polygon = o_rect.to_polygon();
                         let intersection = rect_polygon.intersection(&o_rect_polygon);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                     Geometry::Triangle(triangle) => {
                         let rect_polygon = rect.to_polygon();
                         let triangle_polygon = triangle.to_polygon();
                         let intersection = rect_polygon.intersection(&triangle_polygon);
-                        intersection.centroid()
+                        intersection.interior_point()
                     }
                 },
-                None => self.inner_geom.centroid(),
+                None => self.inner_geom.interior_point(),
             };
             if rect.is_none() {
                 self.has_calc_center_point = true;

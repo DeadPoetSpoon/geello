@@ -1,4 +1,5 @@
 pub mod point_renderer;
+
 pub use point_renderer::*;
 pub mod line_renderer;
 pub use line_renderer::*;
@@ -10,8 +11,10 @@ use vello::{Scene, kurbo::Affine};
 
 use crate::{MagicConverter, MagicFetcher, MagicValue, rendered_geometry::RenderedGeometry};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum GeometryRenderer {
+    #[default]
+    None,
     Point(
         #[serde(default)] MagicValue<RenderedGeometryFilter>,
         #[serde(default)] MagicValue<PointRenderer>,
@@ -26,18 +29,10 @@ pub enum GeometryRenderer {
     ),
 }
 
-impl Default for GeometryRenderer {
-    fn default() -> Self {
-        GeometryRenderer::Point(
-            RenderedGeometryFilter::None.into(),
-            PointRenderer::default().into(),
-        )
-    }
-}
-
 impl MagicFetcher for GeometryRenderer {
     fn fetch(&mut self) -> Result<(), String> {
         match self {
+            GeometryRenderer::None => {}
             GeometryRenderer::Point(filter, renderer) => {
                 filter.fetch()?;
                 renderer.fetch()?;
@@ -61,6 +56,7 @@ impl MagicConverter for GeometryRenderer {
         props: &std::collections::HashMap<String, crate::PropValue>,
     ) -> Result<(), String> {
         match self {
+            GeometryRenderer::None => {}
             GeometryRenderer::Point(filter, renderer) => {
                 filter.convert(props)?;
                 renderer.convert(props)?;
@@ -87,6 +83,7 @@ impl GeometryRenderer {
         render_rect: Option<Rect>,
     ) -> Result<(), String> {
         match self {
+            GeometryRenderer::None => {}
             GeometryRenderer::Point(filter, renderer) => {
                 let filter = filter.as_ref();
                 for rendered_geometry in rendered_geometrys {
@@ -94,7 +91,12 @@ impl GeometryRenderer {
                         let props = rendered_geometry.props();
                         renderer.convert(props)?;
                         let renderer = renderer.as_ref();
-                        if let Some(point) = rendered_geometry.center_point(render_rect) {
+                        let true_render_rect = if renderer.must_show.inner_try_into()? {
+                            render_rect
+                        } else {
+                            None
+                        };
+                        if let Some(point) = rendered_geometry.center_point(true_render_rect) {
                             renderer.draw(scene, transform, point)?;
                         }
                     }

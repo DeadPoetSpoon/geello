@@ -10,6 +10,8 @@ use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue, RenderedGeometr
 
 use super::GeometryRenderer;
 
+pub type LineNodeRenderers = HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>>;
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NodeKind {
     All,
@@ -22,7 +24,7 @@ pub enum NodeKind {
 pub struct LineRenderer {
     pub stroke: MagicValue<Stroke>,
     pub brush: MagicValue<Brush>,
-    pub node_renderers: MagicValue<HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>>>,
+    pub node_renderers: MagicValue<LineNodeRenderers>,
 }
 
 impl std::default::Default for LineRenderer {
@@ -53,7 +55,7 @@ impl MagicConverter for LineRenderer {
     }
 }
 
-impl MagicFetcher for HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>> {
+impl MagicFetcher for LineNodeRenderers {
     fn fetch(&mut self) -> Result<(), String> {
         for (_, renderers) in self.iter_mut() {
             for renderer in renderers {
@@ -64,7 +66,7 @@ impl MagicFetcher for HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>> {
     }
 }
 
-impl MagicConverter for HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>> {
+impl MagicConverter for LineNodeRenderers {
     fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
         for (_, renderers) in self.iter_mut() {
             for renderer in renderers {

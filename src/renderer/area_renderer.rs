@@ -10,6 +10,8 @@ use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue, RenderedGeometr
 
 use super::{GeometryRenderer, LineRenderer};
 
+pub type AreaLineRenderers = HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>>;
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum LineKind {
     All,
@@ -20,7 +22,7 @@ pub enum LineKind {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AreaRenderer {
     pub brush: MagicValue<Brush>,
-    pub line_renderers: MagicValue<HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>>>,
+    pub line_renderers: MagicValue<AreaLineRenderers>,
 }
 
 impl std::default::Default for AreaRenderer {
@@ -48,7 +50,7 @@ impl MagicConverter for AreaRenderer {
     }
 }
 
-impl MagicFetcher for HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>> {
+impl MagicFetcher for AreaLineRenderers {
     fn fetch(&mut self) -> Result<(), String> {
         for (_, renderers) in self.iter_mut() {
             for renderer in renderers {
@@ -59,7 +61,7 @@ impl MagicFetcher for HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>> {
     }
 }
 
-impl MagicConverter for HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>> {
+impl MagicConverter for AreaLineRenderers {
     fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
         for (_, renderers) in self.iter_mut() {
             for renderer in renderers {

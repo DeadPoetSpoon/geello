@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, convert::From};
 
 use peniko::Brush;
 use serde::{Deserialize, Serialize};
@@ -62,8 +62,10 @@ pub struct MagicValue<T> {
     #[serde(default)]
     inner: T,
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     kind: MagicValueKind,
     #[serde(default)]
+    #[serde(skip_serializing_if = "crate::utils::is_default")]
     need_scale: bool,
 }
 
@@ -119,14 +121,13 @@ impl<T> From<T> for MagicValue<T> {
 }
 
 impl MagicValue<PropValue> {
-    pub fn to_f32(&self) -> Result<f32, String> {
+    pub fn inner_try_into<T: TryFrom<PropValue, Error = std::string::String>>(
+        &self,
+    ) -> Result<T, String> {
         self.inner.clone().try_into()
     }
-    pub fn to_f64(&self) -> Result<f64, String> {
-        self.inner.clone().try_into()
-    }
-    pub fn to_string(&self) -> Result<String, String> {
-        self.inner.clone().try_into()
+    pub fn to_string(&self) -> String {
+        self.inner.clone().to_string()
     }
     pub fn wrap<D: Into<PropValue>>(value: D) -> Self {
         Self {
@@ -158,17 +159,16 @@ where
                     };
                     v.fetch()?;
                     v.convert(props)?;
-                    let mut v = v.unwrap();
-                    v.fetch()?;
-                    v.convert(props)?;
-                    self.inner = v;
-                    Ok(())
+                    self.inner = v.unwrap();
                 } else {
                     return Err(format!("No {} found in props", name));
                 }
             }
-            _ => Ok(()),
+            _ => {}
         }
+        self.inner.fetch()?;
+        self.inner.convert(props)?;
+        Ok(())
     }
 }
 
@@ -272,6 +272,12 @@ impl From<f64> for PropValue {
     }
 }
 
+impl From<bool> for PropValue {
+    fn from(value: bool) -> Self {
+        PropValue::Boolean(value)
+    }
+}
+
 impl ToString for PropValue {
     fn to_string(&self) -> String {
         match self {
@@ -286,10 +292,11 @@ impl ToString for PropValue {
     }
 }
 
-impl TryInto<String> for PropValue {
+impl TryFrom<PropValue> for String {
     type Error = String;
-    fn try_into(self) -> Result<String, Self::Error> {
-        match self {
+
+    fn try_from(value: PropValue) -> Result<Self, Self::Error> {
+        match value {
             PropValue::String(v) => Ok(v),
             PropValue::Float64(v) => Ok(v.to_string()),
             PropValue::Float32(v) => Ok(v.to_string()),
@@ -301,10 +308,10 @@ impl TryInto<String> for PropValue {
     }
 }
 
-impl TryInto<f32> for PropValue {
+impl TryFrom<PropValue> for f32 {
     type Error = String;
-    fn try_into(self) -> Result<f32, Self::Error> {
-        match self {
+    fn try_from(value: PropValue) -> Result<Self, Self::Error> {
+        match value {
             PropValue::String(v) => v.parse().map_err(|e: std::num::ParseFloatError| {
                 format!("Convert from string error: {}", e.to_string())
             }),
@@ -324,10 +331,11 @@ impl TryInto<f32> for PropValue {
     }
 }
 
-impl TryInto<f64> for PropValue {
+impl TryFrom<PropValue> for f64 {
     type Error = String;
-    fn try_into(self) -> Result<f64, Self::Error> {
-        match self {
+
+    fn try_from(value: PropValue) -> Result<Self, Self::Error> {
+        match value {
             PropValue::String(v) => v.parse().map_err(|e: std::num::ParseFloatError| {
                 format!("Convert from string error: {}", e.to_string())
             }),
@@ -343,6 +351,24 @@ impl TryInto<f64> for PropValue {
                 }
             }
             PropValue::None => Err("Cannot convert None to f64".to_string()),
+        }
+    }
+}
+
+impl TryFrom<PropValue> for bool {
+    type Error = String;
+
+    fn try_from(value: PropValue) -> Result<Self, Self::Error> {
+        match value {
+            PropValue::String(v) => v.parse().map_err(|e: std::str::ParseBoolError| {
+                format!("Convert from string error: {}", e.to_string())
+            }),
+            PropValue::Float64(v) => Ok(v != 0.0),
+            PropValue::Float32(v) => Ok(v != 0.0),
+            PropValue::Int32(v) => Ok(v != 0),
+            PropValue::Int64(v) => Ok(v != 0),
+            PropValue::Boolean(v) => Ok(v),
+            PropValue::None => Err("Cannot convert None to bool".to_string()),
         }
     }
 }

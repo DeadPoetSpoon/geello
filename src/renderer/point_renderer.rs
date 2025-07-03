@@ -14,6 +14,8 @@ pub struct PointRenderer {
     pub radius: MagicValue<PropValue>,
     #[serde(default)]
     pub brush: MagicValue<Brush>,
+    #[serde(default)]
+    pub must_show: MagicValue<PropValue>,
 }
 
 impl std::default::Default for PointRenderer {
@@ -21,6 +23,7 @@ impl std::default::Default for PointRenderer {
         PointRenderer {
             radius: MagicValue::wrap(0.1f64),
             brush: Brush::Solid(palette::css::LIGHT_YELLOW).into(),
+            must_show: MagicValue::wrap(false),
         }
     }
 }
@@ -49,7 +52,7 @@ impl PointRenderer {
         point: &Point,
     ) -> Result<(), String> {
         let brush = self.brush.as_ref();
-        let radius = self.radius.to_f64()?;
+        let radius = self.radius.inner_try_into()?;
         scene.fill(
             vello::peniko::Fill::NonZero,
             transform,
