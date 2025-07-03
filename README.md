@@ -1,26 +1,22 @@
+<div align="center">
+
 # Geello
 
 Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/georust/geo) and [VELLO](https://github.com/linebender/vello)
+
+![Geello](assets/logo.png)
+
+</div>
 
 > [!WARNING]
 > Geello is a testing project in an alpha state.
 >
 
-### v0.2.0 ~ v0.3.0 Work
+### v0.3.0 Work
 
-- [ ] Finish and Clean up the current code
-- [x] Modify RenderedGeometry to split project and render
-- [x] Exchange Geom order and Renderer order
-- [x] Render Rect should stick to render
-- [x] Multi Layers
 - [ ] Calc image size with x/y resolution or WMTS zoom
-- [x] Handle web online geojson and style
-- [x] Make web map example more flexible
-- [x] Server: add layers styles memory cache with expire time
-- [ ] More Renderer, such as graph renderer and animation renderer
-- [ ] Support read render value from props
-- [x] Provide docker package
-- [x] More README
+- [ ] More Renderer, graph renderer
+- [ ] More Renderer, animation renderer
 - [ ] More docs
 
 ### As a library
@@ -125,7 +121,7 @@ bbox=${bbox}
 
 #### Web Map example
 
-When run as server, Geello provides a web map example by open http://addr:port/map in browser.
+When run as server, Geello provides a web map example by open http://addr:port/map/index.html in browser.
 
 ### Docker
 

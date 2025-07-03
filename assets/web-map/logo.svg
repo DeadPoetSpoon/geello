@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="32"
+   height="32"
+   viewBox="0 0 8.4666666 8.4666666"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   sodipodi:docname="o_v.svg"
+   inkscape:export-filename="o_v.svg"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     showguides="true"
+     inkscape:zoom="16.267265"
+     inkscape:cx="21.300446"
+     inkscape:cy="13.18599"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer2">
+    <sodipodi:guide
+       position="-2.4234508,5.5552727"
+       orientation="0,-1"
+       id="guide4"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="-4.6517243,1.9932881"
+       orientation="0,-1"
+       id="guide5"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="2.7650109,2.5300255"
+       orientation="1,0"
+       id="guide6"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="5.7089343,2.6113493"
+       orientation="1,0"
+       id="guide7"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="9.4660963,6.7100714"
+       orientation="0,-1"
+       id="guide8"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="9.6124792,2.92038"
+       orientation="0,-1"
+       id="guide9"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="4.245105,3.4571174"
+       orientation="1,0"
+       id="guide10"
+       inkscape:locked="false" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1" />
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="V">
+    <text
+       xml:space="preserve"
+       style="font-size:4.9389px;font-family:'0xProto Nerd Font Mono';-inkscape-font-specification:'0xProto Nerd Font Mono Bold';text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:none;stroke:#7dc3c2;stroke-width:0.264583;stroke-opacity:1;font-weight:bold;font-style:normal;font-stretch:normal;font-variant:normal;letter-spacing:0px;word-spacing:0px"
+       x="4.5134735"
+       y="5.4080358"
+       id="text3"><tspan
+         sodipodi:role="line"
+         id="tspan3"
+         style="stroke-width:0.264583;-inkscape-font-specification:'0xProto Nerd Font Mono Bold';font-family:'0xProto Nerd Font Mono';font-weight:bold;font-style:normal;font-stretch:normal;font-variant:normal;letter-spacing:0px;word-spacing:0px;stroke:#7dc3c2;stroke-opacity:1"
+         x="4.5134735"
+         y="5.4080358">V</tspan></text>
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer3"
+     inkscape:label="_">
+    <text
+       xml:space="preserve"
+       style="font-size:4.9389px;font-family:'0xProto Nerd Font Mono';-inkscape-font-specification:'0xProto Nerd Font Mono';text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#7dc3c2;fill-opacity:1;stroke:none;stroke-width:0.264583;stroke-opacity:1"
+       x="2.683687"
+       y="6.4571137"
+       id="text4"><tspan
+         sodipodi:role="line"
+         id="tspan4"
+         style="fill:#7dc3c2;fill-opacity:1;stroke:none;stroke-width:0.264583"
+         x="2.683687"
+         y="6.4571137">_</tspan></text>
+  </g>
+  <g
+     inkscape:label="O"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <text
+       xml:space="preserve"
+       style="font-size:5.64444px;font-family:'0xProto Nerd Font Mono';-inkscape-font-specification:'0xProto Nerd Font Mono';text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#268f93;stroke-width:0.264583;fill-opacity:1"
+       x="0.52461743"
+       y="5.6085072"
+       id="text1"><tspan
+         sodipodi:role="line"
+         id="tspan1"
+         style="font-size:5.64444px;stroke-width:0.264583;fill:#268f93;fill-opacity:1"
+         x="0.52461743"
+         y="5.6085072">󰇧</tspan></text>
+  </g>
+</svg>
