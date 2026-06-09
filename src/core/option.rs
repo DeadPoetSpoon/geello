@@ -2,7 +2,9 @@ use geo::Rect;
 use peniko::color::{AlphaColor, Srgb};
 use vello::{kurbo::Affine, wgpu, wgpu::Extent3d};
 
-use crate::{GeometryRenderer, MagicFetcher, MagicValue, utils};
+use crate::core::proj;
+use crate::core::value::{LazyValue, MagicFetcher};
+use crate::render::GeometryRenderer;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PixelOption {
@@ -42,7 +44,7 @@ impl RenderRegion {
         match self {
             RenderRegion::All => None,
             RenderRegion::Rect(rect) => Some(*rect),
-            RenderRegion::TileIndex(x, y, z) => Some(utils::get_rect_from_xyz(*x, *y, *z, proj)),
+            RenderRegion::TileIndex(x, y, z) => Some(proj::get_rect_from_xyz(*x, *y, *z, proj)),
             RenderRegion::PointBuffer(x, y, z) => Some(Rect::new((x - z, y + z), (x + z, y - z))),
         }
     }
@@ -51,18 +53,18 @@ impl RenderRegion {
 #[derive(Default, Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RenderOption {
     #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
+    #[serde(skip_serializing_if = "crate::core::proj::is_default")]
     pub region: RenderRegion,
     #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
+    #[serde(skip_serializing_if = "crate::core::proj::is_default")]
     pub pixel_option: PixelOption,
     #[serde(default)]
-    pub renderers: Vec<MagicValue<GeometryRenderer>>,
+    pub renderers: Vec<LazyValue<GeometryRenderer>>,
     #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
+    #[serde(skip_serializing_if = "crate::core::proj::is_default")]
     pub tile_proj: TileProj,
     #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
+    #[serde(skip_serializing_if = "crate::core::proj::is_default")]
     pub need_proj_geom: bool,
 }
 
@@ -106,7 +108,7 @@ impl RenderOption {
             depth_or_array_layers: 1,
         }
     }
-    pub fn get_texture_descriptor(&self) -> wgpu::TextureDescriptor {
+    pub fn get_texture_descriptor(&self) -> wgpu::TextureDescriptor<'_> {
         wgpu::TextureDescriptor {
             label: Some("Rendered Texture"),
             size: self.get_extent3d(),

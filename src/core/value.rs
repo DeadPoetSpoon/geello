@@ -4,6 +4,7 @@ use peniko::Brush;
 use serde::{Deserialize, Serialize};
 use vello::kurbo::Stroke;
 
+/// Trait for values that can be resolved from GeoJSON feature properties.
 pub trait MagicConverter {
     fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String>;
 }
@@ -20,6 +21,7 @@ impl MagicConverter for Stroke {
     }
 }
 
+/// Trait for values that can be fetched from external sources (files, URLs).
 pub trait MagicFetcher {
     fn fetch(&mut self) -> Result<(), String>;
 }
@@ -36,118 +38,233 @@ impl MagicFetcher for Stroke {
     }
 }
 
+/// Serialization encoding format for external value sources.
 #[derive(Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum StrEncoding {
     #[default]
-    Ron,
+    Toml,
     #[cfg(feature = "from_json")]
     Json,
 }
 
+/// Describes where a lazy value should be resolved from.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
-pub enum MagicValueKind {
+pub enum ValueSource {
+    /// Value is inlined in the configuration — no resolution needed.
     #[default]
-    Fixed,
+    Inline,
+    /// Read value from a GeoJSON feature property field.
+    /// The field value is parsed according to the specified encoding.
     Prop(String, StrEncoding),
-    Ron(String),
+    /// Load value from a TOML file on disk.
+    File(String),
+    /// Load value from a JSON file on disk (requires `from_json` feature).
     #[cfg(feature = "from_json")]
-    Json(String),
+    JsonFile(String),
+    /// Fetch value from an HTTP URL (requires `from_http` feature).
     #[cfg(feature = "from_http")]
-    Http(String, StrEncoding),
+    Url(String, StrEncoding),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MagicValue<T> {
-    #[serde(flatten)]
-    #[serde(default)]
+/// A lazily-resolved value container.
+///
+/// `LazyValue<T>` wraps a value and supports deferred resolution from
+/// multiple sources:
+/// - **Inline**: value is defined directly in configuration
+/// - **File**: loaded from a TOML/JSON file on disk
+/// - **Url**: fetched from an HTTP endpoint (feature `from_http`)
+/// - **Prop**: read from a GeoJSON feature's `properties` field
+///
+/// # TOML Serialization
+///
+/// When `kind` is `Inline` (default), the value serializes as the inner
+/// type directly — no wrapper. When `kind` is a non-default source
+/// (File/Url/Prop), the value serializes with explicit `kind` and
+/// `need_scale` fields alongside the inner value's fields.
+#[derive(Debug, Clone)]
+pub struct LazyValue<T> {
     inner: T,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
-    kind: MagicValueKind,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "crate::utils::is_default")]
+    kind: ValueSource,
     need_scale: bool,
 }
 
-impl<T> MagicValue<T>
+// ── Serialize ──
+
+impl<T: Serialize> Serialize for LazyValue<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.kind == ValueSource::Inline && !self.need_scale {
+            // Inline: serialize just the inner value directly
+            self.inner.serialize(serializer)
+        } else {
+            // Full: serialize as a map with inner fields merged with kind/need_scale
+            let value = toml::Value::try_from(&self.inner).map_err(serde::ser::Error::custom)?;
+            match value {
+                toml::Value::Table(mut map) => {
+                    if self.kind != ValueSource::Inline {
+                        let kind_val =
+                            toml::Value::try_from(&self.kind).map_err(serde::ser::Error::custom)?;
+                        map.insert("kind".to_string(), kind_val);
+                    }
+                    if self.need_scale {
+                        map.insert("need_scale".to_string(), toml::Value::Boolean(true));
+                    }
+                    map.serialize(serializer)
+                },
+                _ => {
+                    // Scalar inner value with extra fields: serialize as { value, kind, need_scale }
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(3))?;
+                    map.serialize_entry("value", &self.inner)?;
+                    if self.kind != ValueSource::Inline {
+                        map.serialize_entry("kind", &self.kind)?;
+                    }
+                    if self.need_scale {
+                        map.serialize_entry("need_scale", &self.need_scale)?;
+                    }
+                    map.end()
+                },
+            }
+        }
+    }
+}
+
+// ── Deserialize ──
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for LazyValue<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+
+        // Deserialize into a toml::Value to inspect the structure
+        let raw = toml::Value::deserialize(deserializer)?;
+
+        match raw {
+            toml::Value::Table(mut table) => {
+                // Check if this table has LazyValue metadata fields
+                let kind = if let Some(kind_val) = table.remove("kind") {
+                    ValueSource::deserialize(kind_val).map_err(Error::custom)?
+                } else {
+                    ValueSource::Inline
+                };
+                let need_scale = if let Some(ns) = table.remove("need_scale") {
+                    bool::deserialize(ns).map_err(Error::custom)?
+                } else {
+                    false
+                };
+
+                // The remaining table fields are the inner value
+                let inner = T::deserialize(toml::Value::Table(table)).map_err(Error::custom)?;
+                Ok(LazyValue {
+                    inner,
+                    kind,
+                    need_scale,
+                })
+            },
+            other => {
+                // Scalar or array: inline value only
+                let inner = T::deserialize(other).map_err(Error::custom)?;
+                Ok(LazyValue {
+                    inner,
+                    kind: ValueSource::Inline,
+                    need_scale: false,
+                })
+            },
+        }
+    }
+}
+
+impl<T> LazyValue<T>
 where
     T: Default,
 {
-    pub fn new_ron(path: String) -> Self {
+    /// Create a LazyValue pointing to a TOML file.
+    pub fn new_file(path: String) -> Self {
         Self {
             inner: Default::default(),
-            kind: MagicValueKind::Ron(path),
+            kind: ValueSource::File(path),
             need_scale: false,
         }
     }
 }
 
-impl<T> MagicValue<T> {
+impl<T> LazyValue<T> {
+    /// Create a LazyValue with an inlined value.
     pub fn new(inner: T) -> Self {
         Self {
             inner,
-            kind: MagicValueKind::Fixed,
+            kind: ValueSource::Inline,
             need_scale: false,
         }
     }
+
+    /// Consume and return the inner value.
     pub fn unwrap(self) -> T {
         self.inner
     }
+
+    /// Get a shared reference to the inner value.
     pub fn as_ref(&self) -> &T {
         &self.inner
     }
+
+    /// Get a mutable reference to the inner value.
     pub fn as_mut(&mut self) -> &mut T {
         &mut self.inner
     }
 }
 
-impl<T> Default for MagicValue<T>
+impl<T> Default for LazyValue<T>
 where
     T: Default,
 {
     fn default() -> Self {
         Self {
             inner: Default::default(),
-            kind: MagicValueKind::Fixed,
+            kind: ValueSource::Inline,
             need_scale: false,
         }
     }
 }
 
-impl<T> From<T> for MagicValue<T> {
+impl<T> From<T> for LazyValue<T> {
     fn from(value: T) -> Self {
-        MagicValue::new(value)
+        LazyValue::new(value)
     }
 }
 
-impl MagicValue<PropValue> {
+impl LazyValue<PropValue> {
+    /// Try to convert the inner PropValue into type T.
     pub fn inner_try_into<T: TryFrom<PropValue, Error = std::string::String>>(
         &self,
     ) -> Result<T, String> {
         self.inner.clone().try_into()
     }
+
+    /// Get the string representation of the inner value.
     pub fn to_string(&self) -> String {
         self.inner.clone().to_string()
     }
+
+    /// Wrap a value into a LazyValue<PropValue>.
     pub fn wrap<D: Into<PropValue>>(value: D) -> Self {
         Self {
             inner: Into::<PropValue>::into(value),
-            kind: MagicValueKind::Fixed,
+            kind: ValueSource::Inline,
             need_scale: false,
         }
     }
 }
 
-impl<T> MagicValue<T>
+impl<T> LazyValue<T>
 where
     T: for<'de> Deserialize<'de> + Default + MagicFetcher + MagicConverter,
 {
+    /// Resolve a Prop-sourced value from GeoJSON feature properties.
     pub fn convert(&mut self, props: &HashMap<String, PropValue>) -> Result<(), String> {
         match &self.kind {
-            MagicValueKind::Prop(name, encoding) => {
+            ValueSource::Prop(name, encoding) => {
                 if let Some(value) = props.get(name) {
-                    let mut v: MagicValue<T> = match encoding {
-                        StrEncoding::Ron => ron::from_str(&value.to_string()).map_err(|e| {
+                    let mut v: LazyValue<T> = match encoding {
+                        StrEncoding::Toml => toml::from_str(&value.to_string()).map_err(|e| {
                             format!("Deserializing value from Prop:{} error: {}", name, e)
                         })?,
                         #[cfg(feature = "from_json")]
@@ -155,7 +272,7 @@ where
                             serde_json::from_str(&value.to_string()).map_err(|e| {
                                 format!("Deserializing value from Prop:{} error: {}", name, e)
                             })?
-                        }
+                        },
                     };
                     v.fetch()?;
                     v.convert(props)?;
@@ -163,8 +280,8 @@ where
                 } else {
                     return Err(format!("No {} found in props", name));
                 }
-            }
-            _ => {}
+            },
+            _ => {},
         }
         self.inner.fetch()?;
         self.inner.convert(props)?;
@@ -172,38 +289,39 @@ where
     }
 }
 
-impl<T> MagicValue<T>
+impl<T> LazyValue<T>
 where
     T: for<'de> Deserialize<'de> + Default + MagicFetcher,
 {
+    /// Fetch the value from its external source (file or URL).
     pub fn fetch(&mut self) -> Result<(), String> {
         let inner = match &self.kind {
-            MagicValueKind::Ron(path) => {
+            ValueSource::File(path) => {
                 let content = std::fs::read_to_string(path)
                     .map_err(|e| format!("Read value from File:{} error: {}", path, e))?;
-                let mut value: MagicValue<T> = ron::from_str(&content)
+                let mut value: LazyValue<T> = toml::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
                 Some(value.unwrap())
-            }
+            },
             #[cfg(feature = "from_json")]
-            MagicValueKind::Json(path) => {
+            ValueSource::JsonFile(path) => {
                 let content = std::fs::read_to_string(path)
                     .map_err(|e| format!("Read value from File:{} error: {}", path, e))?;
-                let mut value: MagicValue<T> = serde_json::from_str(&content)
+                let mut value: LazyValue<T> = serde_json::from_str(&content)
                     .map_err(|e| format!("Deserializing value from File:{} error: {}", path, e))?;
                 value.fetch()?;
                 Some(value.unwrap())
-            }
+            },
             #[cfg(feature = "from_http")]
-            MagicValueKind::Http(url, encoding) => {
+            ValueSource::Url(url, encoding) => {
                 let res = reqwest::blocking::get(url)
                     .map_err(|e| format!("Get value from Url:{} error: {}", url, e))?;
                 let text = res
                     .text()
                     .map_err(|e| format!("Get text from Url:{} error: {}", url, e))?;
-                let mut value: MagicValue<T> = match encoding {
-                    StrEncoding::Ron => ron::from_str(&text).map_err(|e| {
+                let mut value: LazyValue<T> = match encoding {
+                    StrEncoding::Toml => toml::from_str(&text).map_err(|e| {
                         format!("Deserializing value from Url:{} error: {}", url, e)
                     })?,
                     #[cfg(feature = "from_json")]
@@ -213,7 +331,7 @@ where
                 };
                 value.fetch()?;
                 Some(value.unwrap())
-            }
+            },
             _ => None,
         };
         if inner.is_some() {
@@ -224,6 +342,9 @@ where
     }
 }
 
+// ── PropValue ──
+
+/// A typed property value extracted from GeoJSON feature properties.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum PropValue {
     #[default]
@@ -325,7 +446,7 @@ impl TryFrom<PropValue> for f32 {
                 } else {
                     Ok(0.0)
                 }
-            }
+            },
             PropValue::None => Err("Cannot convert None to f32".to_string()),
         }
     }
@@ -349,7 +470,7 @@ impl TryFrom<PropValue> for f64 {
                 } else {
                     Ok(0.0)
                 }
-            }
+            },
             PropValue::None => Err("Cannot convert None to f64".to_string()),
         }
     }
@@ -369,6 +490,82 @@ impl TryFrom<PropValue> for bool {
             PropValue::Int64(v) => Ok(v != 0),
             PropValue::Boolean(v) => Ok(v),
             PropValue::None => Err("Cannot convert None to bool".to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lazy_value_string_inline() {
+        // v = "hello" → LazyValue<String>
+        let m: std::collections::HashMap<String, LazyValue<String>> =
+            toml::from_str("v = \"hello\"").unwrap();
+        let lv = &m["v"];
+        assert_eq!(lv.as_ref(), "hello");
+        assert_eq!(lv.kind, ValueSource::Inline);
+    }
+
+    #[test]
+    fn lazy_value_table_inline() {
+        // v = { x = 42 } → LazyValue<Foo>
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Foo {
+            x: i32,
+        }
+        let m: std::collections::HashMap<String, LazyValue<Foo>> =
+            toml::from_str("v = { x = 42 }").unwrap();
+        let lv = &m["v"];
+        assert_eq!(lv.as_ref().x, 42);
+        assert_eq!(lv.kind, ValueSource::Inline);
+    }
+
+    #[test]
+    fn lazy_value_with_kind() {
+        // Table with kind field → LazyValue with external source
+        let toml_str = r#"
+[v]
+kind = { File = "some/path.toml" }
+x = 10
+"#;
+        #[derive(Debug, Default, Deserialize, PartialEq)]
+        struct Foo {
+            x: i32,
+        }
+        let m: std::collections::HashMap<String, LazyValue<Foo>> =
+            toml::from_str(toml_str).unwrap();
+        let lv = &m["v"];
+        assert_eq!(lv.as_ref().x, 10);
+        assert_eq!(lv.kind, ValueSource::File("some/path.toml".into()));
+    }
+
+    #[test]
+    fn lazy_value_filter_none_roundtrip() {
+        use crate::core::filter::RenderedGeometryFilter;
+        // v = "None" → LazyValue<RenderedGeometryFilter>
+        let m: std::collections::HashMap<String, LazyValue<RenderedGeometryFilter>> =
+            toml::from_str("v = \"None\"").unwrap();
+        let lv = &m["v"];
+        assert_eq!(lv.kind, ValueSource::Inline);
+        match lv.as_ref() {
+            RenderedGeometryFilter::None => {},
+            _ => panic!("Expected None"),
+        }
+    }
+
+    #[test]
+    fn lazy_value_filter_layer_roundtrip() {
+        use crate::core::filter::RenderedGeometryFilter;
+        // v = { Layer = "china" } → LazyValue<RenderedGeometryFilter>
+        let m: std::collections::HashMap<String, LazyValue<RenderedGeometryFilter>> =
+            toml::from_str("v = { Layer = \"china\" }").unwrap();
+        let lv = &m["v"];
+        assert_eq!(lv.kind, ValueSource::Inline);
+        match lv.as_ref() {
+            RenderedGeometryFilter::Layer(name) => assert_eq!(name, "china"),
+            _ => panic!("Expected Layer"),
         }
     }
 }

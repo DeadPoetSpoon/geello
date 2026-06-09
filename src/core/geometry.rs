@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{PropValue, RenderedGeometryFilter, TileProj};
+use crate::core::value::PropValue;
+use crate::core::filter::RenderedGeometryFilter;
+use crate::core::option::TileProj;
 use geo::{
     BooleanOps, BoundingRect, Centroid, Contains, ConvexHull, CoordsIter, Geometry, InteriorPoint,
     Intersects, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Rect,
@@ -28,7 +30,7 @@ impl RenderedGeometry {
         proj: &Option<TileProj>,
     ) -> Self {
         if let Some(proj) = proj {
-            crate::utils::transform(&mut inner_geom, proj);
+            crate::core::proj::transform(&mut inner_geom, proj);
         }
         RenderedGeometry {
             layer,

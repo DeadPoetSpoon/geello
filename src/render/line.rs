@@ -6,11 +6,12 @@ use vello::{
     peniko::{Brush, color::palette},
 };
 
-use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue, RenderedGeometry};
+use crate::core::value::{MagicConverter, MagicFetcher, LazyValue, PropValue};
+use crate::core::geometry::RenderedGeometry;
 
 use super::GeometryRenderer;
 
-pub type LineNodeRenderers = HashMap<NodeKind, Vec<MagicValue<GeometryRenderer>>>;
+pub type LineNodeRenderers = HashMap<NodeKind, Vec<LazyValue<GeometryRenderer>>>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NodeKind {
@@ -22,9 +23,9 @@ pub enum NodeKind {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LineRenderer {
-    pub stroke: MagicValue<Stroke>,
-    pub brush: MagicValue<Brush>,
-    pub node_renderers: MagicValue<LineNodeRenderers>,
+    pub stroke: LazyValue<Stroke>,
+    pub brush: LazyValue<Brush>,
+    pub node_renderers: LazyValue<LineNodeRenderers>,
 }
 
 impl std::default::Default for LineRenderer {

@@ -6,11 +6,12 @@ use vello::{
     peniko::{Brush, color::palette},
 };
 
-use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue, RenderedGeometry};
+use crate::core::geometry::RenderedGeometry;
+use crate::core::value::{LazyValue, MagicConverter, MagicFetcher, PropValue};
 
 use super::{GeometryRenderer, LineRenderer};
 
-pub type AreaLineRenderers = HashMap<LineKind, Vec<MagicValue<GeometryRenderer>>>;
+pub type AreaLineRenderers = HashMap<LineKind, Vec<LazyValue<GeometryRenderer>>>;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum LineKind {
@@ -21,8 +22,8 @@ pub enum LineKind {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AreaRenderer {
-    pub brush: MagicValue<Brush>,
-    pub line_renderers: MagicValue<AreaLineRenderers>,
+    pub brush: LazyValue<Brush>,
+    pub line_renderers: LazyValue<AreaLineRenderers>,
 }
 
 impl std::default::Default for AreaRenderer {
@@ -122,17 +123,17 @@ impl AreaRenderer {
                         renderer.draw(scene, transform, &mut exterior_geom, None)?;
                         renderer.draw(scene, transform, &mut interior_geoms, None)?;
                     }
-                }
+                },
                 LineKind::Exterior => {
                     for renderer in renderers.iter_mut().map(|x| x.as_mut()) {
                         renderer.draw(scene, transform, &mut exterior_geom, None)?;
                     }
-                }
+                },
                 LineKind::Interior => {
                     for renderer in renderers.iter_mut().map(|x| x.as_mut()) {
                         renderer.draw(scene, transform, &mut interior_geoms, None)?;
                     }
-                }
+                },
             }
         }
         Ok(())

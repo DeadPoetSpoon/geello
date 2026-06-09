@@ -1,50 +1,76 @@
-pub mod point_renderer;
+pub mod area;
+pub mod line;
+pub mod point;
+pub mod text;
 
-pub use point_renderer::*;
-pub mod line_renderer;
-pub use line_renderer::*;
-pub mod area_renderer;
-pub use area_renderer::*;
+#[cfg(feature = "raster")]
+pub mod raster;
+
+pub use area::*;
+pub use line::*;
+pub use point::*;
+pub use text::*;
+
+#[cfg(feature = "raster")]
+pub use raster::*;
 
 use geo::Rect;
 use vello::{Scene, kurbo::Affine};
 
-use crate::{MagicConverter, MagicFetcher, MagicValue, rendered_geometry::RenderedGeometry};
+use crate::core::filter::RenderedGeometryFilter;
+use crate::core::geometry::RenderedGeometry;
+use crate::core::value::{LazyValue, MagicConverter, MagicFetcher, PropValue};
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub enum GeometryRenderer {
     #[default]
     None,
     Point(
-        #[serde(default)] MagicValue<RenderedGeometryFilter>,
-        #[serde(default)] MagicValue<PointRenderer>,
+        #[serde(default)] LazyValue<RenderedGeometryFilter>,
+        #[serde(default)] LazyValue<PointRenderer>,
     ),
     Line(
-        #[serde(default)] MagicValue<RenderedGeometryFilter>,
-        #[serde(default)] MagicValue<LineRenderer>,
+        #[serde(default)] LazyValue<RenderedGeometryFilter>,
+        #[serde(default)] LazyValue<LineRenderer>,
     ),
     Area(
-        #[serde(default)] MagicValue<RenderedGeometryFilter>,
-        #[serde(default)] MagicValue<AreaRenderer>,
+        #[serde(default)] LazyValue<RenderedGeometryFilter>,
+        #[serde(default)] LazyValue<AreaRenderer>,
     ),
+    /// Text label renderer — renders text at geometry points
+    Text(
+        #[serde(default)] LazyValue<RenderedGeometryFilter>,
+        #[serde(default)] LazyValue<TextRenderer>,
+    ),
+    /// Raster renderer — renders GeoTIFF imagery (feature = "raster")
+    #[cfg(feature = "raster")]
+    Raster(#[serde(default)] LazyValue<RasterRenderer>),
 }
 
 impl MagicFetcher for GeometryRenderer {
     fn fetch(&mut self) -> Result<(), String> {
         match self {
-            GeometryRenderer::None => {}
+            GeometryRenderer::None => {},
             GeometryRenderer::Point(filter, renderer) => {
                 filter.fetch()?;
                 renderer.fetch()?;
-            }
+            },
             GeometryRenderer::Line(filter, renderer) => {
                 filter.fetch()?;
                 renderer.fetch()?;
-            }
+            },
             GeometryRenderer::Area(filter, renderer) => {
                 filter.fetch()?;
                 renderer.fetch()?;
-            }
+            },
+            GeometryRenderer::Text(filter, renderer) => {
+                filter.fetch()?;
+                renderer.fetch()?;
+            },
+            #[cfg(feature = "raster")]
+            GeometryRenderer::Raster(renderer) => {
+                renderer.fetch()?;
+            },
         };
         Ok(())
     }
@@ -53,22 +79,30 @@ impl MagicFetcher for GeometryRenderer {
 impl MagicConverter for GeometryRenderer {
     fn convert(
         &mut self,
-        props: &std::collections::HashMap<String, crate::PropValue>,
+        props: &std::collections::HashMap<String, PropValue>,
     ) -> Result<(), String> {
         match self {
-            GeometryRenderer::None => {}
+            GeometryRenderer::None => {},
             GeometryRenderer::Point(filter, renderer) => {
                 filter.convert(props)?;
                 renderer.convert(props)?;
-            }
+            },
             GeometryRenderer::Line(filter, renderer) => {
                 filter.convert(props)?;
                 renderer.convert(props)?;
-            }
+            },
             GeometryRenderer::Area(filter, renderer) => {
                 filter.convert(props)?;
                 renderer.convert(props)?;
-            }
+            },
+            GeometryRenderer::Text(filter, renderer) => {
+                filter.convert(props)?;
+                renderer.convert(props)?;
+            },
+            #[cfg(feature = "raster")]
+            GeometryRenderer::Raster(_r) => {
+                // Raster has no GeoJSON properties to convert
+            },
         };
         Ok(())
     }
@@ -83,7 +117,7 @@ impl GeometryRenderer {
         render_rect: Option<Rect>,
     ) -> Result<(), String> {
         match self {
-            GeometryRenderer::None => {}
+            GeometryRenderer::None => {},
             GeometryRenderer::Point(filter, renderer) => {
                 let filter = filter.as_ref();
                 for rendered_geometry in rendered_geometrys {
@@ -101,7 +135,7 @@ impl GeometryRenderer {
                         }
                     }
                 }
-            }
+            },
             GeometryRenderer::Line(filter, renderer) => {
                 let filter = filter.as_ref();
                 for rendered_geometry in rendered_geometrys {
@@ -116,7 +150,7 @@ impl GeometryRenderer {
                         }
                     }
                 }
-            }
+            },
             GeometryRenderer::Area(filter, renderer) => {
                 let filter = filter.as_ref();
                 for rendered_geometry in rendered_geometrys {
@@ -129,30 +163,31 @@ impl GeometryRenderer {
                         }
                     }
                 }
-            }
+            },
+            GeometryRenderer::Text(filter, renderer) => {
+                let filter = filter.as_ref();
+                for rendered_geometry in rendered_geometrys {
+                    if rendered_geometry.fit_filter(filter) {
+                        let props = rendered_geometry.props();
+                        renderer.convert(props)?;
+                        let renderer = renderer.as_ref();
+                        let true_render_rect = if render_rect.is_some() {
+                            render_rect
+                        } else {
+                            None
+                        };
+                        if let Some(point) = rendered_geometry.center_point(true_render_rect) {
+                            renderer.draw(scene, transform, point)?;
+                        }
+                    }
+                }
+            },
+            #[cfg(feature = "raster")]
+            GeometryRenderer::Raster(renderer) => {
+                let renderer = renderer.as_ref();
+                renderer.draw(scene, transform, render_rect)?;
+            },
         };
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub enum RenderedGeometryFilter {
-    #[default]
-    None,
-    Layer(String),
-}
-
-impl MagicFetcher for RenderedGeometryFilter {
-    fn fetch(&mut self) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-impl MagicConverter for RenderedGeometryFilter {
-    fn convert(
-        &mut self,
-        _: &std::collections::HashMap<String, crate::PropValue>,
-    ) -> Result<(), String> {
         Ok(())
     }
 }

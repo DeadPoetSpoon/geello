@@ -6,24 +6,24 @@ use vello::{
     peniko::{Brush, color::palette},
 };
 
-use crate::{MagicConverter, MagicFetcher, MagicValue, PropValue};
+use crate::core::value::{LazyValue, MagicConverter, MagicFetcher, PropValue};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PointRenderer {
     #[serde(default)]
-    pub radius: MagicValue<PropValue>,
+    pub radius: LazyValue<PropValue>,
     #[serde(default)]
-    pub brush: MagicValue<Brush>,
+    pub brush: LazyValue<Brush>,
     #[serde(default)]
-    pub must_show: MagicValue<PropValue>,
+    pub must_show: LazyValue<PropValue>,
 }
 
 impl std::default::Default for PointRenderer {
     fn default() -> Self {
         PointRenderer {
-            radius: MagicValue::wrap(0.1f64),
+            radius: LazyValue::wrap(0.1f64),
             brush: Brush::Solid(palette::css::LIGHT_YELLOW).into(),
-            must_show: MagicValue::wrap(false),
+            must_show: LazyValue::wrap(false),
         }
     }
 }

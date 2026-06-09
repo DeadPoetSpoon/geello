@@ -1,11 +1,65 @@
-FROM rust:latest
+# ============================================================
+# Stage 1: Install cargo-chef (dependency analysis tool)
+# ============================================================
+FROM rust:1.95-alpine AS chef
 
-ENV XDG_RUNTIME_DIR /geello
+RUN apk add --no-cache musl-dev pkgconfig
+RUN cargo install cargo-chef --locked
 
 WORKDIR /geello
 
-COPY ./assets ./assets
+# ============================================================
+# Stage 2: Generate recipe.json (dependency recipe file)
+# ============================================================
+FROM chef AS planner
 
-RUN apt update && apt install -y libvulkan1 && cargo install -F server geello
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-CMD ["geello"]
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ============================================================
+# Stage 3: Build dependencies using recipe.json, then compile
+# ============================================================
+FROM chef AS builder
+
+COPY --from=planner /geello/recipe.json recipe.json
+
+# Build dependencies first (cached by Docker until Cargo.toml/lock changes)
+RUN cargo chef cook --release \
+    --target x86_64-unknown-linux-musl \
+    --recipe-path recipe.json \
+    --features server
+
+# Copy full source and build
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY assets ./assets
+
+RUN cargo build --release \
+    --target x86_64-unknown-linux-musl \
+    --features server
+
+# ============================================================
+# Stage 4: Minimal runtime image
+# ============================================================
+FROM alpine:3.22
+
+RUN apk add --no-cache \
+    libgcc \
+    vulkan-loader \
+    ca-certificates
+
+WORKDIR /geello
+
+COPY --from=builder \
+    /geello/target/x86_64-unknown-linux-musl/release/geello .
+
+COPY assets ./assets
+
+EXPOSE 8000
+
+# Vulkan GPU access — see README for NVIDIA Container Toolkit setup
+VOLUME ["/geello/cache"]
+
+ENTRYPOINT ["./geello"]
