@@ -1,0 +1,13 @@
+# Geello area renderer style — area only
+# Referenced by server example endpoint
+
+[pixel]
+width = 256
+height = 256
+base_color = { components = [0.0, 0.0, 0.0, 0.0], cs = "Srgb" }
+
+[[renderers]]
+Area = [
+    "None",
+    { brush = { Solid = { components = [0.18039216, 0.54509807, 0.34117648, 1.0], cs = "Srgb" } }, line_renderers = {} },
+]

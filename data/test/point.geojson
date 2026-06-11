@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "point",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "fid": 1, "name": "新疆" }, "geometry": { "type": "Point", "coordinates": [ 85.974163325859266, 42.300671817695438 ] } },
+{ "type": "Feature", "properties": { "fid": 2, "name": "湖北" }, "geometry": { "type": "Point", "coordinates": [ 111.989644213359412, 31.182944942695375 ] } }
+]
+}

@@ -4,7 +4,6 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr};
-use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -15,12 +14,6 @@ pub struct ServerConfig {
     pub port: u16,
     #[serde(default = "default_data_path")]
     pub data_path: PathBuf,
-    #[serde(default = "default_wmts_texture_count")]
-    pub wmts_texture_count: u32,
-    #[serde(default)]
-    pub shader_init_threads: Option<NonZeroUsize>,
-    #[serde(default = "default_cache_path")]
-    pub cache_path: PathBuf,
 }
 
 fn default_address() -> IpAddr {
@@ -30,13 +23,7 @@ fn default_port() -> u16 {
     8000
 }
 fn default_data_path() -> PathBuf {
-    PathBuf::from("assets")
-}
-fn default_wmts_texture_count() -> u32 {
-    100
-}
-fn default_cache_path() -> PathBuf {
-    PathBuf::from("cache")
+    PathBuf::from("data")
 }
 
 impl Default for ServerConfig {
@@ -45,9 +32,6 @@ impl Default for ServerConfig {
             address: default_address(),
             port: default_port(),
             data_path: default_data_path(),
-            wmts_texture_count: default_wmts_texture_count(),
-            shader_init_threads: None,
-            cache_path: default_cache_path(),
         }
     }
 }
@@ -77,57 +61,12 @@ impl ServerConfig {
         let config: Self = figment.extract()?;
 
         tracing::info!(
-            "Server config: address={}:{}, data_path={}, cache_path={}",
+            "Server config: address={}:{}, data_path={}",
             config.address,
             config.port,
-            config.data_path.display(),
-            config.cache_path.display()
+            config.data_path.display()
         );
 
         Ok(config)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_config_values() {
-        let config = ServerConfig::default();
-        assert_eq!(config.port, 8000);
-        assert_eq!(config.data_path, PathBuf::from("assets"));
-        assert_eq!(config.cache_path, PathBuf::from("cache"));
-        assert_eq!(config.wmts_texture_count, 100);
-        assert!(config.shader_init_threads.is_none());
-    }
-
-    #[test]
-    fn load_from_toml_file() {
-        // Geello.toml exists in the project root (cargo test runs from there)
-        let config = ServerConfig::load();
-        match config {
-            Ok(c) => {
-                // data_path should come from Geello.toml: "assets/test"
-                assert_eq!(c.data_path, PathBuf::from("assets/test"));
-                assert_eq!(c.cache_path, PathBuf::from("assets/test/cache"));
-            },
-            Err(e) => {
-                // If file not found or parse error, default should still work
-                let default = ServerConfig::default();
-                assert_eq!(default.data_path, PathBuf::from("assets"));
-                eprintln!("Config file load failed (expected if missing): {}", e);
-            },
-        }
-    }
-
-    #[test]
-    fn load_falls_back_to_defaults_when_no_file() {
-        // Load with a non-existent file should still succeed with defaults
-        let figment = Figment::new().merge(Env::prefixed("GEELLO_"));
-        let config: ServerConfig = figment.extract().unwrap();
-        // Without TOML file, serde defaults are used
-        assert_eq!(config.data_path, PathBuf::from("assets"));
-        assert_eq!(config.port, 8000);
     }
 }

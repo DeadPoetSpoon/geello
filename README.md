@@ -4,7 +4,7 @@
 
 Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/georust/geo) and [VELLO](https://github.com/linebender/vello)
 
-![Geello](assets/logo.png)
+![Geello](data/logo.png)
 
 </div>
 

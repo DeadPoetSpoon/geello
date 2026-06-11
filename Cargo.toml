@@ -1,62 +1,31 @@
 [package]
 name = "geello"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2024"
-license = "MIT"
-authors = ["Dead Poet Spoon <deadpoetspoon@qq.com>"]
-description = "A tool to render geo data"
-homepage = "https://github.com/DeadPoetSpoon/geello"
-documentation = "https://docs.rs/geello/"
-readme = "./README.md"
-repository = "https://github.com/DeadPoetSpoon/geello"
-keywords = ["gis", "geo", "map-render", "2d", "vector-graphics"]
-categories = ["science::geo"]
 
 [dependencies]
-geo = "0.30.0"
-geo-types = { version = "0.7.16", features = [
-    "multithreading",
-    "rayon",
-    "serde",
-] }
-serde = { version = "1.0.219", features = ["derive"] }
-skrifa = "0.31.3"
-vello = "0.5.0"
-peniko = { version = "0.4.0", default-features = false, features = ["serde"] }
-log = "0.4.27"
-thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", optional = true }
-tokio = { version = "1.45.1", features = ["full"] }
-toml = "0.8"
-vello_svg = "0.7.1"
-
-# server
-image = { version = "0.25.6", features = ["serde"], optional = true }
-geojson = { version = "0.24.2", optional = true }
-reqwest = { version = "0.12.20", features = ["blocking", "json"], optional = true }
-serde_json = { version = "1.0.140", optional = true }
-
-# Axum server
-axum = { version = "0.8", features = ["ws"], optional = true }
-tower = { version = "0.5", optional = true }
-tower-http = { version = "0.6", features = ["fs"], optional = true }
-figment = { version = "0.10", features = ["toml", "env"], optional = true }
-foyer = { version = "0.22", features = ["serde"], optional = true }
-notify = { version = "7", optional = true }
-futures-util = { version = "0.3", optional = true }
-proj = "0.31.0"
-
-# raster
-tiff = { version = "0.10", optional = true }
+axum = { version = "0.8.9", optional = true, features = ["ws"] }
+figment = { version = "0.10.19", optional = true, features = ["env", "toml"] }
+foyer = { version = "0.22.3", features = ["serde"], optional = true }
+geo = { version = "0.33.1", features = ["proj"] }
+geo-types = { version = "0.7.19", features = ["multithreading", "rayon", "serde"] }
+geojson = { version = "1.0.0", optional = true }
+image = { version = "0.25.10", optional = true }
+reqwest = { version = "0.13.4", optional = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.150", optional = true }
+thiserror = "2.0.18"
+tiff = { version = "0.11.3", optional = true }
+tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+toml = "1.1.2"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", optional = true }
+vello = "0.9.0"
 
 [features]
-default = []
-server = [
-    "image", "geojson", "reqwest", "tracing-subscriber",
-    "axum", "tower", "tower-http", "figment", "foyer", "notify", "futures-util",
-]
-from_http = ["reqwest"]
-from_json = ["serde_json"]
-raster = ["tiff"]
+default = ["full"]
+server = ["dep:axum", "dep:figment", "dep:foyer","dep:image","dep:geojson","dep:tracing-subscriber"]
+from_http = ["dep:reqwest"]
+from_json = ["dep:serde_json"]
+raster = ["dep:tiff"]
 full = ["server", "from_http", "from_json", "raster"]

@@ -1,0 +1,28 @@
+# Geello WMTS style — EPSG:4326 (WGS84)
+# Converted from assets/test/4326.ron
+
+tile_proj = "EPSG4326"
+need_proj_geom = false
+
+[pixel]
+width = 256
+height = 256
+base_color = { components = [0.0, 0.0, 0.0, 0.0], cs = "Srgb" }
+
+[[renderers]]
+Area = [
+    "None",
+    { brush = { Solid = { components = [0.18039216, 0.54509807, 0.34117648, 1.0], cs = "Srgb" } }, line_renderers = {} },
+]
+
+[[renderers]]
+Line = [
+    "None",
+    { stroke = { width = 0.1, join = "Round", miter_limit = 4.0, start_cap = "Round", end_cap = "Round", dash_pattern = [], dash_offset = 0.0 }, brush = { Solid = { components = [0.0, 1.0, 1.0, 1.0], cs = "Srgb" } }, node_renderers = {} },
+]
+
+[[renderers]]
+Point = [
+    { Layer = "china.geo.json" },
+    { radius = { Float64 = 0.1 }, brush = { Solid = { components = [1.0, 1.0, 0.87843144, 1.0], cs = "Srgb" } }, must_show = { Boolean = false } },
+]

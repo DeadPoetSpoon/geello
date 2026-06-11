@@ -1,0 +1,23 @@
+# Geello Raster Renderer Style — GeoTIFF raster rendering
+# Requires: feature = "raster"
+#
+# This style configures a RasterRenderer for a GeoTIFF file.
+# The raster is rendered as a textured rectangle covering the full tile.
+
+tile_proj = "EPSG3857"
+need_proj_geom = true
+
+[pixel]
+width = 256
+height = 256
+base_color = { components = [0.0, 0.0, 0.0, 0.0], cs = "Srgb" }
+
+# RasterRenderer — renders a GeoTIFF as a textured overlay
+# [[renderers]]
+# type = "Raster"
+# source = { file = { path = "assets/test/sample.tif" } }
+# opacity = 0.8
+# band_mapping = { Rgb = { red = 1, green = 2, blue = 3 } }
+#
+# For grayscale:
+# band_mapping = { Gray = { band = 1 } }

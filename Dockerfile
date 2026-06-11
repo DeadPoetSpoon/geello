@@ -29,7 +29,7 @@ COPY --from=planner /geello/recipe.json recipe.json
 RUN cargo chef cook --release \
     --target x86_64-unknown-linux-musl \
     --recipe-path recipe.json \
-    --features server
+    --features full
 
 # Copy full source and build
 COPY Cargo.toml Cargo.lock ./
@@ -38,28 +38,20 @@ COPY assets ./assets
 
 RUN cargo build --release \
     --target x86_64-unknown-linux-musl \
-    --features server
+    --features full
 
 # ============================================================
 # Stage 4: Minimal runtime image
 # ============================================================
 FROM alpine:3.22
 
-RUN apk add --no-cache \
-    libgcc \
-    vulkan-loader \
-    ca-certificates
-
 WORKDIR /geello
 
 COPY --from=builder \
     /geello/target/x86_64-unknown-linux-musl/release/geello .
 
-COPY assets ./assets
+COPY data ./data
 
 EXPOSE 8000
-
-# Vulkan GPU access — see README for NVIDIA Container Toolkit setup
-VOLUME ["/geello/cache"]
 
 ENTRYPOINT ["./geello"]
