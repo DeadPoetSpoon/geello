@@ -1,9 +1,18 @@
 # ============================================================
 # Stage 1: Install cargo-chef (dependency analysis tool)
 # ============================================================
-FROM rust:1.95-alpine AS chef
+FROM library/rust:1.96-alpine3.23 AS chef
 
-RUN apk add --no-cache musl-dev pkgconfig
+# Use domestic Alpine mirror (USTC)
+# RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.ustc.edu.cn|g' /etc/apk/repositories
+
+RUN apk add --no-cache musl-dev pkgconfig g++ cmake make sqlite-dev tiff-dev curl-dev
+
+# Use domestic cargo mirror (rsproxy)
+# RUN mkdir -p $CARGO_HOME && \
+#     printf '[source.crates-io]\nreplace-with = "rsproxy"\n[source.rsproxy]\nregistry = "sparse+https://rsproxy.cn/index/"\n' \
+#     > $CARGO_HOME/config.toml
+
 RUN cargo install cargo-chef --locked
 
 WORKDIR /geello
@@ -34,7 +43,6 @@ RUN cargo chef cook --release \
 # Copy full source and build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY assets ./assets
 
 RUN cargo build --release \
     --target x86_64-unknown-linux-musl \
@@ -43,7 +51,7 @@ RUN cargo build --release \
 # ============================================================
 # Stage 4: Minimal runtime image
 # ============================================================
-FROM alpine:3.22
+FROM library/alpine:3.23
 
 WORKDIR /geello
 

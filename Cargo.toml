@@ -2,6 +2,15 @@
 name = "geello"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+authors = ["Dead Poet Spoon <deadpoetspoon@qq.com>"]
+description = "A tool to render geo data"
+homepage = "https://github.com/DeadPoetSpoon/geello"
+documentation = "https://docs.rs/geello/"
+readme = "./README.md"
+repository = "https://github.com/DeadPoetSpoon/geello"
+keywords = ["gis", "geo", "map-render", "2d", "vector-graphics"]
+categories = ["science::geo"]
 
 [dependencies]
 axum = { version = "0.8.9", optional = true, features = ["ws"] }
