@@ -11,4 +11,4 @@ pub use layer::{
     Crs, LayerId, LayerSource, ProjectionSpec, PropertyValue, RenderedGeometry, RenderedLayer,
     WorkspaceRegistry, load_layer, load_layers,
 };
-pub use lazy::{Encoding, FromPropValue, LazyValue, ResolveContext};
+pub use lazy::{Encoding, FromPropValue, LazyValue, ResolveContext, opt_resolve};

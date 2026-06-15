@@ -77,11 +77,11 @@
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
 | 1.7.1 | 定义 `RendererDef` / `RendererKind` / config 占位类型 | REQ-202 | ✓ |
-| 1.7.2 | `PointConfig` 配置（半径/颜色/fill） | REQ-202a |
-| 1.7.3 | `LineConfig` 配置（线宽/join/cap/颜色） | REQ-202b |
-| 1.7.4 | `AreaConfig` 配置（填充色/边界线） | REQ-202c |
-| 1.7.5 | `TextConfig` 配置（字体/字号/颜色/锚点） | REQ-202d |
-| 1.7.6 | `RasterConfig` 配置（feature: `raster`） | REQ-202e |
+| 1.7.2 | `PointConfig` 配置（半径/颜色/fill） + resolve | REQ-202a | ✓ |
+| 1.7.3 | `LineConfig` 配置（线宽/join/cap/颜色） + resolve | REQ-202b | ✓ |
+| 1.7.4 | `AreaConfig` 配置（填充色/边界线） + resolve | REQ-202c | ✓ |
+| 1.7.5 | `TextConfig` 配置（字体/字号/颜色/锚点） + resolve | REQ-202d | ✓ |
+| 1.7.6 | `RasterConfig` 配置（feature: `raster`） + resolve | REQ-202e | ✓ |
 | 1.7.7 | `GeometryFilter`（属性筛选 + bbox 筛选） | REQ-203 | ✓ |
 
 ### 1.8 投影与坐标变换
@@ -316,7 +316,7 @@ graph TD
 
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
-| Phase 1 | ~39% | 1.1 错误 + 1.2 几何 + 1.3 GeoJSON + 1.5 Style + 1.6 LazyValue + 1.7 容器已完成 |
+| Phase 1 | ~47% | 1.1–1.3 + 1.5–1.7 已完成 |
 | Phase 2 | 0% | `src/render/mod.rs` 为空 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
