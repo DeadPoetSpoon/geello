@@ -22,7 +22,7 @@ geojson = { version = "1.0.0", optional = true }
 image = { version = "0.25.10", optional = true }
 reqwest = { version = "0.13.4", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = { version = "1.0.150", optional = true }
+serde_json = "1.0.150"
 thiserror = "2.0.18"
 tiff = { version = "0.11.3", optional = true }
 tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
@@ -35,6 +35,6 @@ vello = "0.9.0"
 default = ["full"]
 server = ["dep:axum", "dep:figment", "dep:foyer","dep:image","dep:geojson","dep:tracing-subscriber"]
 from_http = ["dep:reqwest"]
-from_json = ["dep:serde_json"]
+from_samba = []
 raster = ["dep:tiff"]
-full = ["server", "from_http", "from_json", "raster"]
+full = ["server", "from_http", "from_samba", "raster"]

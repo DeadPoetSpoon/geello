@@ -15,6 +15,15 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 
 ## 2. 数据输入
 
+### REQ-102: Workspace/Layer 身份系统
+
+系统必须支持 workspace:layer 两级命名空间逻辑标识图层，解耦数据来源。
+
+- **REQ-102a**: `LayerId` 结构体 (workspace, name) 作为图层唯一标识
+- **REQ-102b**: `LayerSource` 枚举支持 `FileSystem` / `Http` (feature: `from_http`) / `Samba` (feature: `from_samba`)
+- **REQ-102c**: `WorkspaceRegistry` 维护 LayerId → LayerSource 的全局映射，对齐 foyer 缓存键设计
+- **REQ-102d**: `RenderedLayer` 封装 LayerId + LayerSource + Vec<RenderedGeometry>，作为缓存的原子单元
+
 ### REQ-100: GeoJSON 数据加载
 
 系统必须能够加载和解析 GeoJSON 格式的地理数据。
@@ -55,8 +64,8 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 - **REQ-201b**: `File(path)` — 从 TOML 文件加载
 - **REQ-201c**: `Toml(content)` — 从内联 TOML 字符串解析
 - **REQ-201d**: `Prop(field, encoding)` — 从 GeoJSON feature properties 读取
-- **REQ-201e**: `JsonFile(path)` — 从 JSON 文件加载 (feature: `from_json`)
-- **REQ-201f**: `Url(url, encoding)` — 从 HTTP URL 加载 (feature: `from_http`)
+- **REQ-201e**: `JsonFile(path)` 从 JSON 文件加载
+- **REQ-201f**: `Url(url, encoding)` 从 HTTP URL 加载 (feature: `from_http`)
 
 ### REQ-202: 渲染器类型
 
@@ -222,9 +231,10 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 | `default`   | 纯 library，最小依赖                          |
 | `server`    | Axum HTTP 服务 + 缓存 + 热重载               |
 | `from_http` | LazyValue 支持 HTTP URL 源                    |
-| `from_json` | LazyValue 支持 JSON 格式 / 文件              |
+| `from_json` | LazyValue 支持 JSON 格式 / 文件 |  (已合并为默认实现) |
+| `from_samba` | LazyValue 支持 Samba 源 | (预留) |
 | `raster`    | GeoTIFF 加载与渲染                            |
-| `full`      | 全功能 (`server` + `from_http` + `from_json` + `raster`) |
+| `full`      | 全功能 (`server` + `from_http` + `from_samba` + `raster`) |
 
 ---
 
