@@ -51,10 +51,13 @@
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 1.5.1 | 定义 `RenderOption` 结构体（TOML 样式顶层容器） | REQ-200 |
-| 1.5.2 | 定义 `RenderRegion` 枚举（全量/矩形/瓦片/缓冲区） | REQ-200a |
-| 1.5.3 | 定义 `PixelOption`（宽/高/背景色） | REQ-200b |
-| 1.5.4 | 定义 `TileProj` 枚举（EPSG:4326 / EPSG:3857） | REQ-200c |
+| 1.5.1 | 定义 `Style` / `LayerStyle` / `RendererDef` 容器结构 | REQ-200 | ✓ |
+| 1.5.2 | 定义 `RenderRegion` 枚举（全量/矩形/瓦片/缓冲区） | REQ-200a | — |
+| 1.5.3 | 定义 `PixelOption`（宽/高/背景色） | REQ-200b | — |
+| 1.5.4 | 定义 `TileProj` 枚举（EPSG:4326 / EPSG:3857） | REQ-200c | — |
+
+> 注：1.5.1 重新设计为三层结构 `Style → LayerStyle → RendererDef`，
+> 文件位于 `src/core/style/`。1.5.2–1.5.4 将在后续渲染阶段按需定义。
 
 ### 1.6 LazyValue 延迟解析系统
 
@@ -313,7 +316,7 @@ graph TD
 
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
-| Phase 1 | ~29% | 1.1 错误 + 1.2 几何 + 1.3 GeoJSON（本地/HTTP/缓存）已完成 |
+| Phase 1 | ~31% | 1.1 错误 + 1.2 几何 + 1.3 GeoJSON + 1.5 Style 容器已完成 |
 | Phase 2 | 0% | `src/render/mod.rs` 为空 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 

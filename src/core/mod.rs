@@ -2,6 +2,7 @@ pub mod cache;
 pub mod error;
 pub mod geojson;
 pub mod layer;
+pub mod style;
 
 pub use cache::{LayerCache, LayerCacheBuilder};
 pub use error::{GeelloError, GeelloResult};
