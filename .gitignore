@@ -1,5 +1,5 @@
 /target
-assets/test/*
-!assets/test/.traced
+data/test/*
+!data/test/.traced
 /.cargo
 /vendor
