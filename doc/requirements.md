@@ -46,15 +46,15 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 
 ## 3. 样式配置
 
-### REQ-200: TOML 样式文件
+### REQ-200: Style 样式文件
 
-系统必须使用 TOML 格式定义渲染样式。
+系统必须使用 TOML 格式定义渲染样式，采用三层结构 `Style → LayerStyle → RendererDef`。
 
-- **REQ-200a**: 配置渲染区域 (`region`): 全量、矩形、瓦片索引、点缓冲区
-- **REQ-200b**: 配置画布尺寸 (`pixel_option`): 宽、高、背景色
-- **REQ-200c**: 配置坐标系 (`tile_proj`): EPSG:4326 或 EPSG:3857
-- **REQ-200d**: 配置是否需要投影变换 (`need_proj_geom`)
-- **REQ-200e**: 配置渲染器列表 (`renderers`)
+- **REQ-200a**: `Style` — 顶层容器，含 `[[layers]]` 数组，每项为一个图层的完整渲染配置
+- **REQ-200b**: `LayerStyle` — 单图层配置，含 `filter`（LayerFilter: workspace + name）和 `renderers` 列表
+- **REQ-200c**: `RendererDef` — 单个渲染器定义，按类型 (point/line/area/text/raster) 携带对应 Config，可选 `geometry_filter`
+- **REQ-200d**: 所有字段均有默认值，目标为增量配置：文件不存在时全默认，未设置项不序列化写入
+- **REQ-200e**: `renderers` 按顺序分层绘制
 
 ### REQ-201: LazyValue 延迟解析系统
 
@@ -79,10 +79,11 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 
 ### REQ-203: 几何过滤器
 
-每个渲染器必须支持按图层名称过滤几何。
+每个渲染器必须支持按几何属性或空间位置过滤。
 
-- **REQ-203a**: `None` — 渲染所有几何
-- **REQ-203b**: `Layer(name)` — 仅渲染指定图层
+- **REQ-203a**: `prop` — 按 feature property 筛选（name + Eq + value）
+- **REQ-203b**: `bbox` — 按几何包围盒矩形筛选（min_x, min_y, max_x, max_y）
+- **REQ-203c**: 两种条件可组合（AND），均未设置时渲染所有几何
 
 ---
 
@@ -165,7 +166,7 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 
 ### REQ-500: 分层缓存
 
-- **REQ-500a**: Layer 缓存 — 缓存解析后的 GeoJSON (内存)
+- **REQ-500a**: Layer 缓存 — `LayerCache` (foyer 内存 LRU)，已提升为核心模块 (REQ ✓)
 - **REQ-500b**: Style 缓存 — 缓存解析后的 TOML 样式 (内存)
 - **REQ-500c**: Tile 缓存 — 缓存渲染后的瓦片图像 (内存 + 磁盘混合)
 
@@ -228,11 +229,10 @@ Geello 是使用 GPU 加速的地理数据渲染工具，支持两种模式：
 
 | Feature     | 需求                                          |
 |-------------|-----------------------------------------------|
-| `default`   | 纯 library，最小依赖                          |
-| `server`    | Axum HTTP 服务 + 缓存 + 热重载               |
-| `from_http` | LazyValue 支持 HTTP URL 源                    |
-| `from_json` | LazyValue 支持 JSON 格式 / 文件 |  (已合并为默认实现) |
-| `from_samba` | LazyValue 支持 Samba 源 | (预留) |
+| `default`   | core (foyer/geojson/serde_json 已内置)        |
+| `server`    | Axum HTTP 服务 + 热重载                       |
+| `from_http` | LayerSource::Http + LayerCache HTTP client + LazyValue HTTP 源 |
+| `from_samba` | LayerSource::Samba (预留)                     |
 | `raster`    | GeoTIFF 加载与渲染                            |
 | `full`      | 全功能 (`server` + `from_http` + `from_samba` + `raster`) |
 

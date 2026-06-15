@@ -63,26 +63,26 @@
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 1.6.1 | 定义 `LazyValue<T>` 泛型枚举 | REQ-201 |
-| 1.6.2 | `Inline(T)` 变体实现 | REQ-201a |
-| 1.6.3 | `File(path)` 从 TOML 文件加载 | REQ-201b |
-| 1.6.4 | `Toml(content)` 从内联字符串解析 | REQ-201c |
-| 1.6.5 | `Prop(field, encoding)` 从 GeoJSON properties 读取 | REQ-201d |
-| 1.6.6 | `JsonFile(path)` 从 JSON 文件加载（feature: `from_json`） | REQ-201e |
-| 1.6.7 | `Url(url, encoding)` 从 HTTP 加载（feature: `from_http`） | REQ-201f |
-| 1.6.8 | 实现 `LazyValue::resolve()` 延迟求值方法 | — |
+| 1.6.1 | 定义 `LazyValue<T>` 泛型枚举（6 种变体） | REQ-201 | ✓ |
+| 1.6.2 | `Inline(T)` 变体实现 | REQ-201a | ✓ |
+| 1.6.3 | `File(path)` 从 TOML/JSON 文件加载 | REQ-201b | ✓ |
+| 1.6.4 | `Toml(content)` 从内联字符串解析 | REQ-201c | ✓ |
+| 1.6.5 | `Prop(field, encoding)` 从 GeoJSON properties 读取 | REQ-201d | ✓ |
+| 1.6.6 | `JsonFile(path)` 从 JSON 文件加载 | REQ-201e | ✓ |
+| 1.6.7 | `Url(url, encoding)` 从 HTTP 加载（feature: `from_http`） | REQ-201f | ✓ |
+| 1.6.8 | 实现 `LazyValue::resolve()` / `resolve_static()` | — | ✓ |
 
 ### 1.7 渲染器类型定义
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 1.7.1 | 定义 `RendererKind` 枚举（Point/Line/Area/Text/Raster） | REQ-202 |
-| 1.7.2 | `PointRenderer` 配置（半径/颜色/fill） | REQ-202a |
-| 1.7.3 | `LineRenderer` 配置（线宽/join/cap/颜色） | REQ-202b |
-| 1.7.4 | `AreaRenderer` 配置（填充色/边界线） | REQ-202c |
-| 1.7.5 | `TextRenderer` 配置（字体/字号/颜色/锚点） | REQ-202d |
-| 1.7.6 | `RasterRenderer` 配置（feature: `raster`） | REQ-202e |
-| 1.7.7 | `GeometryFilter` 枚举（None / Layer(name)） | REQ-203 |
+| 1.7.1 | 定义 `RendererDef` / `RendererKind` / config 占位类型 | REQ-202 | ✓ |
+| 1.7.2 | `PointConfig` 配置（半径/颜色/fill） | REQ-202a |
+| 1.7.3 | `LineConfig` 配置（线宽/join/cap/颜色） | REQ-202b |
+| 1.7.4 | `AreaConfig` 配置（填充色/边界线） | REQ-202c |
+| 1.7.5 | `TextConfig` 配置（字体/字号/颜色/锚点） | REQ-202d |
+| 1.7.6 | `RasterConfig` 配置（feature: `raster`） | REQ-202e |
+| 1.7.7 | `GeometryFilter`（属性筛选 + bbox 筛选） | REQ-203 | ✓ |
 
 ### 1.8 投影与坐标变换
 
@@ -305,8 +305,8 @@ graph TD
 | Feature     | 涉及模块 | 依赖 Tasks |
 |-------------|----------|-----------|
 | `default`   | core + render（全部同步 API） | Phase 1 + Phase 2 |
-| `server`    | core + render + server | Phase 1 + 2 + 3，需额外依赖 axum/figment/foyer/image/tracing-subscriber |
-| `from_http` | core（LayerSource::Http + LazyValue::Url + HTTP 加载） | 1.3.4, 1.6.7 |
+| `server`    | core + render + server | Phase 1 + 2 + 3，需额外依赖 axum/figment/image/tracing-subscriber |
+| `from_http` | core（LayerSource::Http + LayerCache HTTP client + LazyValue::Url） | 1.3.4, 1.6.7 |
 | `from_samba` | core（LayerSource::Samba） | (预留) |
 | `raster`    | core + render（GeoTIFF + 栅格管线） | 1.4, 2.4 |
 
@@ -316,15 +316,20 @@ graph TD
 
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
-| Phase 1 | ~31% | 1.1 错误 + 1.2 几何 + 1.3 GeoJSON + 1.5 Style 容器已完成 |
+| Phase 1 | ~39% | 1.1 错误 + 1.2 几何 + 1.3 GeoJSON + 1.5 Style + 1.6 LazyValue + 1.7 容器已完成 |
 | Phase 2 | 0% | `src/render/mod.rs` 为空 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
 ### 已有代码清单
 
-- `src/server/config.rs` — `ServerConfig` + figment 多层配置（REQ-600 ✓）
+- `src/core/error.rs` — `GeelloError` + `GeelloResult` (REQ-800 ✓)
+- `src/core/layer.rs` — `LayerId`, `LayerSource`, `Crs`, `ProjectionSpec`, `WorkspaceRegistry`, `RenderedGeometry`, `RenderedLayer`, `load_layers` / `load_layer` (REQ-100, REQ-102 ✓)
+- `src/core/geojson.rs` — GeoJSON 解析 + CRS 自动检测 (REQ-100 ✓)
+- `src/core/cache.rs` — `LayerCache` / `LayerCacheBuilder`, foyer 内存缓存 + HTTP 加载 (REQ-100b, REQ-500a ✓)
+- `src/core/style/` — `Style` / `LayerStyle` / `LayerFilter` / `RendererDef` / `GeometryFilter` 容器 (REQ-200, REQ-203 ✓)
+- `src/server/config.rs` — `ServerConfig` + figment 多层配置 (REQ-600 ✓)
 - `src/server/state.rs` — `AppState` 定义
 - `src/server/mod.rs` — Axum 应用启动流程
 - `src/server/routes/wmts.rs` — `/wmts/cache` stub
-- `Dockerfile` — 多阶段 musl 构建（REQ-1000 ✓）
-- `Cargo.toml` — 全部依赖声明 + feature flags（REQ-900 ✓）
+- `Dockerfile` — 多阶段 musl 构建 (REQ-1000 ✓)
+- `Cargo.toml` — 全部依赖声明 + feature flags (REQ-900 ✓)
