@@ -18,7 +18,7 @@ figment = { version = "0.10.19", optional = true, features = ["env", "toml"] }
 foyer = { version = "0.22.3", features = ["serde"], optional = true }
 geo = { version = "0.33.1", features = ["proj"] }
 geo-types = { version = "0.7.19", features = ["multithreading", "rayon", "serde"] }
-geojson = { version = "1.0.0", optional = true }
+geojson = "1.0.0"
 image = { version = "0.25.10", optional = true }
 reqwest = { version = "0.13.4", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -33,7 +33,7 @@ vello = "0.9.0"
 
 [features]
 default = ["full"]
-server = ["dep:axum", "dep:figment", "dep:foyer","dep:image","dep:geojson","dep:tracing-subscriber"]
+server = ["dep:axum", "dep:figment", "dep:foyer","dep:image","dep:tracing-subscriber"]
 from_http = ["dep:reqwest"]
 from_samba = []
 raster = ["dep:tiff"]

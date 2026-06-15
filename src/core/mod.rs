@@ -1,7 +1,9 @@
 pub mod error;
+pub mod geojson;
 pub mod layer;
 
 pub use error::{GeelloError, GeelloResult};
 pub use layer::{
-    LayerId, LayerSource, PropertyValue, RenderedGeometry, RenderedLayer, WorkspaceRegistry,
+    Crs, LayerId, LayerSource, ProjectionSpec, PropertyValue, RenderedGeometry, RenderedLayer,
+    WorkspaceRegistry,
 };

@@ -36,19 +36,49 @@ pub enum LayerSource {
     FileSystem {
         /// Absolute or relative path to the layer data file.
         path: String,
+        /// Coordinate projection override. Defaults to [`ProjectionSpec::Auto`]
+        /// which extracts the CRS from the file itself (GeoJSON `crs` member,
+        /// GeoTIFF tags, etc.).
+        #[serde(default)]
+        projection: ProjectionSpec,
     },
     /// Remote HTTP/HTTPS resource.
     #[cfg(feature = "from_http")]
     Http {
         /// Full URL to the layer data endpoint.
         url: String,
+        #[serde(default)]
+        projection: ProjectionSpec,
     },
     /// Samba / SMB network share.
     #[cfg(feature = "from_samba")]
     Samba {
         /// UNC or smb:// path to the layer data file.
         path: String,
+        #[serde(default)]
+        projection: ProjectionSpec,
     },
+}
+
+/// Specifies how the coordinate reference system of a layer is determined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectionSpec {
+    /// Auto-detect from the data source (GeoJSON `crs` member, GeoTIFF tags).
+    Auto,
+    /// Explicitly set an EPSG code (e.g. `Epsg(4326)` for WGS84).
+    Epsg(u16),
+}
+
+impl Default for ProjectionSpec {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+/// Resolved coordinate reference system identified by its EPSG code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Crs {
+    pub epsg: u16,
 }
 
 /// Central registry mapping every [`LayerId`] to its [`LayerSource`].
@@ -161,6 +191,8 @@ pub struct RenderedLayer {
     pub id: LayerId,
     /// Physical data source.
     pub source: LayerSource,
+    /// Resolved coordinate reference system (EPSG code).
+    pub crs: Crs,
     /// Geometries contained in this layer.
     pub geometries: Vec<RenderedGeometry>,
 }

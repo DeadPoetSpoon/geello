@@ -30,8 +30,8 @@
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 1.3.1 | 本地文件加载 `.geojson` / `.json` | REQ-100a |
-| 1.3.2 | Feature / FeatureCollection / Geometry 三种根类型解析 | REQ-100c |
+| 1.3.1 | 本地文件加载 `.geojson` / `.json` | REQ-100a | ✓ |
+| 1.3.2 | Feature / FeatureCollection / Geometry 三种根类型解析 | REQ-100c | ✓ |
 | 1.3.3 | 多图层 `,` 分隔加载，按顺序存储 | REQ-100d |
 | 1.3.4 | HTTP URL 加载（feature: `from_http`） | REQ-100b |
 
@@ -311,7 +311,7 @@ graph TD
 
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
-| Phase 1 | ~16% | 1.1 基础类型与错误系统 + 1.2 地理几何抽象已完成 |
+| Phase 1 | ~21% | 1.1 错误系统 + 1.2 几何抽象 + 1.3 GeoJSON 加载（本地 + 三种根类型）已完成 |
 | Phase 2 | 0% | `src/render/mod.rs` 为空 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
