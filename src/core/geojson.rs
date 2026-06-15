@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use crate::core::error::GeelloResult;
 use crate::core::layer::{
@@ -139,7 +138,7 @@ fn geometry_to_rendered(
 /// - `FeatureCollection` → multiple geometries with properties
 /// - `Feature` → single geometry with properties
 /// - `Geometry` → single geometry, no properties
-fn parse_geojson_str(
+pub(crate) fn parse_geojson_str(
     raw: &str,
     layer_id: LayerId,
     source: LayerSource,
@@ -194,34 +193,6 @@ fn parse_geojson_str(
             })
         }
     }
-}
-
-/// Load a GeoJSON file from the local filesystem and parse it into a [`RenderedLayer`].
-///
-/// # Arguments
-///
-/// * `path` — Path to a `.geojson` or `.json` file.
-/// * `layer_id` — Logical identity to assign to the loaded layer.
-///
-/// # Returns
-///
-/// A fully-parsed [`RenderedLayer`] with source set to
-/// [`LayerSource::FileSystem`] and CRS auto-detected from the file content.
-///
-/// # Errors
-///
-/// Returns [`GeelloError::Io`] if the file cannot be read, or
-/// [`GeelloError::Json`] / [`GeelloError::GeoJson`] if parsing fails.
-pub fn load_geojson_file(path: impl AsRef<Path>, layer_id: LayerId) -> GeelloResult<RenderedLayer> {
-    let path = path.as_ref();
-    let raw = std::fs::read_to_string(path)?;
-
-    let source = LayerSource::FileSystem {
-        path: path.to_string_lossy().into_owned(),
-        projection: ProjectionSpec::Auto,
-    };
-
-    parse_geojson_str(&raw, layer_id, source)
 }
 
 #[cfg(test)]

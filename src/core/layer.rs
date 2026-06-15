@@ -3,6 +3,9 @@ use std::collections::HashMap;
 use geo_types::Geometry;
 use serde::{Deserialize, Serialize};
 
+use crate::core::cache::LayerCache;
+use crate::core::error::GeelloResult;
+
 /// Unique logical identifier for a geographical layer.
 ///
 /// Analogous to GeoServer's `workspace:layer` naming convention,
@@ -24,6 +27,36 @@ pub struct LayerId {
     pub workspace: String,
     /// Layer name within the workspace (e.g. "countries", "roads").
     pub name: String,
+}
+
+impl LayerId {
+    /// Parse a `"workspace:name"` string into a [`LayerId`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `None` if the input does not contain exactly one `:` separator
+    /// or either side is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use geello::core::LayerId;
+    ///
+    /// let id = LayerId::parse("osm:roads").unwrap();
+    /// assert_eq!(id.workspace, "osm");
+    /// assert_eq!(id.name, "roads");
+    /// ```
+    pub fn parse(input: &str) -> Option<Self> {
+        let (workspace, name) = input.split_once(':')?;
+        if workspace.is_empty() || name.is_empty() || workspace.contains(':') || name.contains(':')
+        {
+            return None;
+        }
+        Some(Self {
+            workspace: workspace.to_owned(),
+            name: name.to_owned(),
+        })
+    }
 }
 
 /// Physical source location of layer data.
@@ -123,7 +156,7 @@ impl WorkspaceRegistry {
             .collect()
     }
 
-    /// Returns a deduplicated list of all workspace names.
+    /// Returns a deduplicated, sorted list of all workspace names.
     pub fn workspaces(&self) -> Vec<&str> {
         let mut set: std::collections::HashSet<&str> =
             self.layers.keys().map(|id| id.workspace.as_str()).collect();
@@ -131,21 +164,58 @@ impl WorkspaceRegistry {
         vec.sort_unstable();
         vec
     }
+}
 
-    /// Number of registered layers.
-    pub fn len(&self) -> usize {
-        self.layers.len()
-    }
+/// Load a single layer through the cache.
+///
+/// Convenience wrapper around [`LayerCache::get_or_load`]; loads and caches
+/// a single layer identified by [`LayerId`].
+///
+/// # Errors
+///
+/// Returns [`GeelloError::InvalidArgument`] if the layer is not registered,
+/// or a load/parse error from the data source.
+pub fn load_layer(
+    id: &LayerId,
+    registry: &WorkspaceRegistry,
+    cache: &LayerCache,
+) -> GeelloResult<RenderedLayer> {
+    cache.get_or_load(id, registry)
+}
 
-    /// Whether the registry is empty.
-    pub fn is_empty(&self) -> bool {
-        self.layers.is_empty()
-    }
-
-    /// Returns an iterator over all `(LayerId, LayerSource)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (&LayerId, &LayerSource)> {
-        self.layers.iter()
-    }
+/// Load multiple layers by resolving their IDs against a [`WorkspaceRegistry`]
+/// and a [`LayerCache`].
+///
+/// Accepts a comma-separated string of `"workspace:name"` pairs (e.g.
+/// `"osm:roads,ne:countries"`) and loads each one in order.
+///
+/// Each layer ID is resolved via the cache: cache hit returns
+/// immediately; cache miss triggers a load from the registered
+/// [`LayerSource`], parses the data, stores it in the cache, and returns.
+///
+/// # Errors
+///
+/// Returns [`GeelloError::InvalidArgument`] if a layer ID cannot be parsed
+/// or is not found in the registry. Propagates I/O and parse errors from
+/// the data source on cache miss.
+pub fn load_layers(
+    layer_list: &str,
+    registry: &WorkspaceRegistry,
+    cache: &LayerCache,
+) -> GeelloResult<Vec<RenderedLayer>> {
+    layer_list
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|token| {
+            let id = LayerId::parse(token).ok_or_else(|| {
+                crate::core::error::GeelloError::InvalidArgument(format!(
+                    "Invalid layer identifier: '{token}'. Expected format: 'workspace:name'"
+                ))
+            })?;
+            cache.get_or_load(&id, registry)
+        })
+        .collect()
 }
 
 /// Value type for GeoJSON feature properties.
@@ -195,4 +265,124 @@ pub struct RenderedLayer {
     pub crs: Crs,
     /// Geometries contained in this layer.
     pub geometries: Vec<RenderedGeometry>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::LayerCacheBuilder;
+    use std::io::Write;
+
+    /// Helper: write a GeoJSON string to a temp file and return the path.
+    fn temp_geojson_file(name: &str, content: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("geello_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_layer_id_parse() {
+        let id = LayerId::parse("osm:roads").unwrap();
+        assert_eq!(id.workspace, "osm");
+        assert_eq!(id.name, "roads");
+    }
+
+    #[test]
+    fn test_layer_id_parse_invalid() {
+        assert!(LayerId::parse("no_colon").is_none());
+        assert!(LayerId::parse(":empty_workspace").is_none());
+        assert!(LayerId::parse("empty_name:").is_none());
+        assert!(LayerId::parse("a:b:c").is_none());
+    }
+
+    #[test]
+    fn test_load_layers() {
+        let content = r#"{
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": { "type": "Point", "coordinates": [102.0, 0.5] },
+                    "properties": { "name": "a" }
+                }
+            ]
+        }"#;
+        let path_a = temp_geojson_file("a.geojson", content);
+        let path_b = temp_geojson_file("b.geojson", content);
+
+        let mut registry = WorkspaceRegistry::new();
+        registry.insert(
+            LayerId::parse("test:a").unwrap(),
+            LayerSource::FileSystem {
+                path: path_a.to_string_lossy().into(),
+                projection: ProjectionSpec::Auto,
+            },
+        );
+        registry.insert(
+            LayerId::parse("test:b").unwrap(),
+            LayerSource::FileSystem {
+                path: path_b.to_string_lossy().into(),
+                projection: ProjectionSpec::Auto,
+            },
+        );
+
+        let cache = LayerCacheBuilder::new().capacity(8).build();
+        let layers = load_layers("test:a,test:b", &registry, &cache).unwrap();
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[0].id.workspace, "test");
+        assert_eq!(layers[0].id.name, "a");
+        assert_eq!(layers[1].id.name, "b");
+    }
+
+    #[test]
+    fn test_load_layers_not_found() {
+        let registry = WorkspaceRegistry::new();
+        let cache = LayerCacheBuilder::new().capacity(1).build();
+        let err = load_layers("ghost:layer", &registry, &cache).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::core::error::GeelloError::InvalidArgument(_)
+        ));
+    }
+
+    #[test]
+    fn test_load_layers_invalid_id() {
+        let registry = WorkspaceRegistry::new();
+        let cache = LayerCacheBuilder::new().capacity(1).build();
+        let err = load_layers("badformat", &registry, &cache).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::core::error::GeelloError::InvalidArgument(_)
+        ));
+    }
+
+    #[test]
+    fn test_load_layers_empty_token() {
+        let content = r#"{
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": { "type": "Point", "coordinates": [0.0, 0.0] }
+                }
+            ]
+        }"#;
+        let path = temp_geojson_file("single.geojson", content);
+
+        let mut registry = WorkspaceRegistry::new();
+        registry.insert(
+            LayerId::parse("test:single").unwrap(),
+            LayerSource::FileSystem {
+                path: path.to_string_lossy().into(),
+                projection: ProjectionSpec::Auto,
+            },
+        );
+
+        let cache = LayerCacheBuilder::new().capacity(1).build();
+        let layers = load_layers(",,test:single,,", &registry, &cache).unwrap();
+        assert_eq!(layers.len(), 1);
+    }
 }
