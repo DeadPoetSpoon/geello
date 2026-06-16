@@ -103,17 +103,17 @@
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 2.1.1 | wgpu 设备自动检测与初始化 | REQ-700a |
-| 2.1.2 | 多 GPU 接口预留（当前仅使用第一个适配器） | REQ-700b |
-| 2.1.3 | `RenderContext` 结构体（持有 Device/Queue/Renderer） | REQ-300 |
+| 2.1.1 | wgpu 设备自动检测与初始化 | REQ-700a | ✓ |
+| 2.1.2 | 多 GPU 接口预留（当前仅使用第一个适配器） | REQ-700b | ✓ |
+| 2.1.3 | `RenderContext` 结构体（持有 Device/Queue/Renderer） | REQ-300 | ✓ |
 
 ### 2.2 纹理池（Server 模式前置）
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 2.2.1 | `TexturePool` 结构体（预分配可复用 Texture） | REQ-701a |
-| 2.2.2 | Semaphore 限流并发请求 | REQ-701b |
-| 2.2.3 | `acquire()` / `release()` 接口 | REQ-701c |
+| 2.2.1 | `TexturePool` 结构体（预分配可复用 Texture） | REQ-701a | ✓ |
+| 2.2.2 | Semaphore 限流并发请求 | REQ-701b | ✓ |
+| 2.2.3 | `acquire()` / `release()` 接口 | REQ-701c | ✓ |
 
 ### 2.3 vello Scene 构建
 
@@ -317,7 +317,7 @@ graph TD
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
 | Phase 1 | ~58% | 1.1–1.3 + 1.5–1.8 已完成 |
-| Phase 2 | 0% | `src/render/mod.rs` 为空 |
+| Phase 2 | ~18% | 2.1–2.2 已完成 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
 ### 已有代码清单
