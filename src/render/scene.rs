@@ -319,6 +319,7 @@ fn push_renderer(
 ) -> GeelloResult<()> {
     let filter = r.geometry_filter.as_ref();
 
+    // ---- Point ----
     if let Some(ref cfg) = r.point {
         for g in &layer.geometries {
             if let Some(f) = filter {
@@ -330,16 +331,25 @@ fn push_renderer(
                 properties: Some(&g.properties),
             };
             let radius = opt_resolve(cfg.radius.clone(), &ctx)?.unwrap_or(3.0);
-            let color = parse_color(
+            let c = parse_color(
                 opt_resolve(cfg.color.clone(), &ctx)?
                     .as_deref()
                     .unwrap_or("#000000"),
             );
-            let path = geometry_to_bezpath(&g.geometry, radius);
-            scene.fill(Fill::NonZero, *affine, &Brush::Solid(color), None, &path);
+            let bw = opt_resolve(cfg.border_width.clone(), &ctx)?;
+            let bc = opt_resolve(cfg.border_color.clone(), &ctx)?;
+            for (px, py) in pick_points(&g.geometry) {
+                let path = circle_bezier(px, py, radius);
+                scene.fill(Fill::NonZero, *affine, &Brush::Solid(c), None, &path);
+                if let Some(bw) = bw {
+                    let bc = parse_color(bc.as_deref().unwrap_or("#000000"));
+                    scene.stroke(&Stroke::new(bw), *affine, &Brush::Solid(bc), None, &path);
+                }
+            }
         }
     }
 
+    // ---- Line ----
     if let Some(ref cfg) = r.line {
         for g in &layer.geometries {
             if let Some(f) = filter {
@@ -351,7 +361,7 @@ fn push_renderer(
                 properties: Some(&g.properties),
             };
             let width = opt_resolve(cfg.width.clone(), &ctx)?.unwrap_or(1.0);
-            let color = parse_color(
+            let c = parse_color(
                 opt_resolve(cfg.color.clone(), &ctx)?
                     .as_deref()
                     .unwrap_or("#000000"),
@@ -364,11 +374,13 @@ fn push_renderer(
             stroke.start_cap = cap;
             stroke.end_cap = cap;
             stroke.miter_limit = miter_limit;
-            let path = geometry_to_bezpath(&g.geometry, 0.0);
-            scene.stroke(&stroke, *affine, &Brush::Solid(color), None, &path);
+            for path in line_paths(&g.geometry) {
+                scene.stroke(&stroke, *affine, &Brush::Solid(c), None, &path);
+            }
         }
     }
 
+    // ---- Area ----
     if let Some(ref cfg) = r.area {
         for g in &layer.geometries {
             if let Some(f) = filter {
@@ -379,33 +391,18 @@ fn push_renderer(
             let ctx = ResolveContext {
                 properties: Some(&g.properties),
             };
-            let fill_color = parse_color(
+            let c = parse_color(
                 opt_resolve(cfg.fill_color.clone(), &ctx)?
                     .as_deref()
                     .unwrap_or("#cccccc"),
             );
-            let stroke_width = opt_resolve(cfg.stroke_width.clone(), &ctx)?;
-            let stroke_color = opt_resolve(cfg.stroke_color.clone(), &ctx)?;
-            let path = geometry_to_bezpath(&g.geometry, 0.0);
-            scene.fill(
-                Fill::NonZero,
-                *affine,
-                &Brush::Solid(fill_color),
-                None,
-                &path,
-            );
-            if let (Some(sw), Some(sc)) = (stroke_width, stroke_color) {
-                scene.stroke(
-                    &Stroke::new(sw),
-                    *affine,
-                    &Brush::Solid(parse_color(&sc)),
-                    None,
-                    &path,
-                );
+            for path in fill_paths(&g.geometry) {
+                scene.fill(Fill::NonZero, *affine, &Brush::Solid(c), None, &path);
             }
         }
     }
 
+    // ---- Text ----
     if let Some(ref cfg) = r.text {
         for g in &layer.geometries {
             if let Some(f) = filter {
@@ -413,27 +410,30 @@ fn push_renderer(
                     continue;
                 }
             }
-            if let Geometry::Point(p) = &g.geometry {
-                let ctx = ResolveContext {
-                    properties: Some(&g.properties),
-                };
-                let font_key =
-                    opt_resolve(cfg.font.clone(), &ctx)?.unwrap_or_else(|| "default".into());
-                let label_field =
-                    opt_resolve(cfg.field.clone(), &ctx)?.unwrap_or_else(|| "name".into());
-                let font_size = opt_resolve(cfg.size.clone(), &ctx)?.unwrap_or(12.0);
-                let color = parse_color(
-                    opt_resolve(cfg.color.clone(), &ctx)?
-                        .as_deref()
-                        .unwrap_or("#000000"),
-                );
-                if let Some(PropertyValue::String(label)) = g.properties.get(&label_field) {
+            let ctx = ResolveContext {
+                properties: Some(&g.properties),
+            };
+            let font_key = opt_resolve(cfg.font.clone(), &ctx)?.unwrap_or_else(|| "default".into());
+            let label_field =
+                opt_resolve(cfg.field.clone(), &ctx)?.unwrap_or_else(|| "name".into());
+            let font_size = opt_resolve(cfg.size.clone(), &ctx)?.unwrap_or(12.0);
+            let c = parse_color(
+                opt_resolve(cfg.color.clone(), &ctx)?
+                    .as_deref()
+                    .unwrap_or("#000000"),
+            );
+            let ox = opt_resolve(cfg.offset_x.clone(), &ctx)?.unwrap_or(0.0);
+            let oy = opt_resolve(cfg.offset_y.clone(), &ctx)?.unwrap_or(0.0);
+            if let Some(PropertyValue::String(label)) = g.properties.get(&label_field) {
+                for (ax, ay) in geometry_anchors(&g.geometry) {
+                    let ax = ax + ox;
+                    let ay = ay + oy;
                     if let (Some(font), Ok(glyphs)) = (
                         fonts.font_data(&font_key),
-                        fonts.layout_glyphs(&font_key, label, p.x(), p.y(), font_size),
+                        fonts.layout_glyphs(&font_key, label, ax, ay, font_size),
                     ) {
                         if !glyphs.is_empty() {
-                            let brush = Brush::Solid(color);
+                            let brush = Brush::Solid(c);
                             scene
                                 .draw_glyphs(&font)
                                 .font_size(font_size as f32)
@@ -448,6 +448,184 @@ fn push_renderer(
     }
 
     Ok(())
+}
+
+// ---- Geometry → point list (for point renderer) ----
+fn pick_points(geom: &Geometry<f64>) -> Vec<(f64, f64)> {
+    use geo_types::Geometry::*;
+    match geom {
+        Point(p) => vec![(p.x(), p.y())],
+        Line(line) => {
+            let sx = line.start.x;
+            let sy = line.start.y;
+            let ex = line.end.x;
+            let ey = line.end.y;
+            vec![(sx, sy), ((sx + ex) / 2.0, (sy + ey) / 2.0), (ex, ey)]
+        }
+        LineString(ls) => pick_ls_points(ls),
+        Polygon(poly) => pick_ls_points(poly.exterior()),
+        MultiPoint(mp) => mp.0.iter().map(|p| (p.x(), p.y())).collect(),
+        MultiLineString(mls) => mls.0.iter().flat_map(|ls| pick_ls_points(ls)).collect(),
+        MultiPolygon(mp) => {
+            mp.0.iter()
+                .flat_map(|p| pick_ls_points(p.exterior()))
+                .collect()
+        }
+        Rect(r) => {
+            let c = r.min();
+            let c2 = r.max();
+            vec![
+                (c.x, c.y),
+                ((c.x + c2.x) / 2.0, (c.y + c2.y) / 2.0),
+                (c2.x, c2.y),
+            ]
+        }
+        Triangle(t) => {
+            let v1 = t.v1();
+            let v2 = t.v2();
+            let v3 = t.v3();
+            vec![(v1.x, v1.y), (v2.x, v2.y), (v3.x, v3.y)]
+        }
+        GeometryCollection(gc) => gc.0.iter().flat_map(|g| pick_points(g)).collect(),
+    }
+}
+
+fn pick_ls_points(ls: &LineString<f64>) -> Vec<(f64, f64)> {
+    let pts: Vec<_> = ls.points().collect();
+    match pts.len() {
+        0 => vec![],
+        1 => vec![(pts[0].x(), pts[0].y())],
+        n => {
+            let mid = n / 2;
+            vec![
+                (pts[0].x(), pts[0].y()),
+                (pts[mid].x(), pts[mid].y()),
+                (pts[n - 1].x(), pts[n - 1].y()),
+            ]
+        }
+    }
+}
+
+// ---- Geometry → line path list (for line renderer) ----
+fn line_paths(geom: &Geometry<f64>) -> Vec<BezPath> {
+    use geo_types::Geometry::*;
+    match geom {
+        Point(p) => vec![circle_bezier(p.x(), p.y(), 1.0)],
+        Line(_) | LineString(_) => vec![geometry_to_bezpath(geom, 0.0)],
+        Polygon(poly) => {
+            let mut paths = vec![linestring_to_bezpath(poly.exterior())];
+            for i in poly.interiors() {
+                paths.push(linestring_to_bezpath(i));
+            }
+            paths
+        }
+        MultiPoint(mp) => {
+            mp.0.iter()
+                .map(|p| circle_bezier(p.x(), p.y(), 1.0))
+                .collect()
+        }
+        MultiLineString(mls) => mls.0.iter().map(|ls| linestring_to_bezpath(ls)).collect(),
+        MultiPolygon(mp) => {
+            mp.0.iter()
+                .flat_map(|p| line_paths(&Geometry::Polygon(p.clone())))
+                .collect()
+        }
+        Rect(_) => vec![geometry_to_bezpath(geom, 0.0)],
+        Triangle(_) => vec![geometry_to_bezpath(geom, 0.0)],
+        GeometryCollection(gc) => gc.0.iter().flat_map(|g| line_paths(g)).collect(),
+    }
+}
+
+// ---- Geometry → fill path list (for area renderer) ----
+fn fill_paths(geom: &Geometry<f64>) -> Vec<BezPath> {
+    use geo_types::Geometry::*;
+    match geom {
+        Point(p) => vec![circle_bezier(p.x(), p.y(), 3.0)],
+        Line(line) => {
+            let mut path = BezPath::new();
+            path.move_to((line.start.x, line.start.y));
+            path.line_to((line.end.x, line.end.y));
+            path.close_path();
+            vec![path]
+        }
+        LineString(ls) => {
+            if ls.points().count() >= 3 {
+                vec![linestring_to_closed_bezpath(ls)]
+            } else {
+                vec![]
+            }
+        }
+        Polygon(_) | Rect(_) | Triangle(_) => vec![geometry_to_bezpath(geom, 0.0)],
+        MultiPoint(mp) => {
+            mp.0.iter()
+                .map(|p| circle_bezier(p.x(), p.y(), 3.0))
+                .collect()
+        }
+        MultiLineString(mls) => mls
+            .0
+            .iter()
+            .filter_map(|ls| {
+                if ls.points().count() >= 3 {
+                    Some(linestring_to_closed_bezpath(ls))
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        MultiPolygon(mp) => {
+            mp.0.iter()
+                .map(|p| geometry_to_bezpath(&Geometry::Polygon(p.clone()), 0.0))
+                .collect()
+        }
+        GeometryCollection(gc) => gc.0.iter().flat_map(|g| fill_paths(g)).collect(),
+    }
+}
+
+fn linestring_to_closed_bezpath(ls: &LineString<f64>) -> BezPath {
+    let mut path = linestring_to_bezpath(ls);
+    path.close_path();
+    path
+}
+
+// ---- Geometry → anchor points (for text renderer) ----
+fn geometry_anchors(geom: &Geometry<f64>) -> Vec<(f64, f64)> {
+    use geo::algorithm::Centroid;
+    use geo_types::Geometry::*;
+    match geom {
+        Point(p) => vec![(p.x(), p.y())],
+        Line(line) => vec![(
+            (line.start.x + line.end.x) / 2.0,
+            (line.start.y + line.end.y) / 2.0,
+        )],
+        LineString(ls) => ls
+            .centroid()
+            .map(|c| vec![(c.x(), c.y())])
+            .unwrap_or_default(),
+        Polygon(poly) => poly
+            .exterior()
+            .centroid()
+            .map(|c| vec![(c.x(), c.y())])
+            .unwrap_or_default(),
+        MultiPoint(mp) => mp.0.iter().map(|p| (p.x(), p.y())).collect(),
+        MultiLineString(mls) => mls
+            .0
+            .iter()
+            .filter_map(|ls| ls.centroid().map(|c| (c.x(), c.y())))
+            .collect(),
+        MultiPolygon(mp) => {
+            mp.0.iter()
+                .filter_map(|p| p.exterior().centroid().map(|c| (c.x(), c.y())))
+                .collect()
+        }
+        Rect(r) => vec![((r.min().x + r.max().x) / 2.0, (r.min().y + r.max().y) / 2.0)],
+        Triangle(t) => {
+            let v1 = t.v1();
+            let v2 = t.v2();
+            let v3 = t.v3();
+            vec![((v1.x + v2.x + v3.x) / 3.0, (v1.y + v2.y + v3.y) / 3.0)]
+        }
+        GeometryCollection(gc) => gc.0.iter().flat_map(|g| geometry_anchors(g)).collect(),
+    }
 }
 
 fn parse_color(hex: &str) -> Color {
