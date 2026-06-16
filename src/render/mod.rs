@@ -1,4 +1,7 @@
 pub mod context;
+pub mod filter;
+pub mod geometry;
+pub mod parse;
 pub mod scene;
 pub mod text;
 pub mod texture;
