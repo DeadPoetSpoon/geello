@@ -3,10 +3,19 @@ use geo_types::{
     CoordNum, Geometry, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon,
 };
 use std::collections::HashMap;
-use vello::kurbo::{BezPath, PathEl};
+use vello::Scene;
+use vello::kurbo::{Affine, BezPath, Cap, Join, PathEl, Stroke};
+use vello::peniko::{Brush, Color, Fill};
 
-use crate::core::layer::PropertyValue;
-use crate::core::style::{BboxFilter, PropertyCondition, PropertyOp, ResolvedGeometryFilter};
+use crate::core::error::GeelloResult;
+use crate::core::layer::{LayerId, PropertyValue, RenderedLayer};
+use crate::core::lazy::{ResolveContext, opt_resolve};
+use crate::core::projection::WorldToPixel;
+use crate::core::style::{
+    BboxFilter, PropertyCondition, PropertyOp, ResolvedGeometryFilter, ResolvedRendererDef,
+    ResolvedStyle,
+};
+use crate::render::text::FontCache;
 
 // ---------------------------------------------------------------------------
 // Point → Circle BezPath
@@ -270,6 +279,216 @@ fn check_bbox(geom: &Geometry<f64>, bbox: &BboxFilter) -> bool {
     let max = geom_bbox.max();
     // Axis-aligned rectangle intersection
     min.x <= bbox.max_x && max.x >= bbox.min_x && min.y <= bbox.max_y && max.y >= bbox.min_y
+}
+
+// ---------------------------------------------------------------------------
+// Scene builder
+// ---------------------------------------------------------------------------
+
+/// Build a complete [`Scene`] from a resolved style and loaded layers.
+pub fn build_scene(
+    style: &ResolvedStyle,
+    layers: &HashMap<LayerId, RenderedLayer>,
+    w2p: &WorldToPixel,
+    fonts: &FontCache,
+    scene: &mut Scene,
+) -> GeelloResult<()> {
+    let affine = w2p.to_affine();
+    for layer_style in &style.layers {
+        for (layer_id, layer) in layers {
+            if !layer_style
+                .filter
+                .matches(&layer_id.workspace, &layer_id.name)
+            {
+                continue;
+            }
+            for renderer in &layer_style.renderers {
+                push_renderer(renderer, layer, &affine, fonts, scene)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn push_renderer(
+    r: &ResolvedRendererDef,
+    layer: &RenderedLayer,
+    affine: &Affine,
+    fonts: &FontCache,
+    scene: &mut Scene,
+) -> GeelloResult<()> {
+    let filter = r.geometry_filter.as_ref();
+
+    if let Some(ref cfg) = r.point {
+        for g in &layer.geometries {
+            if let Some(f) = filter {
+                if !geometry_passes_filter(&g.geometry, &g.properties, f) {
+                    continue;
+                }
+            }
+            let ctx = ResolveContext {
+                properties: Some(&g.properties),
+            };
+            let radius = opt_resolve(cfg.radius.clone(), &ctx)?.unwrap_or(3.0);
+            let color = parse_color(
+                opt_resolve(cfg.color.clone(), &ctx)?
+                    .as_deref()
+                    .unwrap_or("#000000"),
+            );
+            let path = geometry_to_bezpath(&g.geometry, radius);
+            scene.fill(Fill::NonZero, *affine, &Brush::Solid(color), None, &path);
+        }
+    }
+
+    if let Some(ref cfg) = r.line {
+        for g in &layer.geometries {
+            if let Some(f) = filter {
+                if !geometry_passes_filter(&g.geometry, &g.properties, f) {
+                    continue;
+                }
+            }
+            let ctx = ResolveContext {
+                properties: Some(&g.properties),
+            };
+            let width = opt_resolve(cfg.width.clone(), &ctx)?.unwrap_or(1.0);
+            let color = parse_color(
+                opt_resolve(cfg.color.clone(), &ctx)?
+                    .as_deref()
+                    .unwrap_or("#000000"),
+            );
+            let join = parse_join(opt_resolve(cfg.join.clone(), &ctx)?.as_deref());
+            let cap = parse_cap(opt_resolve(cfg.cap.clone(), &ctx)?.as_deref());
+            let miter_limit = opt_resolve(cfg.miter_limit.clone(), &ctx)?.unwrap_or(4.0);
+            let mut stroke = Stroke::new(width);
+            stroke.join = join;
+            stroke.start_cap = cap;
+            stroke.end_cap = cap;
+            stroke.miter_limit = miter_limit;
+            let path = geometry_to_bezpath(&g.geometry, 0.0);
+            scene.stroke(&stroke, *affine, &Brush::Solid(color), None, &path);
+        }
+    }
+
+    if let Some(ref cfg) = r.area {
+        for g in &layer.geometries {
+            if let Some(f) = filter {
+                if !geometry_passes_filter(&g.geometry, &g.properties, f) {
+                    continue;
+                }
+            }
+            let ctx = ResolveContext {
+                properties: Some(&g.properties),
+            };
+            let fill_color = parse_color(
+                opt_resolve(cfg.fill_color.clone(), &ctx)?
+                    .as_deref()
+                    .unwrap_or("#cccccc"),
+            );
+            let stroke_width = opt_resolve(cfg.stroke_width.clone(), &ctx)?;
+            let stroke_color = opt_resolve(cfg.stroke_color.clone(), &ctx)?;
+            let path = geometry_to_bezpath(&g.geometry, 0.0);
+            scene.fill(
+                Fill::NonZero,
+                *affine,
+                &Brush::Solid(fill_color),
+                None,
+                &path,
+            );
+            if let (Some(sw), Some(sc)) = (stroke_width, stroke_color) {
+                scene.stroke(
+                    &Stroke::new(sw),
+                    *affine,
+                    &Brush::Solid(parse_color(&sc)),
+                    None,
+                    &path,
+                );
+            }
+        }
+    }
+
+    if let Some(ref cfg) = r.text {
+        for g in &layer.geometries {
+            if let Some(f) = filter {
+                if !geometry_passes_filter(&g.geometry, &g.properties, f) {
+                    continue;
+                }
+            }
+            if let Geometry::Point(p) = &g.geometry {
+                let ctx = ResolveContext {
+                    properties: Some(&g.properties),
+                };
+                let font_key =
+                    opt_resolve(cfg.font.clone(), &ctx)?.unwrap_or_else(|| "default".into());
+                let label_field =
+                    opt_resolve(cfg.field.clone(), &ctx)?.unwrap_or_else(|| "name".into());
+                let font_size = opt_resolve(cfg.size.clone(), &ctx)?.unwrap_or(12.0);
+                let color = parse_color(
+                    opt_resolve(cfg.color.clone(), &ctx)?
+                        .as_deref()
+                        .unwrap_or("#000000"),
+                );
+                if let Some(PropertyValue::String(label)) = g.properties.get(&label_field) {
+                    if let (Some(font), Ok(glyphs)) = (
+                        fonts.font_data(&font_key),
+                        fonts.layout_glyphs(&font_key, label, p.x(), p.y(), font_size),
+                    ) {
+                        if !glyphs.is_empty() {
+                            let brush = Brush::Solid(color);
+                            scene
+                                .draw_glyphs(&font)
+                                .font_size(font_size as f32)
+                                .brush(&brush)
+                                .transform(*affine)
+                                .draw(Fill::NonZero, glyphs.into_iter());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_color(hex: &str) -> Color {
+    let hex = hex.trim_start_matches('#');
+    match hex.len() {
+        6 => Color::from_rgba8(
+            u8::from_str_radix(&hex[0..2], 16).unwrap_or(0),
+            u8::from_str_radix(&hex[2..4], 16).unwrap_or(0),
+            u8::from_str_radix(&hex[4..6], 16).unwrap_or(0),
+            255,
+        ),
+        8 => Color::from_rgba8(
+            u8::from_str_radix(&hex[0..2], 16).unwrap_or(0),
+            u8::from_str_radix(&hex[2..4], 16).unwrap_or(0),
+            u8::from_str_radix(&hex[4..6], 16).unwrap_or(0),
+            u8::from_str_radix(&hex[6..8], 16).unwrap_or(255),
+        ),
+        3 => {
+            let r = u8::from_str_radix(&hex[0..1], 16).unwrap_or(0) * 17;
+            let g = u8::from_str_radix(&hex[1..2], 16).unwrap_or(0) * 17;
+            let b = u8::from_str_radix(&hex[2..3], 16).unwrap_or(0) * 17;
+            Color::from_rgba8(r, g, b, 255)
+        }
+        _ => Color::from_rgba8(0, 0, 0, 255),
+    }
+}
+
+fn parse_join(s: Option<&str>) -> Join {
+    match s {
+        Some("Round") => Join::Round,
+        Some("Bevel") => Join::Bevel,
+        _ => Join::Miter,
+    }
+}
+
+fn parse_cap(s: Option<&str>) -> Cap {
+    match s {
+        Some("Round") => Cap::Round,
+        Some("Square") => Cap::Square,
+        _ => Cap::Butt,
+    }
 }
 
 #[cfg(test)]

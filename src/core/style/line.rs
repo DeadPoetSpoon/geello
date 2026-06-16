@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::GeelloResult;
-use crate::core::lazy::{opt_resolve, FromPropValue, LazyValue, ResolveContext};
+use crate::core::lazy::{FromPropValue, LazyValue, ResolveContext, opt_resolve};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LineConfig {

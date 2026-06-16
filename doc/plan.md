@@ -126,7 +126,7 @@
 | 2.3.5 | Point → Text glyph（skrifa 排版 → vello glyph） | REQ-202d | ✓ |
 | 2.3.6 | 栅格数据 → vello image push | REQ-202e |
 | 2.3.7 | 按 `GeometryFilter` 筛选图层 | REQ-203 | ✓ |
-| 2.3.8 | 构建完整 `vello::Scene`（按渲染器顺序分层） | REQ-300a |
+| 2.3.8 | 构建完整 `vello::Scene`（按渲染器顺序分层） | REQ-300a | ✓ |
 | 2.3.9 | 视口裁剪：`geo::BoundingRect` 计算 bbox，视口外几何剔除 | — |
 
 ### 2.4 栅格渲染管线（feature: `raster`）

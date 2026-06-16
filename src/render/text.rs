@@ -1,14 +1,11 @@
 use std::collections::HashMap;
 
 use skrifa::{FontRef, MetadataProvider, instance::Location, instance::Size};
+use vello::peniko::FontData;
 
 use crate::core::error::{GeelloError, GeelloResult};
 
-// ---------------------------------------------------------------------------
-// FontCache
-// ---------------------------------------------------------------------------
-
-/// Cached font bytes keyed by logical name.
+/// Cached font data keyed by logical name.
 pub struct FontCache {
     fonts: HashMap<String, Vec<u8>>,
 }
@@ -27,7 +24,6 @@ impl FontCache {
     }
 
     /// Load a font file and cache its bytes under `key`.
-    /// Validates the font data with skrifa before caching.
     pub fn load(&mut self, key: &str, path: &str) -> GeelloResult<()> {
         let data = std::fs::read(path)?;
         FontRef::new(&data)
@@ -36,14 +32,14 @@ impl FontCache {
         Ok(())
     }
 
-    /// Return the raw font bytes for `key`.
-    pub fn get(&self, key: &str) -> Option<&[u8]> {
-        self.fonts.get(key).map(|v| v.as_slice())
+    /// Produce a [`FontData`] from the cached bytes.
+    pub fn font_data(&self, key: &str) -> Option<FontData> {
+        self.fonts
+            .get(key)
+            .map(|data| FontData::new(data.clone().into(), 0))
     }
 
     /// Compute glyph positions for `text` starting at `(x, y)`.
-    ///
-    /// Returns glyph IDs and positions ready for `vello::Scene::draw_glyphs`.
     pub fn layout_glyphs(
         &self,
         font_key: &str,
@@ -51,12 +47,11 @@ impl FontCache {
         x: f64,
         y: f64,
         font_size: f64,
-    ) -> GeelloResult<(Vec<u8>, Vec<vello::Glyph>)> {
+    ) -> GeelloResult<Vec<vello::Glyph>> {
         let data = self
             .fonts
             .get(font_key)
             .ok_or_else(|| GeelloError::Render(format!("Font '{font_key}' not loaded")))?;
-
         let font_ref = FontRef::new(data)
             .map_err(|e| GeelloError::Render(format!("Font parse error: {e}")))?;
 
@@ -71,7 +66,7 @@ impl FontCache {
         let glyph_metrics = font_ref.glyph_metrics(Size::unscaled(), &loc);
 
         let mut pen_x = x;
-        let glyphs: Vec<vello::Glyph> = text
+        Ok(text
             .chars()
             .filter_map(|c| {
                 let gid = charmap.map(c)?;
@@ -84,8 +79,6 @@ impl FontCache {
                 pen_x += advance;
                 Some(glyph)
             })
-            .collect();
-
-        Ok((data.clone(), glyphs))
+            .collect())
     }
 }

@@ -177,4 +177,17 @@ impl WorldToPixel {
             world_y * self.scale_y + self.offset_y,
         )
     }
+
+    /// Convert this transform to a [`vello::kurbo::Affine`] for use
+    /// with vello scene operations.
+    pub fn to_affine(&self) -> vello::kurbo::Affine {
+        vello::kurbo::Affine::new([
+            self.scale_x,
+            0.0,
+            0.0,
+            self.scale_y,
+            self.offset_x,
+            self.offset_y,
+        ])
+    }
 }
