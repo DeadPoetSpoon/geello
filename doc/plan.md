@@ -88,8 +88,8 @@
 
 | 编号 | 任务 | 对应需求 | 状态 |
 |------|------|----------|------|
-| 1.8.1 | EPSG:4326 → EPSG:3857 变换（`geo` crate + `proj` feature） | REQ-304a |
-| 1.8.2 | EPSG:3857 → EPSG:4326 逆变换 | REQ-304a |
+| 1.8.1 | 任意 EPSG → EPSG:4326 / EPSG:3857 投影变换 | REQ-304a | ✓ |
+| 1.8.2 | 同上 — 统一 `transform_layer` 入口 | REQ-304a | ✓ |
 | 1.8.3 | WMTS 瓦片索引 (x, y, z) → 地理矩形坐标 | REQ-304b |
 | 1.8.4 | 世界坐标 → 像素坐标映射（affine transform） | — |
 
@@ -316,7 +316,7 @@ graph TD
 
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
-| Phase 1 | ~47% | 1.1–1.3 + 1.5–1.7 已完成 |
+| Phase 1 | ~53% | 1.1–1.3 + 1.5–1.8 已完成 |
 | Phase 2 | 0% | `src/render/mod.rs` 为空 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
