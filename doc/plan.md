@@ -125,7 +125,7 @@
 | 2.3.4 | Polygon/MultiPolygon → fill BezPath + 可选 stroke 边界 | REQ-202c | ✓ |
 | 2.3.5 | Point → Text glyph（skrifa 排版 → vello glyph） | REQ-202d | ✓ |
 | 2.3.6 | 栅格数据 → vello image push | REQ-202e |
-| 2.3.7 | 按 `GeometryFilter` 筛选图层 | REQ-203 |
+| 2.3.7 | 按 `GeometryFilter` 筛选图层 | REQ-203 | ✓ |
 | 2.3.8 | 构建完整 `vello::Scene`（按渲染器顺序分层） | REQ-300a |
 | 2.3.9 | 视口裁剪：`geo::BoundingRect` 计算 bbox，视口外几何剔除 | — |
 
@@ -317,7 +317,7 @@ graph TD
 | Phase | 完成度 | 备注 |
 |-------|--------|------|
 | Phase 1 | ~58% | 1.1–1.3 + 1.5–1.8 已完成 |
-| Phase 2 | ~30% | 2.1–2.3.5 已完成 |
+| Phase 2 | ~33% | 2.1–2.3.7 已完成 |
 | Phase 3 | ~15% | config + state + stub route 已实现 |
 
 ### 已有代码清单
