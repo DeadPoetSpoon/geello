@@ -13,4 +13,6 @@ pub use layer::{
     WorkspaceRegistry, load_layer, load_layers,
 };
 pub use lazy::{Encoding, FromPropValue, LazyValue, ResolveContext, opt_resolve};
-pub use projection::{TargetCrs, transform_layer};
+pub use projection::{
+    TargetCrs, WorldToPixel, tile_to_rect_3857, tile_to_rect_4326, transform_layer,
+};
