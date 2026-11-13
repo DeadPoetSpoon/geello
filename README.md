@@ -12,6 +12,12 @@ Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/g
 > Geello is a testing project in an alpha state.
 >
 
+### Refactor design baseline
+
+The [refactor documentation](docs/refactor/README.md) records the agreed first-stage redesign, the current branch comparison, acceptance criteria, dependency decisions, and implementation milestones. It describes the target architecture; the APIs, configuration, and services below still describe the existing prototype. The redesign has not been implemented by this documentation change.
+
+The target design adds a protected [`/admin/v1` resource-management API](docs/refactor/04-public-apis-and-configuration.md#resource-administration-api) for uploading managed resources and registering external local sources. It also defines a sharded resource index for large catalogs and [a default GPU Alpine image with an independent `-cpu` Alpine variant](docs/refactor/04-public-apis-and-configuration.md#container-variants). Both images require separate verification. These are target design decisions; the legacy commands below remain prototype instructions until implementation migration is complete.
+
 ### v0.3.0 Work
 
 - [ ] Calc image size with x/y resolution or WMTS zoom
@@ -124,6 +130,8 @@ bbox=${bbox}
 When run as server, Geello provides a web map example by open http://addr:port/map/index.html in browser.
 
 ### Docker
+
+This section describes the existing prototype image. The musl-builder/Alpine-runtime GPU default and CPU variant are target designs linked above; the Dockerfile and published images have not been changed by this documentation revision.
 
 Package Page: [geello](https://github.com/DeadPoetSpoon/geello/pkgs/container/geello)
 
