@@ -77,6 +77,8 @@ pub struct SourceOrdinate {
 /// A native feature. None is null geometry; empty geo-types values remain empty.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Feature {
+    /// Original source identity before an identity policy supplies an effective ID.
+    pub source_id: Option<PropertyValue>,
     pub id: Option<FeatureId>,
     pub geometry: Option<Geometry<f64>>,
     pub properties: Properties,
@@ -88,6 +90,97 @@ pub struct Feature {
 pub struct VectorBatch {
     pub crs: Crs,
     pub features: Vec<Feature>,
+}
+
+/// Conservative clone envelope, including nested containers and empty geometry
+/// components. Allocator bookkeeping/RSS is distinct from operation accounting.
+#[cfg(any(feature = "config-toml", feature = "rust-proj"))]
+pub(crate) fn feature_clone_bytes(feature: &Feature) -> Result<usize, GeelloError> {
+    use geo::CoordsIter;
+    fn add(a: usize, b: usize) -> Result<usize, GeelloError> {
+        a.checked_add(b).ok_or(GeelloError::SizeOverflow)
+    }
+    fn property(v: &PropertyValue, depth: usize) -> Result<usize, GeelloError> {
+        if depth > 64 {
+            return Err(GeelloError::BudgetExceeded("property depth"));
+        }
+        let mut n = 128;
+        match v {
+            PropertyValue::String(s) => n = add(n, s.len())?,
+            PropertyValue::Array(a) => {
+                for v in a {
+                    n = add(n, property(v, depth + 1)?)?;
+                }
+            }
+            PropertyValue::Object(o) => {
+                for (k, v) in o {
+                    n = add(add(n, k.len())?, property(v, depth + 1)?)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(n)
+    }
+    fn geometry(g: &Geometry, depth: usize) -> Result<usize, GeelloError> {
+        if depth > 64 {
+            return Err(GeelloError::BudgetExceeded("geometry depth"));
+        }
+        let containers = match g {
+            Geometry::GeometryCollection(c) => {
+                return c
+                    .0
+                    .iter()
+                    .try_fold(128usize, |n, g| add(n, geometry(g, depth + 1)?));
+            }
+            Geometry::MultiLineString(l) => l.0.len(),
+            Geometry::MultiPolygon(p) => {
+                p.0.iter()
+                    .try_fold(p.0.len(), |n, p| add(n, p.interiors().len()))?
+            }
+            Geometry::Polygon(p) => p.interiors().len(),
+            _ => 0,
+        };
+        add(
+            add(
+                128,
+                containers
+                    .checked_mul(128)
+                    .ok_or(GeelloError::SizeOverflow)?,
+            )?,
+            g.coords_count()
+                .checked_mul(32)
+                .ok_or(GeelloError::SizeOverflow)?,
+        )
+    }
+    let mut n = 512;
+    if let Some(FeatureId::String(s)) = &feature.id {
+        n = add(n, s.len())?;
+    }
+    if let Some(id) = &feature.source_id {
+        n = add(n, property(id, 0)?)?;
+    }
+    if let Some(g) = &feature.geometry {
+        n = add(n, geometry(g, 0)?)?;
+    }
+    for (k, v) in &feature.properties {
+        n = add(add(n, k.len())?, property(v, 0)?)?;
+    }
+    for o in &feature.source_ordinates {
+        n = add(
+            add(n, 128)?,
+            add(
+                o.coordinate_path
+                    .len()
+                    .checked_mul(8)
+                    .ok_or(GeelloError::SizeOverflow)?,
+                o.trailing
+                    .len()
+                    .checked_mul(8)
+                    .ok_or(GeelloError::SizeOverflow)?,
+            )?,
+        )?;
+    }
+    Ok(n)
 }
 
 /// Coordinate interpretation. Layer one does not guess EPSG axis order.
@@ -265,6 +358,18 @@ pub enum GeelloError {
     InvalidGeometry(String),
     #[error("invalid style: {0}")]
     InvalidStyle(String),
+    #[error("source I/O error: {0}")]
+    Io(String),
+    #[error("invalid source: {0}")]
+    InvalidSource(String),
+    #[error("source changed since snapshot preparation")]
+    SourceChanged,
+    #[error("unsupported capability: {0}")]
+    Unsupported(String),
+    #[error("invalid configuration: {0}")]
+    InvalidConfiguration(String),
+    #[error("projection error: {0}")]
+    Projection(String),
     #[error("invalid target: {0}")]
     InvalidTarget(String),
     #[error("backend error: {0}")]

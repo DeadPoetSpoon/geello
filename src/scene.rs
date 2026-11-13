@@ -191,7 +191,7 @@ impl Builder<'_> {
         if !s.miter_limit.is_finite()
             || s.miter_limit < 1.0
             || !s.dash_offset.is_finite()
-            || s.dashes.len() % 2 != 0
+            || !s.dashes.len().is_multiple_of(2)
             || s.dashes.iter().any(|n| !n.is_finite() || *n <= 0.0)
         {
             return Err(GeelloError::InvalidStyle(

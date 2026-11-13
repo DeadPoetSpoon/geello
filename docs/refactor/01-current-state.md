@@ -41,16 +41,18 @@ Local research used Windows x64 MSVC with Rust/Cargo 1.96.0. A previous `cargo c
 
 ## 2. Existing `refactor` prototype
 
-Paths in this section refer to the baseline commit. Links point to the current checkout; the commit above fixes the inspected version.
+Paths in this section refer to baseline commit `841b0df`. Prototype files removed
+during M1 are linked to that immutable commit so historical evidence remains
+readable after the refactor.
 
 | Area | Evidence | Current responsibility |
 | --- | --- | --- |
 | Library entry | [src/lib.rs](../../src/lib.rs) | Mutable geometry/style input, Vello scene creation, GPU texture output, blocking GPU readback |
-| Geometry | [src/rendered_geometry.rs](../../src/rendered_geometry.rs) | Original geometry plus cached line/area/anchor conversions and properties |
-| Configuration | [src/render_option.rs](../../src/render_option.rs), [src/magic_value.rs](../../src/magic_value.rs) | RON-era options, dynamic values, fetching/conversion, viewport and output settings |
+| Geometry | [src/rendered_geometry.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/rendered_geometry.rs) | Original geometry plus cached line/area/anchor conversions and properties |
+| Configuration | [src/render_option.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/render_option.rs), [src/magic_value.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/magic_value.rs) | RON-era options, dynamic values, fetching/conversion, viewport and output settings |
 | Symbols | [src/renderer](../../src/renderer) | Point/line/area preparation and drawing coupled together |
-| Coordinates | [src/utils.rs](../../src/utils.rs) | Hardcoded 4326/3857 transforms and tile bounds |
-| Server | [src/server.rs](../../src/server.rs), [src/main.rs](../../src/main.rs) | Rocket routes, data/style loading, caches, GPU management, image encoding, WS loop |
+| Coordinates | [src/utils.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/utils.rs) | Hardcoded 4326/3857 transforms and tile bounds |
+| Server | [src/server.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/server.rs), [src/main.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/main.rs) | Rocket routes, data/style loading, caches, GPU management, image encoding, WS loop |
 | Dependencies | [Cargo.toml](../../Cargo.toml) | Old Vello 0.5.0/Rocket design; server feature; runtime coupled into library dependencies |
 
 Existing capabilities are experimental GPU vector drawing, image output, WMS-like and WMTS-like endpoints, local/URL loading, and a message-driven WebSocket demo. They are not a complete standards implementation. Shapefile reading, GeoTIFF processing, lossless feature queries, a CPU backend, Unicode shaping, and the new snapshot lifecycle are absent.

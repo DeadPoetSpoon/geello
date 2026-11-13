@@ -4,7 +4,7 @@ Design baseline date: **2026-11-12**. Implementation branch: **`refactor`**. Ref
 
 Resource administration, indexed catalog storage and container-variant revision: **2026-11-13**. These additions supersede the earlier no-upload target boundary; existing implementation facts remain dated to the original assessment.
 
-This package consolidates the first-stage redesign discussed with the project owner. It is a documentation delivery, not a rendering or server implementation. Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
+This package consolidates the first-stage redesign discussed with the project owner. M0 is the documentation baseline; M1 memory execution and M2 input/configuration work now have implementation evidence on `refactor`. Server administration, derived storage and public protocols remain later milestones. Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
 
 ## Reading order
 
@@ -16,8 +16,9 @@ This package consolidates the first-stage redesign discussed with the project ow
 | 4 | [Public APIs and configuration](04-public-apis-and-configuration.md) | Describe target API contracts, feature composition, configuration examples, and protocol interactions. |
 | 5 | [Decisions and dependencies](05-decisions-and-dependencies.md) | Record decisions, exact approved versions, sources, licenses, feasibility evidence, and remaining gates. |
 | 6 | [Implementation roadmap](06-implementation-roadmap.md) | Sequence the work and define evidence required to finish each milestone. |
+| 7 | [M2 dependency closure evidence](07-m2-dependency-closure.md) | Review candidate transitive packages, features, sources, checksums and licenses for G-01. |
 
-The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Neither image is implemented or validated by this revision.
+The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Container images, administration, derived storage and OGC/WebSocket services are not implemented yet.
 
 Read the requirements before the examples. Examples illustrate the target and are not runnable against the current prototype. Proposed Rust names, TOML field spelling, and protocol envelopes must be checked against the accepted behavioral requirements when implementation schemas are introduced.
 
@@ -31,7 +32,7 @@ Statuses are independent dimensions, not a single completion checkbox:
 | **Validated** | A particular claim was checked by inspection, an experiment, or a test. | Name the method, version, platform, input, and result. Source inspection is not an end-to-end runtime test. |
 | **Implemented** | The target behavior exists in the implementation branch. | Code reference and relevant verification result; accepted design alone is insufficient. |
 
-For the **target redesign**, requirements and decisions are Accepted unless explicitly marked as a proposal or later gate. Target implementation is **No** at this baseline. Runtime acceptance is **Pending**. Existing prototype functionality is described separately and does not count as target completion.
+For the **target redesign**, requirements and decisions are Accepted unless explicitly marked as a proposal or later gate. M1 and M2 implementation evidence is recorded in the roadmap; remaining target behavior is **No** and runtime acceptance is **Pending**. Existing prototype functionality is described separately and does not count as target completion.
 
 ## Traceability and authority
 
@@ -53,4 +54,4 @@ The following gates intentionally follow this documentation delivery:
 
 Resource uploads and local registrations belong to the server administration plane. Public OGC and WebSocket routes consume only published resource generations. Upload/archive limits, resource counts, image tags and Alpine base digests remain pending operational validation.
 
-The dependency versions already approved in [the decision register](05-decisions-and-dependencies.md) remain fixed. “Use the latest by default” does not authorize upgrading them. This delivery does not alter Cargo files, Rust code, runtime configuration, CI, or Git history.
+The dependency versions already approved in [the decision register](05-decisions-and-dependencies.md) remain fixed. “Use the latest by default” does not authorize upgrading them. The M0 documentation-only delivery did not alter Cargo files or Rust code. Later M1/M2 implementation changes are recorded in the roadmap.

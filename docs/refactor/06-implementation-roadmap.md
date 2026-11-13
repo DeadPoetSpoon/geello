@@ -2,7 +2,7 @@
 
 This roadmap sequences the **whole first-stage refactor**. M1–M5 are milestones inside that stage, not permission to omit its later capabilities. All implementation work remains on `refactor`; reference branches stay unchanged. Breaking compatibility is allowed with documented migration.
 
-M0 documentation is complete. M1 memory-core and basic execution work is now implemented on `refactor`; later readers, server, protocol and deployment milestones remain pending. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
+M0 documentation is complete. M1 memory-core and M2 reader/configuration work now have implementation evidence on `refactor`; server, protocol and deployment milestones remain pending. The [M2 dependency closure](07-m2-dependency-closure.md) is evidence for review and does not close G-01. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
 
 ## 1. Common work and completion rules
 
@@ -63,6 +63,56 @@ These results implement the memory-only portions of ARC-001–004, DAT-001/003, 
 **Verification:** T-04–T-15, T-17–T-25 and T-34. Inspect peak decode/sort allocations, malformed-input behavior, strict/tolerant boundaries, exact feature intersections and source-order restoration. Schema/config snippets become schema-tested fixtures only after actual parsers exist.
 
 **Exit:** all three input formats render through common preparation with explicit format limits; CRS/encoding/missing metadata errors are deterministic; typed properties and raw raster contracts survive; basic TOML resolves before rendering; supported CRS/domain combinations have evidence. G-03 failures follow the owner decision rule.
+
+### M2 implementation evidence (refactor)
+
+M2 reader and preparation surfaces are implemented behind the approved reader,
+projection and configuration features. The implementation includes a root-aware
+bounded GeoJSON framer, strict/tolerant semantic record policy, typed property
+schemas and independent cursors; SHP/DBF framing with explicit encoding and Z/M
+source-ordinate paths; baseline GeoTIFF primary-IFD metadata and chunk-window
+reads with affine georeferencing, NoData, WhiteIsZero and associated-alpha
+boundaries; Rust-only XY projection; nearest, bilinear and bounded footprint-area
+processing; and strict typed TOML style/map/animation schemas with resource-graph
+and external-registration validation.
+
+Verified on the current Windows toolchain:
+
+- `cargo check --no-default-features --lib`;
+- individual `read-geojson`, `read-shapefile`, `read-geotiff`, `config-toml` and
+  `rust-proj` feature combinations;
+- `cargo test --all-features --test input_contracts` (12 tests, including dataset CRS/identity/queryable composition);
+- `cargo test --all-features --test file_contracts` (12 generated-file tests, including planar/interleaved, tile/strip, BigTIFF, alpha, validity, codec and GeoKey fixtures);
+- `cargo test --all-features --test configuration_contracts` (5 tests, including vector/raster style compatibility and resource key validation);
+- `cargo test --all-features --locked --lib --tests` (46 non-GPU tests pass; 1 real-GPU test is explicitly ignored; opt-in ignored tests exercise owner assets);
+- `cargo clippy --all-features --locked --lib --tests -- -D warnings` and
+  `cargo fmt -- --check`;
+- syntax checks for 9 TOML and 5 JSON document examples, 34 local Markdown
+  paths, and `git diff --check`.
+
+The ignored `tests/local_assets.rs` harness was also run manually against the
+owner-provided files under `assets/test` (not part of the default CI contract
+count). `china.geo.json` parsed 36 features, queried all independent batches,
+and rendered through the CPU scene path. `jd.tif` and `jd_4326.tif` were both
+rejected under their untrusted CRS/georeferencing interpretations, then read
+successfully after explicit EPSG:3857 override at three edge/center windows.
+Preparation accounted approximately 3.30 GiB and 4.93 GiB respectively for
+the immutable source snapshot and temporary three-copy conversion envelope; the
+three 32x32 windows completed in approximately 31 ms and 17 ms on the test
+workstation. This validates bounded native-window decoding after preparation,
+not a low-memory large-file guarantee. Long-lived large-raster reduction to
+versioned blocks remains an M3 derived-storage responsibility.
+
+These results provide implementation evidence for the reader/query portions of
+DAT-001/002/003/004/005/007, RAS-002/003/004, PRJ-001/002 and STY-001/002 and scenarios
+T-04–T-15, T-23–T-25 and T-34. GeoTIFF overview policy remains base-IFD access
+with explicit SubIFD validation boundaries; full overview generation, derived
+storage and production publication remain M3/G-03 work. Native PROJ and performance-scale claims remain separate validation gates.
+Reader-to-style and native-raster-to-view composition helpers are present. The
+complete TIFF sample/codec matrix and remaining fidelity/budget audit must pass
+before declaring M2 complete. G-01
+remains open; candidate-closure compatibility testing was owner-authorized on
+2026-11-13. [Closure evidence](07-m2-dependency-closure.md) is available for review.
 
 ### M3 — Derived storage and basic service closed loop
 

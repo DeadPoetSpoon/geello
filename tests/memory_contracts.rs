@@ -35,6 +35,7 @@ fn view() -> View {
 }
 fn feature(g: Option<Geometry>, ordinal: u64) -> Feature {
     Feature {
+        source_id: None,
         id: Some(FeatureId::U64(ordinal)),
         geometry: g,
         properties: BTreeMap::new(),
@@ -245,6 +246,7 @@ fn native_raster_keeps_integer_precision_grid_and_masks() {
             },
         ],
         alpha: Some(Arc::from([1.])),
+        alpha_association: AlphaAssociation::Straight,
     };
     b.validate().unwrap();
     assert!(matches!(

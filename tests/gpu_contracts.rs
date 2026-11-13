@@ -59,6 +59,7 @@ fn fixture() -> PreparedScene {
     .into_iter()
     .enumerate()
     .map(|(i, g)| Feature {
+        source_id: None,
         id: None,
         geometry: Some(g),
         properties: Default::default(),

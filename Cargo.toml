@@ -17,6 +17,13 @@ geo = { version = "=0.33.1", default-features = false }
 geo-types = { version = "=0.7.20", features = ["serde"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
+geojson = { version = "=1.0.0", default-features = false, optional = true }
+shapefile = { version = "=0.9.0", default-features = false, features = ["geo-types", "encoding_rs"], optional = true }
+tiff = { version = "=0.11.3", default-features = false, features = ["deflate", "fax", "jpeg", "lzw"], optional = true }
+toml = { version = "=1.2.1", default-features = false, features = ["parse", "display", "serde"], optional = true }
+proj4rs = { version = "=0.3.0", default-features = false, optional = true }
+proj4wkt = { version = "=0.2.0", default-features = false, optional = true }
+crs-definitions = { version = "=0.6.0", default-features = false, features = ["proj4", "wkt"], optional = true }
 thiserror = "=2.0.21"
 rayon = { version = "=1.12.0", optional = true }
 vello_cpu = { version = "=0.4.0", default-features = false, features = ["std", "text", "u8_pipeline", "multithreading"], optional = true }
@@ -27,6 +34,11 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["std", "wgsl
 [features]
 default = ["render-cpu", "render-gpu"]
 render-cpu = ["dep:vello_cpu", "dep:vello_common", "dep:rayon"]
+read-geojson = ["dep:geojson"]
+read-shapefile = ["dep:shapefile"]
+read-geotiff = ["dep:tiff"]
+config-toml = ["dep:toml"]
+rust-proj = ["dep:proj4rs", "dep:proj4wkt", "dep:crs-definitions"]
 render-gpu = ["dep:vello_gpu", "dep:vello_common", "dep:wgpu"]
 
 [lib]

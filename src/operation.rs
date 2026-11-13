@@ -1,5 +1,6 @@
 //! Cooperative cancellation and explicit accounting without an executor dependency.
 use crate::GeelloError;
+use std::ops::Deref;
 use std::{
     sync::{
         Arc,
@@ -104,5 +105,29 @@ impl Drop for Reservation {
             .state
             .live
             .fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
+
+/// An owned library result retaining its operation accounting while borrowed.
+/// Explicitly cloning the dereferenced memory value creates caller-owned data;
+/// that independent allocation is outside this operation's accounting domain.
+#[derive(Debug)]
+pub struct Accounted<T> {
+    pub(crate) value: T,
+    _reservations: Vec<Reservation>,
+}
+impl<T> Accounted<T> {
+    #[cfg(any(feature = "config-toml", feature = "rust-proj"))]
+    pub(crate) fn new(value: T, reservations: Vec<Reservation>) -> Self {
+        Self {
+            value,
+            _reservations: reservations,
+        }
+    }
+}
+impl<T> Deref for Accounted<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.value
     }
 }

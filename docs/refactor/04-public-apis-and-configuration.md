@@ -362,6 +362,15 @@ publish = { ogc_maps = true, ogc_tiles = true, wms = true, wmts = true, websocke
 
 The data CRS uses explicit override before metadata; GeoJSON otherwise defaults to CRS84. Missing Shapefile/GeoTIFF CRS requires configuration. Public data-plane requests never accept file/URL paths. Only protected local registration accepts a local path; it does not fetch a URL or copy/delete external files. Raster datasets do not become feature collections merely because they are registered. Font examples refer to application-supplied assets, not system fonts or implicitly installed test subsets.
 
+The layer-two composition helpers accept a validated dataset definition, a fixed
+query, a strict style definition and a target view. Vector preparation reads a
+bounded snapshot, evaluates original-property rules, applies source-plane
+geometry transforms before projection, and freezes one `PreparedScene`. Raster
+preparation reads a native window, applies inverse projection and the selected
+resampling/color contract, then freezes an image command. These helpers never
+accept request paths or perform server publication; the server administration
+plane supplies validated resource generations in M3.
+
 ### Map file: `maps/overview.toml`
 
 ```toml

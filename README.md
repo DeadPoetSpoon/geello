@@ -28,10 +28,13 @@ M1 now provides the memory-only foundation:
   GPU execution;
 - tight top-left straight RGBA8 output with canonical transparent pixels.
 
-Readers, TOML resource loading, projection operations, the protected
-`/admin/v1` API, OGC services, WebSocket animation, and the server runtime are
-later milestones. The old mutable `RenderedGeometry`/`RenderOption` and Rocket
-prototype were removed during the refactor.
+M2 now adds bounded GeoJSON, Shapefile/DBF and baseline GeoTIFF readers,
+independent vector cursors, exact/bbox spatial query modes, Rust projection,
+typed raster validity/calibration/resampling, and strict TOML resource/style
+validation. The protected `/admin/v1` API, OGC services, WebSocket animation,
+derived stores and server runtime remain later milestones. The old mutable
+`RenderedGeometry`/`RenderOption` and Rocket prototype were removed during the
+refactor.
 
 ## M1 library example
 
@@ -65,8 +68,8 @@ supported platform.
 
 The target design defines a protected managed/external resource API, sharded
 catalog generations, and a default GPU Alpine image with an independent CPU
-`-cpu` variant. Docker, server, readers, and administration are intentionally
-not implemented in M1; their requirements and validation gates remain in the
+`-cpu` variant. Docker, server and administration are intentionally
+not implemented in M2; their requirements and validation gates remain in the
 [roadmap](docs/refactor/06-implementation-roadmap.md).
 
 ## License

@@ -77,6 +77,12 @@ impl RasterGrid {
     }
 }
 /// Contiguous native bands share one grid; alpha is separate from validity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AlphaAssociation {
+    #[default]
+    Straight,
+    Premultiplied,
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct RasterBlock {
     pub width: u32,
@@ -84,6 +90,7 @@ pub struct RasterBlock {
     pub grid: RasterGrid,
     pub bands: Vec<RasterBand>,
     pub alpha: Option<Arc<[f32]>>,
+    pub alpha_association: AlphaAssociation,
 }
 /// Borrowed access does not copy the native bands or their masks.
 #[derive(Debug, Clone, Copy)]
@@ -101,7 +108,39 @@ impl RasterBlock {
                 "nonempty dimensions and bands required".into(),
             ));
         }
+        if self.alpha_association == AlphaAssociation::Premultiplied && self.alpha.is_none() {
+            return Err(GeelloError::InvalidRaster(
+                "premultiplied raster requires alpha".into(),
+            ));
+        }
         for b in &self.bands {
+            let nodata_ok = matches!(
+                (&b.samples, b.no_data),
+                (_, None)
+                    | (
+                        RasterSamples::U8(_)
+                            | RasterSamples::U16(_)
+                            | RasterSamples::U32(_)
+                            | RasterSamples::U64(_),
+                        Some(PropertySample::U64(_))
+                    )
+                    | (
+                        RasterSamples::I8(_)
+                            | RasterSamples::I16(_)
+                            | RasterSamples::I32(_)
+                            | RasterSamples::I64(_),
+                        Some(PropertySample::I64(_))
+                    )
+                    | (
+                        RasterSamples::F32(_) | RasterSamples::F64(_),
+                        Some(PropertySample::F64(_))
+                    )
+            );
+            if !nodata_ok {
+                return Err(GeelloError::InvalidRaster(
+                    "NoData type does not match native samples".into(),
+                ));
+            }
             if b.samples.len() != n
                 || b.validity.as_ref().is_some_and(|m| m.len() != n)
                 || !b.scale.is_finite()
