@@ -4,40 +4,30 @@ version = "0.2.0"
 edition = "2024"
 license = "MIT"
 authors = ["Dead Poet Spoon <deadpoetspoon@qq.com>"]
-description = "A tool to render geo data"
+description = "Deterministic geospatial scene preparation and rendering"
 homepage = "https://github.com/DeadPoetSpoon/geello"
 documentation = "https://docs.rs/geello/"
 readme = "./README.md"
 repository = "https://github.com/DeadPoetSpoon/geello"
-keywords = ["gis", "geo", "map-render", "2d", "vector-graphics"]
+keywords = ["gis", "map-render", "2d", "vector-graphics"]
 categories = ["science::geo"]
 
 [dependencies]
-geo = "0.30.0"
-geo-types = { version = "0.7.16", features = [
-    "multithreading",
-    "rayon",
-    "serde",
-] }
-serde = { version = "1.0.219", features = ["derive"] }
-skrifa = "0.31.3"
-vello = "0.5.0"
-# vello = { git = "https://github.com/linebender/vello.git" }
-peniko = { version = "0.4.0", default-features = false, features = ["serde"] }
-log = "0.4.27"
-tokio = { version = "1.45.1", features = ["full"] }
-ron = "0.10.1"
-vello_svg = "0.7.1"
-# server
-image = { version = "0.25.6", features = ["serde"], optional = true }
-geojson = { version = "0.24.2", optional = true }
-rocket = { version = "0.5.1", optional = true }
-rocket_ws = { version = "0.1.1", optional = true }
-reqwest = { version = "0.12.20", features = ["blocking"], optional = true }
-serde_json = { version = "1.0.140", optional = true }
-
+geo = { version = "=0.33.1", default-features = false }
+geo-types = { version = "=0.7.20", features = ["serde"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+rayon = { version = "=1.12.0", optional = true }
+vello_cpu = { version = "=0.4.0", default-features = false, features = ["std", "text", "u8_pipeline", "multithreading"], optional = true }
+vello_gpu = { version = "=0.4.0", default-features = false, features = ["std", "wgpu", "text", "full_image_support"], optional = true }
+vello_common = { version = "=0.4.0", default-features = false, features = ["std"], optional = true }
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "wgsl", "dx12", "vulkan"], optional = true }
 
 [features]
-server = ["image", "geojson", "rocket", "rocket_ws", "reqwest"]
-from_http = ["reqwest"]
-from_json = ["serde_json"]
+default = ["render-cpu", "render-gpu"]
+render-cpu = ["dep:vello_cpu", "dep:vello_common", "dep:rayon"]
+render-gpu = ["dep:vello_gpu", "dep:vello_common", "dep:wgpu"]
+
+[lib]
+path = "src/lib.rs"

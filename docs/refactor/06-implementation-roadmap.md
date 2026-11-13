@@ -2,7 +2,7 @@
 
 This roadmap sequences the **whole first-stage refactor**. M1–M5 are milestones inside that stage, not permission to omit its later capabilities. All implementation work remains on `refactor`; reference branches stay unchanged. Breaking compatibility is allowed with documented migration.
 
-This delivery implements **M0 documentation only**. The target Rust redesign, Cargo features, service routes, dependencies, fixtures and deployment changes are not implemented by writing these documents. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
+M0 documentation is complete. M1 memory-core and basic execution work is now implemented on `refactor`; later readers, server, protocol and deployment milestones remain pending. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
 
 ## 1. Common work and completion rules
 
@@ -15,6 +15,20 @@ Feasibility experiments are narrow implementation tasks tied to G-02 through G-0
 Use meaningful behavior/contract tests and reproducible inputs. Do not create tests merely to mirror a straightforward implementation. After relevant checks pass, broaden only for a concrete unresolved concern. Record failed/unavailable checks distinctly from passing results.
 
 ## 2. Milestones
+
+### M1 implementation evidence (refactor)
+
+The M1 memory core is implemented with typed feature identities/properties, native raster bands and grids, explicit CRS/view validation, resolved point/line/polygon/image styles, immutable prepared command scenes, accounting reservations, cooperative cancellation/deadlines, and synchronous CPU plus runtime-independent asynchronous GPU adapters. The old mutable prototype sources were removed.
+
+Verified on the current Windows MSVC toolchain:
+
+- `cargo check --no-default-features --lib` (backend-free memory layer);
+- `cargo check --no-default-features --features render-cpu --lib`;
+- `cargo check --no-default-features --features render-gpu --lib`;
+- `cargo test --all-features --lib --tests`: 17 memory/CPU contract tests pass; the real GPU test is an explicit ignored test;
+- `cargo test --test gpu_contracts -- --ignored --nocapture`: NVIDIA GeForce RTX 4090, DX12, driver `32.0.16.1088`; CPU/GPU parity max channel delta 1, mean delta `0.005859375`, and target/cancellation checks pass.
+
+These results implement the memory-only portions of ARC-001–004, DAT-001/003, RAS-001, REN-001–003/005–006 and T-01–T-06/T-17–T-22. Reader, projection, complete image processing, text, and production resource/runtime work remain pending in M2–M5. The GPU test is platform evidence for this workstation, not a cross-platform completion claim.
 
 ### M0 — Documentation baseline
 

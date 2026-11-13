@@ -2,161 +2,73 @@
 
 # Geello
 
-Geello (Ge**O_V**ello) try to render geo data through [GEO](https://github.com/georust/geo) and [VELLO](https://github.com/linebender/vello)
+Geello is a geospatial scene preparation and rendering library built around
+`geo-types`, Vello CPU/GPU, and explicit resource ownership.
 
 ![Geello](assets/logo.png)
 
 </div>
 
 > [!WARNING]
-> Geello is a testing project in an alpha state.
->
+> Geello is an alpha project. The first-stage refactor is being implemented on
+> the `refactor` branch.
 
-### Refactor design baseline
+## Design and implementation status
 
-The [refactor documentation](docs/refactor/README.md) records the agreed first-stage redesign, the current branch comparison, acceptance criteria, dependency decisions, and implementation milestones. It describes the target architecture; the APIs, configuration, and services below still describe the existing prototype. The redesign has not been implemented by this documentation change.
+The [refactor documentation](docs/refactor/README.md) records the agreed
+architecture, requirements, dependency decisions, and roadmap. M0 is complete.
+M1 now provides the memory-only foundation:
 
-The target design adds a protected [`/admin/v1` resource-management API](docs/refactor/04-public-apis-and-configuration.md#resource-administration-api) for uploading managed resources and registering external local sources. It also defines a sharded resource index for large catalogs and [a default GPU Alpine image with an independent `-cpu` Alpine variant](docs/refactor/04-public-apis-and-configuration.md#container-variants). Both images require separate verification. These are target design decisions; the legacy commands below remain prototype instructions until implementation migration is complete.
+- typed feature IDs, recursive properties, XY geometries, native raster bands,
+  masks, grids, CRS, and views;
+- resolved point, line, polygon, and image styles;
+- immutable `PreparedScene` command packets and bounded diagnostics;
+- cooperative cancellation, deadlines, work budgets, and memory accounting;
+- synchronous Vello CPU execution and runtime-independent asynchronous Vello
+  GPU execution;
+- tight top-left straight RGBA8 output with canonical transparent pixels.
 
-### v0.3.0 Work
+Readers, TOML resource loading, projection operations, the protected
+`/admin/v1` API, OGC services, WebSocket animation, and the server runtime are
+later milestones. The old mutable `RenderedGeometry`/`RenderOption` and Rocket
+prototype were removed during the refactor.
 
-- [ ] Calc image size with x/y resolution or WMTS zoom
-- [ ] More Renderer, graph renderer
-- [ ] More Renderer, animation renderer
-- [ ] More docs
-
-### As a library
-
-Geello can be used as a library to render geo data into a texture.
-
-1. Use `RenderedGeometry::new()` to create new geometry.
-
-1. Read file or Create a `RenderOption`.
-
-1. Set some options, like `RenderRegion` or `Transform`.
-
-1. Get `Vello values` just like `Vello`.
-
-1. Run one of functions below, or with `_with_new_texture`.
-
-1. Use return value to draw on canvas or encode to file.
+## M1 library example
 
 ```rust
-geello::render_to_texture(
-    geoms: &mut Vec<RenderedGeometry>,
-    device: &Device,
-    queue: &Queue,
-    renderer: &mut Renderer,
-    texture: &Texture,
-    transform: Affine,
-    option: &RenderOption,
-)
+let scene = geello::prepare_scene(&composition, &view, &context)?;
+let image = geello::CpuRenderer::new(0).render(&scene, &context)?;
 ```
 
-```rust
-geello::render_to_buffer(
-    geoms: &mut Vec<RenderedGeometry>,
-    device: &Device,
-    queue: &Queue,
-    renderer: &mut Renderer,
-    texture: &Texture,
-    transform: Affine,
-    option: &RenderOption,
-)
+The default Cargo feature set enables both approved Vello adapters. Use
+`--no-default-features` for the backend-free memory layer, or select
+`render-cpu` and `render-gpu` independently. GPU rendering accepts an explicit
+`wgpu` device and queue and does not require Tokio in the library.
+
+## Verification
+
+The current contract suite includes nested property and integer identity
+round-trips, source release and scene reuse, geometry compatibility, open and
+zero-length lines, polygon holes, view bounds, raster validity, cancellation,
+budgets, CPU output, and CPU/GPU parity.
+
+```text
+cargo test --all-features --lib --tests
+cargo test --test gpu_contracts -- --ignored --nocapture
 ```
 
-### As a server
+The ignored GPU test requires a real device. The recorded workstation evidence
+uses an NVIDIA GeForce RTX 4090 through DX12 and must be repeated for every
+supported platform.
 
-Geello can be used as a server to provide map render (real-time/cache) services like WMTS/WMS.
+## Later server and container work
 
-```bash
-cargo r --release --features server
-```
+The target design defines a protected managed/external resource API, sharded
+catalog generations, and a default GPU Alpine image with an independent CPU
+`-cpu` variant. Docker, server, readers, and administration are intentionally
+not implemented in M1; their requirements and validation gates remain in the
+[roadmap](docs/refactor/06-implementation-roadmap.md).
 
-#### WMTS LIKE
+## License
 
-```rust
-// real-time
-http://addr:port/wmts/real-time
-
-// cache
-http://addr:port/wmts/cache
-
-//params
-layers=${/path/to/json} // use `,` split multi layer, render as order
-styles=${/path/to/render_option} // render_option to filter rendered geometry
-x=${x}
-y=${y}
-z=${z}
-format=${format} // like image/png or png
-```
-
-#### WMS LIKE
-
-```rust
-http://addr:port/wms
-
-// params
-layers=${/path/to/json} // use `,` split multi layer, render as order
-styles=${/path/to/render_option} // render_option to filter rendered geometry
-format=${format} // like image/png or png
-width=${width}
-height=${height}
-bbox=${bbox}
-```
-
-#### What's More -> Animation Or Dynamic Data
-
-Geello use web socket to handle real-time animation or dynamic data.
-
-Such as a point that grows from small to large for representing importance.
-
-Or a real-time route of a car.
-
-```rust
-ws://addr:port/ws/anim
-
-// params
-layers=${/path/to/json} // use `,` split multi layer, render as order
-styles=${/path/to/render_option} // render_option to filter rendered geometry
-format=${format} // like image/png or png
-width=${width}
-height=${height}
-bbox=${bbox}
-```
-
-#### Web Map example
-
-When run as server, Geello provides a web map example by open http://addr:port/map/index.html in browser.
-
-### Docker
-
-This section describes the existing prototype image. The musl-builder/Alpine-runtime GPU default and CPU variant are target designs linked above; the Dockerfile and published images have not been changed by this documentation revision.
-
-Package Page: [geello](https://github.com/DeadPoetSpoon/geello/pkgs/container/geello)
-
-Run the docker image:
-
-> [!WARNING]
-> Need [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
->
-> Some how docker need xhost to Xserver access, WGPU need that to use GPU otherwise will use CPU, find some issues and docs:
->
-> [wgpu/issues/2123-1012233430](https://github.com/gfx-rs/wgpu/issues/2123#issuecomment-1012233430): get the reason
->
-> [wgpu/issues/2123-1428961445](https://github.com/gfx-rs/wgpu/issues/2123#issuecomment-1428961445): answer the question
->
-> [archlinux docs](https://wiki.archlinux.org/title/Docker#Run_graphical_programs_inside_a_container): how to enable Xserver access, need [xhost](https://wiki.archlinuxcn.org/wiki/Xhost) installed
->
-
-```bash
-docker run --rm --gpus all -e "DISPLAY=:0.0" -e "GEELLO_ADDRESS=0.0.0.0" --mount type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix --device=/dev/dri:/dev/dri -p 8000:8000 ghcr.io/deadpoetspoon/geello:latest
-```
-
-### Contributing
-
-Please!
-
-### License
-
-The code is available under the [MIT license](./LICENSE).
+The code is available under the [MIT license](LICENSE).
