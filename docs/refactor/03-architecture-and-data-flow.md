@@ -2,6 +2,10 @@
 
 This is the Accepted target architecture. It is not implemented at the baseline. See [requirements](02-requirements-and-acceptance.md) for acceptance IDs and [interfaces](04-public-apis-and-configuration.md) for target contracts.
 
+The [M3 implementation checkpoint](09-m3-service-and-evidence.md) records the
+current derived formats, resource publication/retention, lazy preparation,
+queues/caches and basic service behavior separately from this target baseline.
+
 ## 1. Ownership and dependency direction
 
 ```mermaid

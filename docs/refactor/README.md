@@ -4,7 +4,7 @@ Design baseline date: **2026-11-12**. Implementation branch: **`refactor`**. Ref
 
 Resource administration, indexed catalog storage and container-variant revision: **2026-11-13**. These additions supersede the earlier no-upload target boundary; existing implementation facts remain dated to the original assessment.
 
-This package consolidates the first-stage redesign discussed with the project owner. M0 is the documentation baseline; M1 memory execution and M2 input/configuration work now have implementation evidence on `refactor`. Server administration, derived storage and public protocols remain later milestones. Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
+This package consolidates the first-stage redesign discussed with the project owner. M0 is the documentation baseline; M1 memory execution, M2 input/configuration and the M3 basic service closed loop now have implementation evidence on `refactor`. M3 acceptance gaps are recorded explicitly; public OGC/WebSocket protocols and deployment remain later milestones. Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
 
 ## Reading order
 
@@ -17,10 +17,12 @@ This package consolidates the first-stage redesign discussed with the project ow
 | 5 | [Decisions and dependencies](05-decisions-and-dependencies.md) | Record decisions, exact approved versions, sources, licenses, feasibility evidence, and remaining gates. |
 | 6 | [Implementation roadmap](06-implementation-roadmap.md) | Sequence the work and define evidence required to finish each milestone. |
 | 7 | [M2 dependency closure evidence](07-m2-dependency-closure.md) | Review candidate transitive packages, features, sources, checksums and licenses for G-01. |
+| 8 | [M3 dependency closure evidence](08-m3-dependency-closure.md) | Full candidate features, delta, checksums, licenses, native/build inventory and dependency edges. |
+| 9 | [M3 service and evidence](09-m3-service-and-evidence.md) | Runnable experimental startup, actual administration/map/tile contracts, storage lifecycle, validation and gaps. |
 
-The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Container images, administration, derived storage and OGC/WebSocket services are not implemented yet.
+The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Administration and derived storage have M3 implementation evidence; container images and OGC/WebSocket services remain pending.
 
-Read the requirements before the examples. Examples illustrate the target and are not runnable against the current prototype. Proposed Rust names, TOML field spelling, and protocol envelopes must be checked against the accepted behavioral requirements when implementation schemas are introduced.
+Read the requirements before the target examples. Documents 01–06 preserve the accepted design; document 09 identifies runnable M3 contracts and the experimental profile. Target protocol examples must not be mistaken for implemented OGC/WebSocket routes.
 
 ## Status vocabulary
 
@@ -32,7 +34,7 @@ Statuses are independent dimensions, not a single completion checkbox:
 | **Validated** | A particular claim was checked by inspection, an experiment, or a test. | Name the method, version, platform, input, and result. Source inspection is not an end-to-end runtime test. |
 | **Implemented** | The target behavior exists in the implementation branch. | Code reference and relevant verification result; accepted design alone is insufficient. |
 
-For the **target redesign**, requirements and decisions are Accepted unless explicitly marked as a proposal or later gate. M1 and M2 implementation evidence is recorded in the roadmap; remaining target behavior is **No** and runtime acceptance is **Pending**. Existing prototype functionality is described separately and does not count as target completion.
+For the **target redesign**, requirements and decisions are Accepted unless explicitly marked as a proposal or later gate. M1–M3 implementation evidence is recorded in the roadmap and service guide; unverified behavior remains Pending. Existing prototype functionality is described separately and does not count as target completion.
 
 ## Traceability and authority
 

@@ -24,6 +24,7 @@ pub struct OperationContext {
 }
 #[derive(Debug)]
 struct State {
+    parent: Option<OperationContext>,
     cancelled: AtomicBool,
     deadline: Option<Instant>,
     limits: OperationLimits,
@@ -34,6 +35,21 @@ impl OperationContext {
     pub fn new(limits: OperationLimits, deadline: Option<Instant>) -> Self {
         Self {
             state: Arc::new(State {
+                parent: None,
+                cancelled: AtomicBool::new(false),
+                deadline,
+                limits,
+                live: AtomicU64::new(0),
+                work: AtomicU64::new(0),
+            }),
+        }
+    }
+    /// Independent cancellation/work limits with shared parent memory admission.
+    /// The parent must outlive its children; reservations pin it automatically.
+    pub fn child(&self, limits: OperationLimits, deadline: Option<Instant>) -> Self {
+        Self {
+            state: Arc::new(State {
+                parent: Some(self.clone()),
                 cancelled: AtomicBool::new(false),
                 deadline,
                 limits,
@@ -59,6 +75,9 @@ impl OperationContext {
         charge(&self.state.work, cost, self.state.limits.max_work, "work")
     }
     pub fn check(&self) -> Result<(), GeelloError> {
+        if let Some(parent) = &self.state.parent {
+            parent.check()?;
+        }
         if self.state.cancelled.load(Ordering::Acquire) {
             return Err(GeelloError::Cancelled);
         }
@@ -69,6 +88,12 @@ impl OperationContext {
     }
     pub(crate) fn reserve(&self, bytes: usize) -> Result<Reservation, GeelloError> {
         self.check()?;
+        let parent = self
+            .state
+            .parent
+            .as_ref()
+            .map(|p| p.reserve(bytes).map(Box::new))
+            .transpose()?;
         charge(
             &self.state.live,
             bytes as u64,
@@ -76,6 +101,7 @@ impl OperationContext {
             "memory",
         )?;
         Ok(Reservation {
+            _parent: parent,
             context: self.clone(),
             bytes: bytes as u64,
         })
@@ -96,6 +122,7 @@ fn charge(counter: &AtomicU64, cost: u64, max: u64, kind: &'static str) -> Resul
 }
 #[derive(Debug)]
 pub(crate) struct Reservation {
+    _parent: Option<Box<Reservation>>,
     context: OperationContext,
     bytes: u64,
 }
@@ -117,7 +144,18 @@ pub struct Accounted<T> {
     _reservations: Vec<Reservation>,
 }
 impl<T> Accounted<T> {
-    #[cfg(any(feature = "config-toml", feature = "rust-proj"))]
+    /// Transfer both the value and its admission reservations to a longer-lived
+    /// composition without cloning data or releasing accounting prematurely.
+    #[cfg(feature = "server")]
+    pub(crate) fn into_parts(self) -> (T, Vec<Reservation>) {
+        (self.value, self._reservations)
+    }
+    #[cfg(any(
+        feature = "config-toml",
+        feature = "rust-proj",
+        feature = "derived-store",
+        feature = "encode-images"
+    ))]
     pub(crate) fn new(value: T, reservations: Vec<Reservation>) -> Self {
         Self {
             value,

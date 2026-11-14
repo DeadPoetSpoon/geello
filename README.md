@@ -31,8 +31,12 @@ M1 now provides the memory-only foundation:
 M2 now adds bounded GeoJSON, Shapefile/DBF and baseline GeoTIFF readers,
 independent vector cursors, exact/bbox spatial query modes, Rust projection,
 typed raster validity/calibration/resampling, and strict TOML resource/style
-validation. The protected `/admin/v1` API, OGC services, WebSocket animation,
-derived stores and server runtime remain later milestones. The old mutable
+validation. M3 adds immutable vector/raster derived stores, a protected
+`/admin/v1` resource lifecycle API, sharded atomic catalog generations,
+bounded scheduling/caches and basic Axum map/tile PNG responses. See the
+[M3 service guide and evidence](docs/refactor/09-m3-service-and-evidence.md)
+for actual interfaces and remaining acceptance gaps. OGC services and WebSocket
+animation remain M4. The old mutable
 `RenderedGeometry`/`RenderOption` and Rocket prototype were removed during the
 refactor.
 
@@ -64,13 +68,21 @@ The ignored GPU test requires a real device. The recorded workstation evidence
 uses an NVIDIA GeForce RTX 4090 through DX12 and must be repeated for every
 supported platform.
 
-## Later server and container work
+## Experimental server and later container work
 
-The target design defines a protected managed/external resource API, sharded
-catalog generations, and a default GPU Alpine image with an independent CPU
-`-cpu` variant. Docker, server and administration are intentionally
-not implemented in M2; their requirements and validation gates remain in the
-[roadmap](docs/refactor/06-implementation-roadmap.md).
+```text
+cargo run --locked --features server-full -- --config examples/server.experimental.toml
+```
+
+The profile binds to loopback and selects GPU with initialization-only CPU
+fallback. Uploads create managed immutable files; local registration retains
+external ownership. Reverse-proxy protection is required for `/admin/v1`.
+All numerical settings are experimental pending measured approval.
+
+The target container is a default GPU Alpine image with an independent CPU
+`-cpu` variant. Docker, native PROJ and Linux/musl validation remain M5 work.
+The [candidate M3 dependency inventory](docs/refactor/08-m3-dependency-closure.md)
+is available for review; compatibility tests do not close G-01.
 
 ## License
 

@@ -2,6 +2,11 @@
 
 This document describes the **target**. None of the new APIs or schemas is implemented by this documentation change. Behavioral requirements are Accepted; Rust identifiers and example field spellings below are proposed interface forms to carry those requirements into implementation. They are not a claim of source compatibility, a released wire schema, or executable examples for v0.2.0.
 
+Implementation checkpoint: M1–M3 now provide library and basic server contracts.
+Use the [M3 service guide](09-m3-service-and-evidence.md) for runnable startup,
+current resource API/operation shapes, HTTP routes and explicit limitations.
+The OGC/WebSocket contracts below remain targets for M4.
+
 ## 1. Public library surfaces
 
 Use conceptual modules `data`, `projection`, `style`, `animation`, `text`, `scene`, `render`, `readers`, and `storage`. The first seven belong to in-memory layer 1; the last two to layer 2. The server module is feature-gated and depends on these surfaces.

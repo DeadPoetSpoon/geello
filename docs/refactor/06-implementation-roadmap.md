@@ -2,7 +2,7 @@
 
 This roadmap sequences the **whole first-stage refactor**. M1–M5 are milestones inside that stage, not permission to omit its later capabilities. All implementation work remains on `refactor`; reference branches stay unchanged. Breaking compatibility is allowed with documented migration.
 
-M0 documentation is complete. M1 memory-core and M2 reader/configuration work now have implementation evidence on `refactor`; server, protocol and deployment milestones remain pending. The [M2 dependency closure](07-m2-dependency-closure.md) is evidence for review and does not close G-01. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
+M0 documentation is complete. M1 memory-core, M2 reader/configuration and the M3 basic service closed loop have implementation evidence on `refactor`; protocol and deployment milestones remain pending. The [M2 dependency closure](07-m2-dependency-closure.md) and [M3 candidate inventory](08-m3-dependency-closure.md) are review evidence and do not close G-01. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
 
 ## 1. Common work and completion rules
 
@@ -96,7 +96,7 @@ count). `china.geo.json` parsed 36 features, queried all independent batches,
 and rendered through the CPU scene path. `jd.tif` and `jd_4326.tif` were both
 rejected under their untrusted CRS/georeferencing interpretations, then read
 successfully after explicit EPSG:3857 override at three edge/center windows.
-Preparation accounted approximately 3.30 GiB and 4.93 GiB respectively for
+Preparation accounted approximately 3.30 GB and 4.93 GB respectively for
 the immutable source snapshot and temporary three-copy conversion envelope; the
 three 32x32 windows completed in approximately 31 ms and 17 ms on the test
 workstation. This validates bounded native-window decoding after preparation,
@@ -129,6 +129,31 @@ remains open; candidate-closure compatibility testing was owner-authorized on
 **Exit:** registered source to consistent HTTP image/tile response works under bounded concurrency; atomic publication/refresh and cache identities are proven; caches do not retain full source snapshots; old live versions are protected; error/preparing/revalidation behavior is documented. Formal numerical performance goals remain open until M5.
 
 **Resource exit:** managed single-file and Shapefile ZIP uploads, external path registration, unpublish/record removal/content deletion, ETag conflicts, reference protection and operation failure rollback have evidence. The catalog generation is indexed at request time, survives restart from the last complete generation, and reports orphaned files without registering them. G-08 and G-09 remain open until archive helper dependencies and scale measurements are approved.
+
+### M3 implementation evidence (refactor)
+
+The [service guide](09-m3-service-and-evidence.md) records code boundaries,
+implemented routes, experimental startup profile and scenario-specific evidence.
+`derived-store`, `encode-images`, `server` and `server-full` now exist. Vector
+FGB/companions and native raster blocks/weighted overviews remain in library
+layer two; Axum, catalog, ownership, scheduling and caches remain in the server.
+
+Implemented and exercised: managed single-file/Shapefile ZIP preparation,
+external registration, ETag/reference protection, unpublish/removal/deletion,
+atomic sharded generations, journal recovery, pinned retention and maintenance,
+lazy missing-store repair/overview upgrade, map/tile PNG, encoded revalidation,
+Moka/Foyer and separate area-render/tile-encode singleflight. Ordinary offline
+tests pass; a real GPU server image test and a 1,000-resource index rebuild,
+compaction and restart experiment also pass on Windows MSVC.
+
+This is functional implementation evidence, not formal closure of G-01/G-03/
+G-07/G-08/G-09. Remaining M3 acceptance work includes filesystem/power-loss fault
+injection, additional archive/corruption matrices, orphan/operation retention,
+transient FGB disk and allocation accounting, broader scale/contention and
+platform recovery evidence. Nonlinear raster views still admit a full base
+level; decoded-block caching and bounded projection-window optimization remain
+open. Preserve these accepted requirements; do not infer completion from the
+successful MVP or move them into M4 by omission.
 
 ### M4 — Text, complete protocol subset, animation and WebSocket
 
@@ -221,4 +246,7 @@ Do not publish new usage commands as operationally verified until implemented an
 - Local links resolve, fences/tables are well formed, no misleading target completion percentages or inherited reference checkmarks.
 - Only README/docs changed; no Rust, Cargo files/lock, runtime configs, fixture downloads, CI, installation or auto-commit.
 
-Handoff should provide the navigation link, summarize the contents and verification performed, and list G-01 through G-11 as applicable future work. The next implementation step is the approved dependency-closure review plus M1 feasibility/core work, not another unbounded architecture discussion or a wholesale merge of `update`.
+Handoff should provide the navigation link, summarize verification and identify
+open gates. At the current M3 checkpoint, review the candidate dependency
+closure and remaining acceptance evidence in document 09 before claiming M3
+fully validated; M4 protocol/text/animation and M5 deployment remain scheduled.

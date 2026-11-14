@@ -129,6 +129,35 @@ fn straight_value(block: &RasterBlock, band: usize, i: usize) -> Option<f64> {
     let v = raw * b.scale + b.offset;
     v.is_finite().then_some(v)
 }
+/// DataVersion-wide statistics use the same unassociated, calibrated values as
+/// colorization. Transparent hidden samples cannot set automatic display ranges.
+pub fn block_band_range(
+    block: &RasterBlock,
+    band: usize,
+    context: &OperationContext,
+) -> Result<Option<SampleRange>, GeelloError> {
+    block.validate()?;
+    if band >= block.bands.len() {
+        return Err(GeelloError::InvalidRaster("band outside raster".into()));
+    }
+    let mut range: Option<SampleRange> = None;
+    for i in 0..block.bands[band].samples.len() {
+        context.checkpoint(1)?;
+        if block.alpha.as_ref().is_some_and(|a| a[i] == 0.) {
+            continue;
+        }
+        if let Some(v) = straight_value(block, band, i) {
+            range = Some(match range {
+                Some(r) => SampleRange {
+                    min: r.min.min(v),
+                    max: r.max.max(v),
+                },
+                None => SampleRange { min: v, max: v },
+            });
+        }
+    }
+    Ok(range)
+}
 fn imprecise(s: &RasterSamples) -> bool {
     match s {
         RasterSamples::U64(v) => v.iter().any(|n| *n > 1 << 53),

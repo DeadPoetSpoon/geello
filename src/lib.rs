@@ -8,6 +8,10 @@ mod backend;
 #[cfg(feature = "config-toml")]
 pub mod config;
 mod core;
+#[cfg(feature = "derived-store")]
+pub mod derived;
+#[cfg(feature = "encode-images")]
+pub mod encoding;
 mod operation;
 #[cfg(feature = "rust-proj")]
 pub mod projection;
@@ -17,7 +21,8 @@ pub mod raster_processing;
 #[cfg(any(
     feature = "read-geojson",
     feature = "read-shapefile",
-    feature = "read-geotiff"
+    feature = "read-geotiff",
+    feature = "derived-store"
 ))]
 pub mod readers;
 #[cfg(feature = "render-cpu")]
@@ -25,6 +30,8 @@ mod render_cpu;
 #[cfg(feature = "render-gpu")]
 mod render_gpu;
 mod scene;
+#[cfg(feature = "server")]
+pub mod server;
 mod style;
 
 pub use core::*;

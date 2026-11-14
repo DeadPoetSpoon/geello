@@ -250,7 +250,7 @@ impl VectorCursor {
         }))
     }
 }
-fn matches_query(f: &Feature, q: &VectorQuery) -> Result<bool, GeelloError> {
+pub(crate) fn matches_query(f: &Feature, q: &VectorQuery) -> Result<bool, GeelloError> {
     if !q.ids.is_empty() && !f.id.as_ref().is_some_and(|id| q.ids.contains(id)) {
         return Ok(false);
     }
@@ -535,9 +535,20 @@ fn kind(v: &PropertyValue) -> PropertyKind {
         PropertyValue::Object(_) => PropertyKind::Object,
     }
 }
+#[cfg(any(
+    feature = "read-geojson",
+    feature = "read-shapefile",
+    feature = "read-geotiff"
+))]
 pub(crate) fn io(e: impl std::fmt::Display) -> GeelloError {
     GeelloError::Io(e.to_string())
 }
+#[cfg(any(
+    feature = "read-geojson",
+    feature = "read-shapefile",
+    feature = "read-geotiff",
+    all(feature = "config-toml", feature = "rust-proj")
+))]
 pub(crate) fn source(e: impl std::fmt::Display) -> GeelloError {
     GeelloError::InvalidSource(e.to_string())
 }

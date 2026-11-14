@@ -599,6 +599,8 @@ fn validate_symbol(symbol: &SymbolDefinition) -> Result<(), GeelloError> {
                 || (mode == "gray" && (band.is_none() || bands.is_some()))
                 || (mode == "rgb" && (bands.is_none() || band.is_some()))
                 || bands.as_ref().is_some_and(|b| b.len() != 3)
+                || band == &Some(0)
+                || bands.as_ref().is_some_and(|b| b.contains(&0))
             {
                 return Err(config_error("invalid raster symbol bands/mode"));
             }
@@ -734,6 +736,9 @@ pub fn valid_resource_id(id: &str) -> bool {
     parts.next().is_none()
         && [a, b].iter().all(|s| {
             !s.is_empty()
+                && s.chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
                 && s.chars()
                     .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
         })

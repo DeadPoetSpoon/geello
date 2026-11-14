@@ -127,7 +127,20 @@ Use Vello/FlatGeobuf reexports where appropriate rather than adding unapproved d
 
 Not approved for the redesign merely because present in old code or convenient: Rocket, rocket_ws, RON, figment, reqwest, GDAL, SQLite business storage/rusqlite, a frontend package or a new datetime crate. Existing package approvals also do not preapprove arbitrary extras or HTTP/TLS feature graphs.
 
-Restricted ZIP handling needs a separately proposed exact archive dependency/codec feature set and its full normal/build/native closure. No ZIP crate is selected or approved here. Raw-body single-request upload does not require enabling Axum multipart by implication. Base Rust/Alpine image versions/digests, APK Vulkan/driver packages, musl C/C++ build tools and Foyer codec linking also join G-01/G-10/G-11. Both container variants build checked-out locked source, never a registry `cargo install`. Keep native PROJ excluded by default. A GPU Alpine build must prove vendor loader/driver ABI compatibility, not just musl binary compilation.
+On **2026-11-13** the owner approved **zip = 9.5.1 (MIT)**, default features off,
+only **deflate-flate2-zlib-rs**, for Stored/Deflate Shapefile uploads. Encryption,
+other ZIP codecs and ZIP time features are disabled. The owner also authorized
+M3 candidate transitive-closure compatibility testing, following M2; formal
+G-01 approval remains pending the [complete inventory](08-m3-dependency-closure.md).
+Raw-body single-request upload does not enable Axum multipart. The candidate
+lock retains the accepted LZ4/Zstd versions listed below. Native codec builds
+remain present even with Foyer response compression disabled.
+
+Base Rust/Alpine image versions/digests, APK Vulkan/driver packages, musl C/C++
+build tools and Foyer codec linking also join G-01/G-10/G-11. Both container
+variants build checked-out locked source, never a registry `cargo install`.
+Keep native PROJ excluded by default. A GPU Alpine build must prove vendor
+loader/driver ABI compatibility, not just musl binary compilation.
 
 ## 3. Selected transitive/native components
 
