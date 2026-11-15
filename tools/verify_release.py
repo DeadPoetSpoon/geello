@@ -45,6 +45,11 @@ def main():
     sbom = json.loads((ROOT / "docs/refactor/m6-sbom.json").read_text(encoding="utf-8"))
     if any(component["purl"].startswith("path+file:") for component in sbom["components"]):
         fail("SBOM contains checkout-specific local PURLs")
+    if sbom.get("metadata", {}).get("component", {}).get("version") != cargo["package"]["version"]:
+        fail("SBOM application version does not match Cargo.toml")
+    for component in sbom.get("components", []):
+        if not component.get("purl", "").startswith("pkg:cargo/"):
+            fail(f"SBOM component has a non-Cargo PURL: {component.get('name', '<unknown>')}")
     print(json.dumps({"status": "pass", "version": cargo["package"]["version"],
                       "lock_sha256": hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest(),
                       "native_versions": expected}, indent=2))
