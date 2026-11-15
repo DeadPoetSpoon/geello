@@ -1,5 +1,6 @@
 //! Strict startup schema. Every numerical capacity is explicitly supplied by
-//! an experimental deployment profile pending G-07 owner confirmation.
+//! a deployment profile. G-07 approves development/small starting profiles;
+//! platform performance validation is recorded separately from that approval.
 use super::*;
 use serde::{Deserialize, Serialize};
 use std::{

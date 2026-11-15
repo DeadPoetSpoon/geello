@@ -264,6 +264,13 @@ Measure cold source prepare, derived generation, uncached render, warm object/re
 
 Only after that evidence propose CPU concurrency, memory/GPU limits, queue capacities/fairness, deadlines, message/send limits, cursor absolute TTL/count, cache budgets and development/small deployment profiles. Ask the owner to confirm the concrete profiles and formal throughput/latency/resource targets. Until approval, label all experiment values temporary and keep G-07 open. Do not insert convenient numbers into default config and later treat them as approved requirements.
 
+**Current approval update, 2026-11-15:** the owner confirmed the recommended
+development/small starting profiles and benchmark targets. The G-07 approval
+requirement is closed. [Document 18](18-g07-approved-targets.md) records the exact
+numbers, workload and supported platform/backend scope. Cold-render p95 and the
+complete performance matrix remain validation obligations; Alpine and hardware
+Linux Vulkan retain their separate gates.
+
 ## 5. Migration and release preparation
 
 | Existing behavior | Target migration |

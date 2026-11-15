@@ -1,5 +1,5 @@
-# Measured Windows synthetic workload starting profile.
-# See docs/refactor/13-m5-deployment-and-evidence.md for limits and open gates.
+# G-07 owner-approved starting profile, 2026-11-15.
+# Scope, targets and evidence: docs/refactor/18-g07-approved-targets.md.
 listen = "127.0.0.1:3000"
 public_base_url = "http://127.0.0.1:3000"
 data_directory = "../data-small"

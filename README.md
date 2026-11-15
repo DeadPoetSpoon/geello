@@ -96,7 +96,9 @@ cargo run --locked --features server-full -- --config examples/server.experiment
 The profile binds to loopback and selects GPU with initialization-only CPU
 fallback. Uploads create managed immutable files; local registration retains
 external ownership. Reverse-proxy protection is required for `/admin/v1`.
-All numerical settings are experimental pending measured approval.
+This example retains experimental settings. The development/small profiles and
+benchmark targets have [G-07 owner approval](docs/refactor/18-g07-approved-targets.md);
+performance validation remains specific to each workload, platform and backend.
 
 The target container is a default GPU Alpine image with an independent CPU
 `-cpu` variant. Docker, native PROJ and Linux/musl validation remain M5 work.

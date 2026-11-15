@@ -233,7 +233,7 @@ Freeze exact specification revisions and relevant clauses in implementation evid
 | G-04 Text | Stack isolation, shaping/bidi/fallback/curved layout and reproducible approved font subsets | No silent system-font fallback or replacement engine |
 | G-05 Native PROJ | Fixed-version source/hash/build inventory, dynamic deployment, offline db/grids, prevention of bundled fallback, Windows/Linux compile and coordinates | Optional feature remains incomplete until validated; never substitute native versions or download grids automatically |
 | G-06 Protocol contract | Exact schemas/parameter rules/error and close codes, actual conformance URIs, OpenAPI and discovery fixtures | Mechanical schema details must obey accepted semantics; new behavior/scope needs owner decision |
-| G-07 Performance/profile | Measured cold/hot/refresh traces and resource usage on reproducible generated workloads; proposed development/small profiles and targets | Owner confirms formal numbers after baseline measurement; no performance-complete claim before that |
+| G-07 Performance/profile | Measured cold/hot/refresh traces and resource usage on reproducible generated workloads; approved development/small profiles and targets | Profile/target approval recorded in document 18; platform-specific validation remains separate |
 | G-08 Resource lifecycle/archive | Resource ownership, restricted ZIP safety, stream limits, reference protection, optimistic conflicts and atomic operation publication | Add any archive/stream helper dependency to G-01; do not silently accept unsafe extraction or ownership ambiguity |
 | G-09 Resource catalog scale | Thousands of resource definitions, shard lookup/update/rebuild, restart recovery, orphan reporting and concurrent generation updates | Report measured scale/latency; do not claim a fixed maximum without evidence |
 | G-10 GPU Alpine image | Musl-built default GPU Alpine image, Vulkan loader/device mapping, startup/readiness, GPU initialization fallback and volume recovery | Ordinary image tag denotes target variant only; hardware evidence and pinned base digest remain required |
@@ -262,3 +262,15 @@ lockfile, 421 third-party packages and 45 package/feature deltas, including
 cosmic-text/quick-xml and Axum WebSocket support. This extends the historical M3
 closure under the current authorization and does not authorize future upgrades.
 Platform, native PROJ and measured production profile gates remain M5.
+
+## G-07 approval update — 2026-11-15
+
+The owner explicitly confirmed the recommended performance/resource targets
+after reviewing the M5 measurements. Development/small starting profiles, warm
+p95 <= 50 ms, warm throughput >= 60 requests/s, cold p95 <= 8 s, four-client
+distinct-request p95 <= 20 s, refresh <= 3 s, restart readiness <= 2 s, 512 MiB
+live admission and small-profile sampled RSS <= 256 MiB are **Accepted**.
+The approval requirement is closed; benchmark/platform validation is separate.
+[Document 18](18-g07-approved-targets.md) defines workload, platform scope,
+exact retained profile settings and remaining cold-p95/backend evidence.
+No unmeasured GPU memory ceiling, Alpine result or Linux Vulkan result is implied.

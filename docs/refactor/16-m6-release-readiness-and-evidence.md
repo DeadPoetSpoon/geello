@@ -41,7 +41,8 @@ at `target/m5-native/install` and `GEELLO_NATIVE_ROOT`; CI rebuilds that
 distribution instead. Real Vulkan hardware and Alpine runtime execution remain
 environment-dependent M5 gates and are not implied by these source checks.
 
-M6 does not change the approved dependency versions, protocol subset, formal
-performance targets, or the owner approval status of G-07. Publishing a tag,
+M6 does not change the approved dependency versions or protocol subset. G-07
+profile/target approval was subsequently recorded in [document 18](18-g07-approved-targets.md);
+platform-specific performance validation remains separate. Publishing a tag,
 container image, or release signature remains a separate operator action after
 the clean-checkout audit succeeds.

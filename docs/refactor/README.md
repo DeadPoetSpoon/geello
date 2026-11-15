@@ -35,6 +35,7 @@ performance gates remain explicit.
 | 13 | [M5 deployment and evidence](13-m5-deployment-and-evidence.md) | Native projection, platform/container matrix, migration and fixed-seed measurements. |
 | 14 | [M6 release readiness and evidence](16-m6-release-readiness-and-evidence.md) | Liveness, container health checks, deterministic SBOM and fail-closed release audit. |
 | 15 | [M7 release automation and evidence](17-m7-release-automation-and-evidence.md) | CI freshness checks, pre-publish source audit, and container smoke-test coverage. |
+| 16 | [G-07 approved targets](18-g07-approved-targets.md) | Owner-approved development/small profiles, benchmark targets and remaining performance evidence. |
 
 The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Administration and derived storage have M3 implementation evidence; container images remain M5; the agreed OGC/WebSocket subset is implemented.
 
@@ -68,7 +69,7 @@ The following gates intentionally follow this documentation delivery:
 
 - Resolve the intended Cargo features, then submit the complete lockfile, transitive dependencies, source/license inventory, and native build inventory for owner approval before adopting them as the implementation baseline.
 - Validate the Vello adapters, bounded readers, GeoTIFF layouts, font isolation, derived storage, and native PROJ build. Failures return to a documented design decision.
-- Measure reproducible workloads before asking the owner to approve formal CPU/memory/GPU/queue/cache profiles and performance targets. Temporary experiment limits are not production defaults.
+- G-07 development/small profile and benchmark target approval was recorded on 2026-11-15 in [document 18](18-g07-approved-targets.md). Performance validation remains tied to the specified workload and platform/backend; other experimental profiles are outside that approval.
 
 Resource uploads and local registrations belong to the server administration plane. Public OGC and WebSocket routes consume only published resource generations. Upload/archive limits, resource counts, image tags and Alpine base digests remain pending operational validation.
 
