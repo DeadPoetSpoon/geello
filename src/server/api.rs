@@ -18,6 +18,7 @@ pub fn router(state: Arc<ServerState>) -> Router {
     let admission_state = state.clone();
     Router::new()
         .route("/health/ready", get(ready))
+        .route("/health/live", get(live))
         .route("/api", get(super::http_docs::openapi))
         .route("/api.html", get(super::http_docs::html))
         .route("/admin/v1/resources", get(list))
@@ -96,6 +97,15 @@ async fn ready(State(s): State<Arc<ServerState>>) -> Json<serde_json::Value> {
     Json(
         serde_json::json!({"status":"ready","backend":s.backend_name,"backend_diagnostic":s.backend_diagnostic,"catalog":s.catalog.stats(),"live_accounted_bytes":s.scheduler.live_bytes(),"cache_failures":s.cache_failures()}),
     )
+}
+
+/// Liveness intentionally excludes catalog/backend readiness. It answers whether
+/// the process can still serve a shutdown-aware health request.
+async fn live(State(s): State<Arc<ServerState>>) -> Result<Json<serde_json::Value>> {
+    if s.activities.is_closed() {
+        return Err(ServerError::new(503, "shutdown", "Server is shutting down"));
+    }
+    Ok(Json(serde_json::json!({"status":"alive"})))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

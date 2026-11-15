@@ -32,6 +32,8 @@ performance gates remain explicit.
 | 10 | [M4 animation and evidence](10-m4-animation-and-evidence.md) | Implemented memory/TOML style/geometry tracks, stable-ID refresh, HTTP time selection, cache identity and remaining M4 scope. |
 | 11 | [M4 HTTP contract and evidence](11-m4-http-contract-and-evidence.md) | Historical HTTP checkpoint and maintenance workflow. |
 | 12 | [M4 completion and evidence](12-m4-completion-and-evidence.md) | Current text/font, protocol, snapshot and WebSocket contracts, independent examples and final verification. |
+| 13 | [M5 deployment and evidence](13-m5-deployment-and-evidence.md) | Native projection, platform/container matrix, migration and fixed-seed measurements. |
+| 14 | [M6 release readiness and evidence](16-m6-release-readiness-and-evidence.md) | Liveness, container health checks, deterministic SBOM and fail-closed release audit. |
 
 The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Administration and derived storage have M3 implementation evidence; container images remain M5; the agreed OGC/WebSocket subset is implemented.
 

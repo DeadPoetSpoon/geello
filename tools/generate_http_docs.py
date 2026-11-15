@@ -145,6 +145,8 @@ def build():
                                        {"200": schema_response("Standalone English HTML; no JavaScript, CDN or server-hosted map viewer.", STRING, "text/html")})},
         "/health/ready": {"get": operation("getReadiness", "Inspect initialized server readiness", [],
                                            {"200": schema_response("Initialized backend and bounded service counters.", ref("Ready"))})},
+        "/health/live": {"get": operation("getLiveness", "Inspect process liveness", [],
+                                           {"200": schema_response("Process is accepting health checks.", obj({"status": {"type": "string", "enum": ["alive"]}}))})},
         "/admin/v1/resources": {"get": operation("listResources", "List registered resources", [
             param("offset", "query", {**INTEGER, "default": 0}, "Administrative offset in the current ordered catalog; not a fixed-snapshot feature cursor."),
             param("limit", "query", {"type": "integer", "minimum": 1}, "Defaults to profile.max_list_items; cannot exceed that limit."),

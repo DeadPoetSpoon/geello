@@ -21,6 +21,7 @@ ENV XDG_RUNTIME_DIR=/run/geello
 USER 10001:10001
 VOLUME ["/data"]
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 CMD wget -q -O - http://127.0.0.1:3000/health/live || exit 1
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/usr/local/bin/geello"]
 CMD ["--config", "/etc/geello/server.toml"]

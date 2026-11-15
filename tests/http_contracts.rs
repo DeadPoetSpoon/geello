@@ -469,6 +469,7 @@ async fn served_openapi_describes_real_routes_schemas_and_configured_proxy_prefi
         ("/api", "get"),
         ("/api.html", "get"),
         ("/health/ready", "get"),
+        ("/health/live", "get"),
         ("/admin/v1/resources", "get"),
         ("/admin/v1/resources/{kind}/{id}", "get"),
         ("/admin/v1/resources/{kind}/{id}", "delete"),

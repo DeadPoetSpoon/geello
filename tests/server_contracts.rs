@@ -158,6 +158,20 @@ async fn explicitly_native_map_renders_projected_xy_and_reuses_its_own_cache() {
 }
 
 #[tokio::test]
+async fn liveness_is_separate_from_readiness_and_closes_during_shutdown() {
+    let root = tempfile::tempdir().unwrap();
+    let state = state(root.path()).await;
+    let app = router(state.clone());
+    let live = request(&app, "GET", "/health/live", None, None, Body::empty()).await;
+    assert_eq!(live.status(), StatusCode::OK);
+    assert_eq!(json(live).await["status"], "alive");
+    state.begin_shutdown();
+    let live = request(&app, "GET", "/health/live", None, None, Body::empty()).await;
+    assert_eq!(live.status(), StatusCode::SERVICE_UNAVAILABLE);
+    state.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn geometry_animation_moves_offscreen_ids_before_projection_and_rebinds_on_refresh() {
     use geello::derived::DerivedVector;
     use geello::readers::VectorQuery;

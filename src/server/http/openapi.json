@@ -475,6 +475,172 @@
         }
       }
     },
+    "/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "summary": "Inspect process liveness",
+        "description": "",
+        "parameters": [
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": false,
+            "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process is accepting health checks.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "alive"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query or request; unknown and duplicate query fields are rejected.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "404": {
+            "description": "Resource, operation or route not found; unpublished resources cannot render.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed. The Allow header lists supported methods.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Allow": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Methods accepted by the matched route."
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "422": {
+            "description": "Resource or render validation failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "500": {
+            "description": "Storage operation failed; internal filesystem details are withheld.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          },
+          "503": {
+            "description": "Admission exhausted, preparing/preparation failed, shutdown, deadline or backend failure. Retry is caller controlled.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Single nonempty visible ASCII value, at most 128 bytes, excluding quotes and commas. Invalid, missing or duplicate values are replaced by a generated request ID. Returned on every application response, including errors and 304; it does not affect image/cache identity."
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/v1/resources": {
       "get": {
         "operationId": "listResources",
