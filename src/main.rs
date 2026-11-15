@@ -21,11 +21,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listener.local_addr()?,
         state.backend_name
     );
-    axum::serve(listener, router(state.clone()))
-        .with_graceful_shutdown(async {
+    let shutdown_state = state.clone();
+    let serving = axum::serve(listener, router(state.clone()))
+        .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
+            shutdown_state.begin_shutdown();
         })
-        .await?;
+        .await;
     state.shutdown().await?;
+    serving?;
     Ok(())
 }

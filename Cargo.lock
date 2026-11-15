@@ -905,6 +905,7 @@ dependencies = [
  "axum",
  "blake3",
  "crs-definitions",
+ "flatbuffers",
  "flatgeobuf",
  "foyer",
  "futures-util",

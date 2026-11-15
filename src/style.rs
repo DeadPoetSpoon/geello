@@ -1,4 +1,5 @@
-//! Resolved memory styles. TOML parsing, rules and animation follow in M2/M4.
+//! Resolved memory styles. Optional TOML rules and memory-only animation are
+//! evaluated before immutable scene preparation and backend execution.
 use crate::{GeelloError, ImagePlacement, VectorBatch};
 use std::sync::Arc;
 

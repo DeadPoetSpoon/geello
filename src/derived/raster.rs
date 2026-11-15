@@ -23,7 +23,7 @@ struct BlockHeader {
     width: u32,
     height: u32,
     crs: Crs,
-    affine: [f64; 6],
+    affine: [u64; 6],
     point: bool,
     bands: Vec<BandHeader>,
     alpha: bool,
@@ -32,6 +32,8 @@ struct BlockHeader {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Tile {
+    #[serde(skip)]
+    _metadata: Option<Arc<crate::operation::Reservation>>,
     column: u32,
     row: u32,
     block: StoredFile,
@@ -52,16 +54,17 @@ struct Manifest {
     data_version: String,
     block_size: u32,
     crs: Crs,
-    affine: [f64; 6],
+    affine: [u64; 6],
     point: bool,
     method: String,
     levels: Vec<Level>,
-    ranges: Vec<Option<(f64, f64)>>,
+    ranges: Vec<Option<(u64, u64)>>,
 }
 #[derive(Debug, Clone)]
 pub struct DerivedRaster {
     root: PathBuf,
     manifest: Manifest,
+    _metadata: Option<Arc<crate::operation::Reservation>>,
     limits: StoreLimits,
     version: String,
 }
@@ -73,7 +76,99 @@ pub struct BlockWindow {
     pub width: u32,
     pub height: u32,
 }
+/// Optional caller-owned decoded-block cache. Keys identify immutable encoded
+/// bytes and their derived version; implementations retain admission with values.
+/// Library code has no dependency on a server, registry or cache implementation.
+pub trait RasterBlockCache {
+    fn get_or_load(
+        &self,
+        key: String,
+        load: &mut dyn FnMut() -> Result<Accounted<RasterBlock>, GeelloError>,
+    ) -> Result<Arc<Accounted<RasterBlock>>, GeelloError>;
+}
 impl DerivedRaster {
+    /// Plan against the complete native grid, load only the required window,
+    /// then execute the shared layer-one resampler. Projection failures and
+    /// excessive footprints fail explicitly; source coverage is never guessed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resample_view(
+        &self,
+        level: usize,
+        width: u32,
+        height: u32,
+        target: RasterGrid,
+        kind: raster_processing::RasterKind,
+        method: raster_processing::Resampling,
+        target_to_source: impl Fn([f64; 2]) -> Result<[f64; 2], GeelloError>,
+        ctx: &OperationContext,
+    ) -> Result<Option<raster_processing::ProcessedBlock>, GeelloError> {
+        self.resample_view_cached(
+            level,
+            width,
+            height,
+            target,
+            kind,
+            method,
+            target_to_source,
+            ctx,
+            None,
+        )
+    }
+    /// As resample_view, with optional immutable decoded-block reuse.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resample_view_cached(
+        &self,
+        level: usize,
+        width: u32,
+        height: u32,
+        target: RasterGrid,
+        kind: raster_processing::RasterKind,
+        method: raster_processing::Resampling,
+        target_to_source: impl Fn([f64; 2]) -> Result<[f64; 2], GeelloError>,
+        ctx: &OperationContext,
+        cache: Option<&dyn RasterBlockCache>,
+    ) -> Result<Option<raster_processing::ProcessedBlock>, GeelloError> {
+        let (sw, sh, factor) = self
+            .level_dimensions(level)
+            .ok_or_else(|| error("missing raster level"))?;
+        let source = window_grid(&self.grid(), 0, 0, factor);
+        let Some(w) = raster_processing::sampling_window(
+            &source,
+            sw,
+            sh,
+            &target,
+            width,
+            height,
+            method,
+            &target_to_source,
+            ctx,
+        )?
+        else {
+            return Ok(None);
+        };
+        let block = self.read_window_cached(
+            level,
+            BlockWindow {
+                column: w.column,
+                row: w.row,
+                width: w.width,
+                height: w.height,
+            },
+            ctx,
+            cache,
+        )?;
+        raster_processing::resample(
+            &block,
+            width,
+            height,
+            target,
+            kind,
+            method,
+            target_to_source,
+            ctx,
+        )
+        .map(Some)
+    }
     /// Prepare base access first. Each loader result may be released after one
     /// block; callers can provide a TIFF window reader or another bounded source.
     #[allow(clippy::too_many_arguments)]
@@ -137,6 +232,7 @@ impl DerivedRaster {
                     limits.max_disk_bytes,
                 )?;
                 tiles.push(Tile {
+                    _metadata: Some(Arc::new(ctx.reserve(2048)?)),
                     column,
                     row,
                     block: file,
@@ -145,11 +241,11 @@ impl DerivedRaster {
             }
         }
         let value = Manifest {
-            schema: 1,
+            schema: 2,
             data_version: data_version.into(),
             block_size,
             crs: grid.crs.clone(),
-            affine: grid.affine,
+            affine: grid.affine.map(f64::to_bits),
             point: grid.interpretation == PixelInterpretation::Point,
             method: "base".into(),
             levels: vec![Level {
@@ -158,14 +254,29 @@ impl DerivedRaster {
                 factor: 1,
                 tiles,
             }],
-            ranges,
+            ranges: ranges
+                .into_iter()
+                .map(|r| r.map(|(a, b)| (a.to_bits(), b.to_bits())))
+                .collect(),
         };
-        publish(parent, stage, value, used, limits)
+        publish(parent, stage, value, used, limits, ctx)
     }
+    /// Admit metadata before deserialization and retain it with this store.
+    pub fn open_with_context(
+        root: &Path,
+        limits: StoreLimits,
+        ctx: &OperationContext,
+    ) -> Result<Self, GeelloError> {
+        let hold = metadata_memory(root, limits, ctx)?;
+        let mut store = Self::open(root, limits)?;
+        store._metadata = Some(Arc::new(hold));
+        Ok(store)
+    }
+    /// Caller-owned metadata; use open_with_context inside budgeted operations.
     pub fn open(root: &Path, limits: StoreLimits) -> Result<Self, GeelloError> {
         limits.validate()?;
         let manifest: Manifest = load_manifest(root, limits.max_manifest_bytes)?;
-        if manifest.schema != 1 || manifest.block_size == 0 || manifest.levels.is_empty() {
+        if manifest.schema != 2 || manifest.block_size == 0 || manifest.levels.is_empty() {
             return Err(error("invalid raster manifest"));
         }
         let version = blake3::hash(&serde_json::to_vec(&manifest).map_err(error)?)
@@ -204,6 +315,7 @@ impl DerivedRaster {
         Ok(Self {
             root: root.into(),
             manifest,
+            _metadata: None,
             limits,
             version,
         })
@@ -227,7 +339,7 @@ impl DerivedRaster {
     pub fn grid(&self) -> RasterGrid {
         RasterGrid {
             crs: self.manifest.crs.clone(),
-            affine: self.manifest.affine,
+            affine: self.manifest.affine.map(f64::from_bits),
             interpretation: if self.manifest.point {
                 PixelInterpretation::Point
             } else {
@@ -242,7 +354,12 @@ impl DerivedRaster {
         self.manifest
             .ranges
             .iter()
-            .map(|v| v.map(|(min, max)| crate::raster_processing::SampleRange { min, max }))
+            .map(|v| {
+                v.map(|(min, max)| crate::raster_processing::SampleRange {
+                    min: f64::from_bits(min),
+                    max: f64::from_bits(max),
+                })
+            })
             .collect()
     }
     /// A conservative level never exceeds either requested axis sampling factor.
@@ -258,6 +375,16 @@ impl DerivedRaster {
         level: usize,
         w: BlockWindow,
         ctx: &OperationContext,
+    ) -> Result<Accounted<RasterBlock>, GeelloError> {
+        self.read_window_cached(level, w, ctx, None)
+    }
+    /// Read a native window using a caller-supplied decoded-block cache.
+    pub fn read_window_cached(
+        &self,
+        level: usize,
+        w: BlockWindow,
+        ctx: &OperationContext,
+        cache: Option<&dyn RasterBlockCache>,
     ) -> Result<Accounted<RasterBlock>, GeelloError> {
         let l = self
             .manifest
@@ -285,8 +412,22 @@ impl DerivedRaster {
             {
                 continue;
             }
-            let bytes = read_file(&self.root, &tile.block, self.limits.max_block_bytes, ctx)?;
-            let block = decode(&bytes, self.limits.max_block_bytes, ctx)?;
+            ctx.check()?;
+            let mut load = || {
+                let bytes = read_file(&self.root, &tile.block, self.limits.max_block_bytes, ctx)?;
+                decode(&bytes, self.limits.max_block_bytes, ctx)
+            };
+            let block = if let Some(cache) = cache {
+                cache.get_or_load(
+                    format!(
+                        "native:{}:{}:{}",
+                        self.version, tile.block.bytes, tile.block.hash
+                    ),
+                    &mut load,
+                )?
+            } else {
+                Arc::new(load()?)
+            };
             if block.width != self.manifest.block_size.min(l.width - tile.column)
                 || block.height != self.manifest.block_size.min(l.height - tile.row)
                 || block.grid != window_grid(&self.grid(), tile.column, tile.row, l.factor)
@@ -379,6 +520,7 @@ impl DerivedRaster {
             let view = Self {
                 root: stage.path().into(),
                 manifest: manifest.clone(),
+                _metadata: None,
                 limits: self.limits,
                 version: String::new(),
             };
@@ -423,6 +565,7 @@ impl DerivedRaster {
                             self.limits.max_disk_bytes,
                         )?;
                         level.tiles.push(Tile {
+                            _metadata: Some(Arc::new(ctx.reserve(2048)?)),
                             column: col,
                             row,
                             block: file,
@@ -479,6 +622,7 @@ impl DerivedRaster {
                         self.limits.max_disk_bytes,
                     )?;
                     level.tiles.push(Tile {
+                        _metadata: Some(Arc::new(ctx.reserve(2048)?)),
                         column: col,
                         row,
                         block: file,
@@ -488,7 +632,7 @@ impl DerivedRaster {
             }
             manifest.levels.push(level);
         }
-        publish(parent, stage, manifest, used, self.limits)
+        publish(parent, stage, manifest, used, self.limits, ctx)
     }
     /// Categorical levels sample the base directly. Repeatedly selecting a
     /// child overview's center would drift toward its bottom-right descendant
@@ -623,13 +767,15 @@ fn publish(
     value: Manifest,
     mut used: u64,
     limits: StoreLimits,
+    ctx: &OperationContext,
 ) -> Result<DerivedRaster, GeelloError> {
-    let version = manifest(stage.path(), &value, &mut used, limits)?;
+    let version = manifest(stage.path(), &value, &mut used, limits, ctx)?;
     let destination = parent.join(version);
+    verify_reused_directory(stage.path(), &destination, ctx)?;
     if !destination.exists() {
         std::fs::rename(stage.path(), &destination).map_err(error)?;
     }
-    DerivedRaster::open(&destination, limits)
+    DerivedRaster::open_with_context(&destination, limits, ctx)
 }
 fn window_grid(g: &RasterGrid, col: u32, row: u32, factor: u32) -> RasterGrid {
     let [a, b, c, d, e, f] = g.affine;
@@ -786,7 +932,7 @@ fn encode(
         width: block.width,
         height: block.height,
         crs: block.grid.crs.clone(),
-        affine: block.grid.affine,
+        affine: block.grid.affine.map(f64::to_bits),
         point: block.grid.interpretation == PixelInterpretation::Point,
         bands: block
             .bands
@@ -808,7 +954,7 @@ fn encode(
     };
     let h = serde_json::to_vec(&header).map_err(error)?;
     let mut bytes = Vec::with_capacity(estimate);
-    bytes.extend_from_slice(b"GLRB0001");
+    bytes.extend_from_slice(b"GLRB0002");
     bytes.extend_from_slice(&(h.len() as u32).to_le_bytes());
     bytes.extend(h);
     for b in &block.bands {
@@ -847,7 +993,7 @@ fn decode(
     max: usize,
     ctx: &OperationContext,
 ) -> Result<Accounted<RasterBlock>, GeelloError> {
-    if bytes.len() < 12 || &bytes[..8] != b"GLRB0001" || bytes.len() > max {
+    if bytes.len() < 12 || &bytes[..8] != b"GLRB0002" || bytes.len() > max {
         return Err(error("invalid block header"));
     }
     let hlen = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
@@ -915,7 +1061,7 @@ fn decode(
         height: h.height,
         grid: RasterGrid {
             crs: h.crs,
-            affine: h.affine,
+            affine: h.affine.map(f64::from_bits),
             interpretation: if h.point {
                 PixelInterpretation::Point
             } else {

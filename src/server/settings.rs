@@ -3,10 +3,15 @@
 use super::*;
 use serde::{Deserialize, Serialize};
 use std::{
+    fs::File,
+    io::Read,
     net::SocketAddr,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
+/// Bootstrap ceiling applied before the TOML profile is available. Runtime
+/// resource and metadata limits remain profile-controlled after startup.
+const MAX_CONFIG_BYTES: usize = 1 << 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum BackendSelection {
@@ -61,7 +66,31 @@ pub struct ServerProfile {
 }
 impl ServerConfig {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).map_err(ServerError::io)?;
+        let file = File::open(path).map_err(ServerError::io)?;
+        let length = file.metadata().map_err(ServerError::io)?.len();
+        if length > MAX_CONFIG_BYTES as u64 {
+            return Err(ServerError::new(
+                413,
+                "config-limit",
+                "Server TOML exceeds bootstrap limit",
+            ));
+        }
+        let mut bytes = Vec::with_capacity(length as usize + 1);
+        file.take(length + 1)
+            .read_to_end(&mut bytes)
+            .map_err(ServerError::io)?;
+        if bytes.len() > MAX_CONFIG_BYTES {
+            return Err(ServerError::new(
+                413,
+                "config-limit",
+                "Server TOML exceeds bootstrap limit",
+            ));
+        }
+        if bytes.len() as u64 != length {
+            return Err(crate::GeelloError::SourceChanged.into());
+        }
+        let text = String::from_utf8(bytes)
+            .map_err(|_| ServerError::invalid("Server TOML must be UTF-8"))?;
         let mut config: Self =
             toml::from_str(&text).map_err(|_| ServerError::invalid("Invalid server TOML"))?;
         let base = path.parent().unwrap_or(Path::new("."));
@@ -88,6 +117,7 @@ impl ServerConfig {
         self.profile.validate()
     }
 }
+
 impl ServerProfile {
     pub fn validate(&self) -> Result<()> {
         let values = [
@@ -204,5 +234,20 @@ impl ServerProfile {
             batch_features: self.shard_features,
             batch_bytes: self.max_live_bytes.min(usize::MAX as u64) as usize / 8,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_startup_toml_is_rejected_before_parsing() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("server.toml");
+        std::fs::write(&path, vec![b' '; MAX_CONFIG_BYTES + 1]).unwrap();
+        let error = ServerConfig::load(&path).unwrap_err();
+        assert_eq!(error.status, 413);
+        assert!(error.kind.ends_with(":config-limit"));
     }
 }

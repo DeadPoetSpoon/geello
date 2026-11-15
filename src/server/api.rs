@@ -14,6 +14,7 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use std::{fs::File, io::Write, sync::Arc};
 pub fn router(state: Arc<ServerState>) -> Router {
+    let admission_state = state.clone();
     Router::new()
         .route("/health/ready", get(ready))
         .route("/admin/v1/resources", get(list))
@@ -30,7 +31,29 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .route("/maps/{id}/image", get(image))
         .route("/tiles/{id}/{z}/{x}/{y}", get(tile))
         .layer(DefaultBodyLimit::disable())
+        .layer(axum::middleware::from_fn_with_state(
+            admission_state,
+            admit_request,
+        ))
         .with_state(state)
+}
+async fn admit_request(
+    State(s): State<Arc<ServerState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<Response> {
+    let _activity = s.activities.enter()?;
+    let _request_slot = s.requests.clone().try_acquire_owned().map_err(|_| {
+        ServerError::new(
+            503,
+            "request-capacity",
+            "HTTP request capacity is exhausted",
+        )
+    })?;
+    tokio::select! {
+        response = next.run(request) => Ok(response),
+        _ = s.activities.closed() => Err(ServerError::new(503,"shutdown","Server is shutting down")),
+    }
 }
 async fn ready(State(s): State<Arc<ServerState>>) -> Json<serde_json::Value> {
     Json(
@@ -43,13 +66,23 @@ struct ListQuery {
     offset: Option<usize>,
     limit: Option<usize>,
 }
-async fn list(
-    State(s): State<Arc<ServerState>>,
-    Query(q): Query<ListQuery>,
-) -> Result<Json<serde_json::Value>> {
-    Ok(Json(
-        serde_json::json!({"generation":s.catalog.stats().generation,"resources":s.catalog.list(q.offset.unwrap_or(0),q.limit.unwrap_or(s.config.profile.max_list_items))?}),
-    ))
+async fn list(State(s): State<Arc<ServerState>>, Query(q): Query<ListQuery>) -> Result<Response> {
+    let (generation, records) = s.catalog.list_accounted(
+        q.offset.unwrap_or(0),
+        q.limit.unwrap_or(s.config.profile.max_list_items),
+    )?;
+    #[derive(serde::Serialize)]
+    struct Page<'a> {
+        generation: u64,
+        resources: &'a [ResourceRecord],
+    }
+    json_response(
+        &s,
+        &Page {
+            generation,
+            resources: &records,
+        },
+    )
 }
 fn key(kind: &str, id: &str) -> Result<ResourceKey> {
     ResourceKey::new(ResourceKind::parse(kind)?, id)
@@ -58,15 +91,16 @@ async fn resource(
     State(s): State<Arc<ServerState>>,
     Path((kind, id)): Path<(String, String)>,
 ) -> Result<Response> {
-    let record = s.catalog.get(&key(&kind, &id)?)?;
+    let record = s.catalog.get_accounted(&key(&kind, &id)?)?;
     let etag = record.etag();
-    Ok(([(header::ETAG, etag)], Json(record)).into_response())
+    let mut response = json_response(&s, &*record)?;
+    response
+        .headers_mut()
+        .insert(header::ETAG, etag.parse().map_err(ServerError::io)?);
+    Ok(response)
 }
-async fn operation(
-    State(s): State<Arc<ServerState>>,
-    Path(id): Path<String>,
-) -> Result<Json<ResourceOperation>> {
-    Ok(Json(s.operation(&id)?))
+async fn operation(State(s): State<Arc<ServerState>>, Path(id): Path<String>) -> Result<Response> {
+    json_response(&s, &*s.operation_accounted(&id)?)
 }
 async fn register(
     State(s): State<Arc<ServerState>>,
@@ -77,14 +111,22 @@ async fn register(
     let key = key(&kind, &id)?;
     let precondition = Precondition::from_headers(&headers)?;
     s.catalog.check(&key, &precondition)?;
-    let bytes = to_bytes(body, s.config.profile.max_registry_bytes)
-        .await
-        .map_err(|_| ServerError::new(413, "body-limit", "Source registration exceeds profile"))?;
+    let ctx = s.scheduler.context();
+    let _body_memory = ctx.reserve(memory::envelope(s.config.profile.max_registry_bytes)?)?;
+    let bytes = tokio::time::timeout(
+        std::time::Duration::from_millis(s.config.profile.operation_timeout_ms),
+        to_bytes(body, s.config.profile.max_registry_bytes),
+    )
+    .await
+    .map_err(|_| ServerError::new(408, "request-timeout", "Source registration timed out"))?
+    .map_err(|_| ServerError::new(413, "body-limit", "Source registration exceeds profile"))?;
     let source: SourceSpec = serde_json::from_slice(&bytes)
         .map_err(|_| ServerError::invalid("Invalid source registration JSON"))?;
     let op = s.new_operation(key)?;
-    s.start_prepare(op.clone(), source, Ownership::External, precondition, None);
-    Ok((StatusCode::ACCEPTED, Json(op)).into_response())
+    s.start_prepare(op.clone(), source, Ownership::External, precondition, None)?;
+    let mut response = json_response(&s, &op)?;
+    *response.status_mut() = StatusCode::ACCEPTED;
+    Ok(response)
 }
 async fn upload(
     State(s): State<Arc<ServerState>>,
@@ -141,10 +183,16 @@ async fn upload(
         ));
     }
     let op = s.new_operation(key)?;
-    let stage = tempfile::Builder::new()
-        .prefix("upload-")
-        .tempdir_in(s.catalog.root().join("staging"))
-        .map_err(ServerError::io)?;
+    let mut upload_guard = UploadGuard {
+        state: s.clone(),
+        operation: Some(op.clone()),
+    };
+    let stage = Arc::new(
+        tempfile::Builder::new()
+            .prefix("upload-")
+            .tempdir_in(s.catalog.root().join("staging"))
+            .map_err(ServerError::io)?,
+    );
     let path = stage.path().join(match format.as_str() {
         "geojson" => "source.geojson",
         "geotiff" => "source.tif",
@@ -184,18 +232,29 @@ async fn upload(
                     "Upload exceeds profile",
                 ));
             }
-            let _hold = ctx.reserve(chunk.len())?;
-            file = tokio::task::spawn_blocking(move || -> Result<File> {
-                file.write_all(&chunk).map_err(ServerError::io)?;
-                Ok(file)
-            })
-            .await
-            .map_err(ServerError::io)??;
+            let hold = ctx.reserve(chunk.len())?;
+            let stage_owner = stage.clone();
+            file = s
+                .scheduler
+                .blocking(
+                    WorkClass::Background,
+                    ctx.clone(),
+                    move |_| -> Result<File> {
+                        let _hold = hold;
+                        let _stage = stage_owner;
+                        file.write_all(&chunk).map_err(ServerError::io)?;
+                        Ok(file)
+                    },
+                )
+                .await?;
         }
-        tokio::task::spawn_blocking(move || file.sync_all())
-            .await
-            .map_err(ServerError::io)?
-            .map_err(ServerError::io)?;
+        let stage_owner = stage.clone();
+        s.scheduler
+            .blocking(WorkClass::Background, ctx.clone(), move |_| {
+                let _stage = stage_owner;
+                file.sync_all().map_err(ServerError::io)
+            })
+            .await?;
         if received == 0 {
             return Err(ServerError::invalid("Empty upload"));
         }
@@ -229,8 +288,38 @@ async fn upload(
         Ownership::Managed,
         precondition,
         Some(stage),
-    );
-    Ok((StatusCode::ACCEPTED, Json(op)).into_response())
+    )?;
+    upload_guard.operation = None;
+    let mut response = json_response(&s, &op)?;
+    *response.status_mut() = StatusCode::ACCEPTED;
+    Ok(response)
+}
+/// Every post-creation exit, including dropping an incomplete HTTP body,
+/// leaves a terminal ledger record unless ownership reached preparation.
+struct UploadGuard {
+    state: Arc<ServerState>,
+    operation: Option<ResourceOperation>,
+}
+impl Drop for UploadGuard {
+    fn drop(&mut self) {
+        if let Some(op) = self.operation.take() {
+            // An explicit failure has already recorded its more useful reason.
+            if self
+                .state
+                .operation(&op.operation_id)
+                .is_ok_and(|current| current.status == OperationStatus::Staging)
+            {
+                self.state.fail_upload(
+                    op,
+                    ServerError::new(
+                        400,
+                        "upload-interrupted",
+                        "Upload ended before preparation started",
+                    ),
+                );
+            }
+        }
+    }
 }
 async fn unpublish(
     State(s): State<Arc<ServerState>>,
@@ -242,10 +331,19 @@ async fn unpublish(
         .ok_or_else(|| ServerError::invalid("Expected :unpublish action"))?;
     let key = key(&kind, id)?;
     let condition = Precondition::from_headers(&headers)?;
-    let record = tokio::task::spawn_blocking(move || s.catalog.unpublish(&key, &condition))
-        .await
-        .map_err(ServerError::io)??;
-    Ok(([(header::ETAG, record.etag())], Json(record)).into_response())
+    let scheduler = s.scheduler.clone();
+    let catalog = s.catalog.clone();
+    let record = scheduler
+        .blocking(WorkClass::Http, scheduler.context(), move |_| {
+            catalog.unpublish(&key, &condition)
+        })
+        .await?;
+    let mut response = json_response(&s, &record)?;
+    response.headers_mut().insert(
+        header::ETAG,
+        record.etag().parse().map_err(ServerError::io)?,
+    );
+    Ok(response)
 }
 async fn remove(
     State(s): State<Arc<ServerState>>,
@@ -254,9 +352,12 @@ async fn remove(
 ) -> Result<StatusCode> {
     let key = key(&kind, &id)?;
     let condition = Precondition::from_headers(&headers)?;
-    tokio::task::spawn_blocking(move || s.catalog.remove(&key, &condition, false))
-        .await
-        .map_err(ServerError::io)??;
+    let scheduler = s.scheduler.clone();
+    scheduler
+        .blocking(WorkClass::Http, scheduler.context(), move |_| {
+            s.catalog.remove(&key, &condition, false)
+        })
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 async fn delete_content(
@@ -266,12 +367,17 @@ async fn delete_content(
 ) -> Result<StatusCode> {
     let key = key(&kind, &id)?;
     let condition = Precondition::from_headers(&headers)?;
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        s.catalog.remove(&key, &condition, true)?;
-        Ok(())
-    })
-    .await
-    .map_err(ServerError::io)??;
+    let scheduler = s.scheduler.clone();
+    scheduler
+        .blocking(
+            WorkClass::Http,
+            scheduler.context(),
+            move |_| -> Result<()> {
+                s.catalog.remove(&key, &condition, true)?;
+                Ok(())
+            },
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 #[derive(Deserialize)]
@@ -281,6 +387,7 @@ struct ImageQuery {
     crs: String,
     width: u32,
     height: u32,
+    geello_time: Option<f64>,
 }
 async fn image(
     State(s): State<Arc<ServerState>>,
@@ -288,39 +395,79 @@ async fn image(
     headers: HeaderMap,
     Query(q): Query<ImageQuery>,
 ) -> Result<Response> {
-    let numbers = q
-        .bbox
-        .split(',')
-        .map(str::parse::<f64>)
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|_| ServerError::invalid("bbox requires four finite XY coordinates"))?;
-    let [a, b, c, d] = numbers.as_slice() else {
+    let mut parts = q.bbox.split(',');
+    let mut numbers = [0.; 4];
+    for number in &mut numbers {
+        *number = parts
+            .next()
+            .and_then(|part| part.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
+            .ok_or_else(|| ServerError::invalid("bbox requires four finite XY coordinates"))?;
+    }
+    if parts.next().is_some() {
         return Err(ServerError::invalid("bbox requires four coordinates"));
-    };
+    }
+    let [a, b, c, d] = numbers;
     let view = View {
         crs: super::runtime::parse_crs(&q.crs)?,
         bounds: Bounds {
-            min_x: *a,
-            min_y: *b,
-            max_x: *c,
-            max_y: *d,
+            min_x: a,
+            min_y: b,
+            max_x: c,
+            max_y: d,
         },
         width: q.width,
         height: q.height,
         aspect: AspectPolicy::Stretch,
     };
-    let image = s.render_map(&id, view).await?;
-    response(&image, &headers)
+    let image = s
+        .render_map_at(&id, view, q.geello_time.unwrap_or(0.))
+        .await?;
+    response(&s, &image, &headers)
+}
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct TileQuery {
+    geello_time: Option<f64>,
 }
 async fn tile(
     State(s): State<Arc<ServerState>>,
     Path((id, z, x, y)): Path<(String, u32, u32, u32)>,
     headers: HeaderMap,
+    Query(q): Query<TileQuery>,
 ) -> Result<Response> {
-    let image = s.render_tile(&id, z, x, y).await?;
-    response(&image, &headers)
+    let image = s
+        .render_tile_at(&id, z, x, y, q.geello_time.unwrap_or(0.))
+        .await?;
+    response(&s, &image, &headers)
 }
-fn response(image: &EncodedResponse, headers: &HeaderMap) -> Result<Response> {
+fn accounted_body(bytes: crate::Accounted<Vec<u8>>) -> Body {
+    let (bytes, holds) = bytes.into_parts();
+    Body::from_stream(futures_util::stream::unfold(
+        Some((Some(bytes), holds)),
+        |state| async move {
+            let (bytes, holds) = state?;
+            let bytes = bytes?;
+            Some((
+                Ok::<_, std::io::Error>(axum::body::Bytes::from(bytes)),
+                Some((None, holds)),
+            ))
+        },
+    ))
+}
+fn json_response(s: &ServerState, value: &impl serde::Serialize) -> Result<Response> {
+    let bytes = crate::derived::bounded_json(
+        value,
+        s.config.profile.max_registry_bytes,
+        &s.scheduler.memory_context(),
+    )?;
+    Ok((
+        [(header::CONTENT_TYPE, "application/json")],
+        accounted_body(bytes),
+    )
+        .into_response())
+}
+fn response(s: &ServerState, image: &EncodedResponse, headers: &HeaderMap) -> Result<Response> {
     let not_modified = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())
@@ -331,7 +478,8 @@ fn response(image: &EncodedResponse, headers: &HeaderMap) -> Result<Response> {
     let mut response = if not_modified {
         StatusCode::NOT_MODIFIED.into_response()
     } else {
-        Body::from(image.bytes.clone()).into_response()
+        let hold = s.scheduler.memory_context().reserve(image.bytes.len())?;
+        accounted_body(crate::Accounted::new(image.bytes.clone(), vec![hold])).into_response()
     };
     let h = response.headers_mut();
     for (name, value) in [

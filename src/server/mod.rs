@@ -2,9 +2,11 @@
 //! this module; resource ownership, HTTP, queues and caches live here only.
 #[cfg(not(any(feature = "render-cpu", feature = "render-gpu")))]
 compile_error!("the server feature requires render-cpu or render-gpu");
+mod activity;
 mod api;
 mod archive;
 mod catalog;
+mod memory;
 mod runtime;
 mod scheduler;
 mod settings;

@@ -70,7 +70,7 @@ pub struct StyleRule {
     pub filter: Option<Filter>,
     pub symbols: Vec<SymbolDefinition>,
 }
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Unit {
     Px,
@@ -454,6 +454,178 @@ pub struct Keyframe {
     pub time: f64,
     pub value: PropertyValue,
 }
+/// Prepared binding owns its target identity and memory-only evaluator. Keep the
+/// accounting returned by `prepare_style_animations` while borrowing bindings.
+#[derive(Debug)]
+pub struct PreparedStyleBinding {
+    pub rule: String,
+    pub symbol: String,
+    pub track: crate::animation::SymbolTrack,
+}
+impl AnimationTrack {
+    /// Compile typed values and units once, before per-feature style evaluation.
+    pub fn prepare(
+        &self,
+        duration: f64,
+        clock: crate::animation::BindingClock,
+        ctx: &OperationContext,
+    ) -> Result<crate::animation::SymbolTrack, GeelloError> {
+        use crate::animation::{Interpolation, LengthUnit, SymbolParameter, SymbolTrack, Value};
+        let parameter = match self.parameter.as_str() {
+            "size" => SymbolParameter::Size,
+            "angle" => SymbolParameter::Angle,
+            "width" => SymbolParameter::Width,
+            "fill" => SymbolParameter::FillColor,
+            "stroke-color" => SymbolParameter::StrokeColor,
+            "opacity" => SymbolParameter::Opacity,
+            _ => return Err(config_error("unsupported style animation parameter")),
+        };
+        let interpolation = match self.interpolation.as_str() {
+            "step" => Interpolation::Step,
+            "linear" => Interpolation::Linear,
+            _ => return Err(config_error("unknown animation interpolation")),
+        };
+        let _temporary = ctx.reserve(
+            self.keyframes
+                .len()
+                .checked_mul(std::mem::size_of::<crate::animation::Keyframe>())
+                .ok_or(GeelloError::SizeOverflow)?,
+        )?;
+        let frames = self
+            .keyframes
+            .iter()
+            .map(|frame| {
+                ctx.checkpoint(1)?;
+                let value = match (&frame.value, parameter) {
+                    (
+                        PropertyValue::String(c),
+                        SymbolParameter::FillColor | SymbolParameter::StrokeColor,
+                    ) => Value::Color(parse_color(c)?),
+                    (PropertyValue::I64(n), _) => Value::Number(*n as f64),
+                    (PropertyValue::U64(n), _) => Value::Number(*n as f64),
+                    (PropertyValue::F64(n), _) => Value::Number(*n),
+                    _ => return Err(config_error("animation value has incompatible type")),
+                };
+                Ok(crate::animation::Keyframe {
+                    time: frame.time,
+                    value,
+                })
+            })
+            .collect::<Result<Vec<_>, GeelloError>>()?;
+        SymbolTrack::new(
+            parameter,
+            self.unit.map(|u| match u {
+                Unit::Px => LengthUnit::Pixels,
+                Unit::Map => LengthUnit::MapUnits,
+            }),
+            clock,
+            duration,
+            interpolation,
+            &frames,
+            ctx,
+        )
+    }
+}
+
+/// Resolve every target, including inactive bindings, and reject same-target
+/// writers before rendering. Geometry bindings are a separate M4 contract.
+pub fn prepare_style_animations(
+    style: &StyleDefinition,
+    item: &MapItem,
+    animations: &BTreeMap<String, AnimationDefinition>,
+    ctx: &OperationContext,
+) -> Result<Accounted<Vec<PreparedStyleBinding>>, GeelloError> {
+    use crate::animation::{BindingClock, Repeat, SymbolParameter};
+    let bytes = item.animation_bindings.iter().try_fold(0usize, |n, b| {
+        n.checked_add(512)
+            .and_then(|n| n.checked_add(b.target.rule.len()))
+            .and_then(|n| n.checked_add(b.target.symbol.len()))
+            .and_then(|n| n.checked_add(b.id.len()))
+            .ok_or(GeelloError::SizeOverflow)
+    })?;
+    let hold = ctx.reserve(bytes)?;
+    unique(item.animation_bindings.iter().map(|b| b.id.as_str()))?;
+    let mut seen = HashSet::new();
+    let mut output = Vec::with_capacity(item.animation_bindings.len());
+    for binding in &item.animation_bindings {
+        ctx.checkpoint(1)?;
+        let definition = animations
+            .get(&binding.animation)
+            .filter(|a| a.id == binding.animation)
+            .ok_or_else(|| config_error("missing animation or mismatched resource identity"))?;
+        let source_track = definition
+            .tracks
+            .iter()
+            .find(|t| t.id == binding.track)
+            .ok_or_else(|| config_error("missing animation track"))?;
+        let symbol = style
+            .rules
+            .iter()
+            .find(|r| r.id == binding.target.rule)
+            .and_then(|r| r.symbols.iter().find(|s| s.id() == binding.target.symbol))
+            .ok_or_else(|| config_error("missing animation target"))?;
+        if !seen.insert((
+            &binding.target.rule,
+            &binding.target.symbol,
+            &source_track.parameter,
+        )) {
+            return Err(config_error("conflicting animation target parameter"));
+        }
+        let repeat = match binding.repeat.as_str() {
+            "once" => Repeat::Once,
+            "loop" => Repeat::Loop,
+            _ => return Err(config_error("unknown animation repeat mode")),
+        };
+        let track = source_track.prepare(
+            definition.duration,
+            BindingClock::new(binding.start, binding.speed, repeat)?,
+            ctx,
+        )?;
+        let target_unit = match (track.parameter(), symbol) {
+            (SymbolParameter::Size, SymbolDefinition::Point { size, .. }) => size.unit,
+            (
+                SymbolParameter::Width,
+                SymbolDefinition::Point {
+                    stroke: Some(stroke),
+                    ..
+                },
+            ) => stroke.width.unit,
+            (SymbolParameter::Width, SymbolDefinition::Line { width, .. }) => width.unit,
+            _ => None,
+        };
+        if source_track.unit != target_unit {
+            return Err(config_error("animation and base length units must agree"));
+        }
+        let valid = match (track.parameter(), symbol) {
+            (SymbolParameter::Opacity, _) => true,
+            (SymbolParameter::Size | SymbolParameter::Angle, SymbolDefinition::Point { .. }) => {
+                true
+            }
+            (
+                SymbolParameter::Width | SymbolParameter::StrokeColor,
+                SymbolDefinition::Point { stroke, .. },
+            ) => stroke.is_some(),
+            (
+                SymbolParameter::Width | SymbolParameter::StrokeColor,
+                SymbolDefinition::Line { .. },
+            ) => true,
+            (
+                SymbolParameter::FillColor,
+                SymbolDefinition::Point { .. } | SymbolDefinition::Area { .. },
+            ) => true,
+            _ => false,
+        };
+        if !valid {
+            return Err(config_error("incompatible animation symbol target"));
+        }
+        output.push(PreparedStyleBinding {
+            rule: binding.target.rule.clone(),
+            symbol: binding.target.symbol.clone(),
+            track,
+        });
+    }
+    Ok(Accounted::new(output, vec![hold]))
+}
 pub fn parse<T: for<'de> Deserialize<'de>>(text: &str) -> Result<T, GeelloError> {
     toml::from_str(text).map_err(|e| config_error(e.to_string()))
 }
@@ -669,6 +841,24 @@ pub fn parse_map(text: &str) -> Result<MapDefinition, GeelloError> {
                 "map item references must be namespace:local IDs",
             ));
         }
+        unique(item.animation_bindings.iter().map(|b| b.id.as_str()))?;
+        for binding in &item.animation_bindings {
+            if !valid_resource_id(&binding.animation)
+                || binding.track.is_empty()
+                || binding.target.rule.is_empty()
+                || binding.target.symbol.is_empty()
+                || !matches!(binding.repeat.as_str(), "once" | "loop")
+            {
+                return Err(config_error(
+                    "invalid animation binding identity or repeat mode",
+                ));
+            }
+            crate::animation::BindingClock::new(
+                binding.start,
+                binding.speed,
+                crate::animation::Repeat::Once,
+            )?;
+        }
     }
     if m.output_crs.is_empty() {
         return Err(config_error("map CRS allowlist required"));
@@ -689,6 +879,17 @@ pub fn parse_animation(text: &str) -> Result<AnimationDefinition, GeelloError> {
         if !matches!(t.interpolation.as_str(), "step" | "linear") || t.keyframes.is_empty() {
             return Err(config_error("invalid animation interpolation/keyframes"));
         }
+        if !matches!(
+            t.parameter.as_str(),
+            "size" | "angle" | "width" | "fill" | "stroke-color" | "opacity"
+        ) {
+            return Err(config_error("unsupported animation parameter"));
+        }
+        if matches!(t.parameter.as_str(), "size" | "width") != t.unit.is_some() {
+            return Err(config_error(
+                "animation length unit is missing or incompatible",
+            ));
+        }
         let mut last = None;
         for k in &t.keyframes {
             if !k.time.is_finite()
@@ -699,6 +900,27 @@ pub fn parse_animation(text: &str) -> Result<AnimationDefinition, GeelloError> {
                 return Err(config_error("keyframe times must increase within duration"));
             }
             last = Some(k.time);
+            if matches!(t.parameter.as_str(), "fill" | "stroke-color") {
+                let PropertyValue::String(color) = &k.value else {
+                    return Err(config_error("color keyframe must be a hex string"));
+                };
+                parse_color(color)?;
+            } else {
+                let value = match &k.value {
+                    PropertyValue::I64(n) => *n as f64,
+                    PropertyValue::U64(n) => *n as f64,
+                    PropertyValue::F64(n) => *n,
+                    _ => return Err(config_error("numeric keyframe required")),
+                };
+                if !value.is_finite()
+                    || (matches!(t.parameter.as_str(), "size" | "width") && value < 0.)
+                    || (t.parameter == "opacity" && !(0.0..=1.0).contains(&value))
+                {
+                    return Err(config_error(
+                        "animation keyframe is outside its target range",
+                    ));
+                }
+            }
         }
     }
     Ok(a)
@@ -754,6 +976,18 @@ pub fn resolve_vector_style(
     batches: &[Arc<VectorBatch>],
     context: &OperationContext,
 ) -> Result<Accounted<MapComposition>, GeelloError> {
+    resolve_vector_style_at(style, batches, &[], 0., context)
+}
+/// Evaluate filters/base expressions from original attributes, then replace
+/// selected symbol values at the requested time, before projection and layout.
+pub fn resolve_vector_style_at(
+    style: &StyleDefinition,
+    batches: &[Arc<VectorBatch>],
+    bindings: &[PreparedStyleBinding],
+    time: f64,
+    context: &OperationContext,
+) -> Result<Accounted<MapComposition>, GeelloError> {
+    crate::animation::validate_time(time)?;
     let mut items = vec![];
     let mut reservations = vec![];
     for rule in &style.rules {
@@ -774,7 +1008,13 @@ pub fn resolve_vector_style(
                     {
                         continue;
                     }
-                    let symbol = symbol.resolve(&feature.properties)?;
+                    let mut resolved = symbol.resolve(&feature.properties)?;
+                    for binding in bindings {
+                        context.checkpoint(1)?;
+                        if binding.rule == rule.id && binding.symbol == symbol.id() {
+                            binding.track.apply(&mut resolved, time, context)?;
+                        }
+                    }
                     reservations.push(
                         context.reserve(
                             crate::core::feature_clone_bytes(feature)?
@@ -788,7 +1028,7 @@ pub fn resolve_vector_style(
                             crs: batch.crs.clone(),
                             features: vec![feature.clone()],
                         })],
-                        symbols: vec![symbol],
+                        symbols: vec![resolved],
                     }));
                 }
             }

@@ -80,7 +80,7 @@ Default compiled CPU+GPU support is distinct from server execution preference. S
 
 These exact version strings are owner-approved. The implementation should use exact Cargo requirements (for example `=0.4.0`), not broad caret upgrades. TOML build metadata in a version string still needs the resolved package/checksum in the lockfile; it is not a substitute for lockfile pinning.
 
-Each package link leads to the exact crates.io release, which identifies its published repository and distribution. Licenses below were read from release metadata on the baseline date. They are **declared licenses**, not a completed legal/source-file audit. The full transitive inventory remains pending. The project itself is MIT.
+Each package link leads to the exact crates.io release, which identifies its published repository and distribution. Licenses below were read from release metadata on the baseline date. They are **declared licenses**, not a completed legal/source-file audit. The full current transitive inventory is recorded in document 08 and was accepted by the owner on 2026-11-15. The project itself is MIT.
 
 | Package / exact version | Purpose / intended feature discipline | Published license |
 | --- | --- | --- |
@@ -130,9 +130,12 @@ Not approved for the redesign merely because present in old code or convenient: 
 On **2026-11-13** the owner approved **zip = 9.5.1 (MIT)**, default features off,
 only **deflate-flate2-zlib-rs**, for Stored/Deflate Shapefile uploads. Encryption,
 other ZIP codecs and ZIP time features are disabled. The owner also authorized
-M3 candidate transitive-closure compatibility testing, following M2; formal
-G-01 approval remains pending the [complete inventory](08-m3-dependency-closure.md).
-Raw-body single-request upload does not enable Axum multipart. The candidate
+M3 candidate transitive-closure compatibility testing, following M2. On **2026-11-15**
+the owner approved all existing dependencies; G-01 is **Accepted for the current
+M1-M3 package closure** recorded in the [complete inventory](08-m3-dependency-closure.md)
+and [approval record](dependency-approval.json). This does not validate untested
+platforms or approve future dependency changes.
+Raw-body single-request upload does not enable Axum multipart. The accepted
 lock retains the accepted LZ4/Zstd versions listed below. Native codec builds
 remain present even with Foyer response compression disabled.
 
@@ -239,3 +242,12 @@ Freeze exact specification revisions and relevant clauses in implementation evid
 For any failure, record requirement/scenario, exact dependency/features/platform/input, observed result, violated assumption and options. Stop calling the affected requirement complete. Continue independent work only where it does not assume the failed capability. Return the evidence/options to the owner; do not silently drop a feature, change a version/backend, ignore validity, or lower quality.
 
 This register is the starting inventory. Subsequent approval records should identify exact artifacts/checksums and state which pending gates they close. Accepted, validated and implemented remain separate throughout.
+
+### Bounded FlatGeobuf encoding — 2026-11-15
+
+`flatbuffers = 24.12.23` (Apache-2.0), defaults disabled and `std` enabled, is
+now an optional direct member of `derived-store`. This reuses the exact package
+and resolved features already present in the owner-approved FlatGeobuf closure;
+no package, version or third-party feature was added. Geello uses the generated
+FGB tables and packed R-tree from FlatGeobuf 6.0.1 with admitted in-memory
+encoding, replacing the upstream disk-spooling writer.

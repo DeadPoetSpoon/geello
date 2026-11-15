@@ -2,11 +2,12 @@
 //! pointer. Long preparation runs outside the commit mutex; ETags and references
 //! are checked again against the latest complete generation before switching.
 use super::*;
+use crate::{GeelloError, OperationContext, operation::Reservation};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     sync::{Arc, Mutex},
@@ -180,12 +181,15 @@ struct State {
     records: BTreeMap<ResourceKey, ResourceRecord>,
     pins: BTreeMap<ResourceKey, usize>,
     pinned_paths: BTreeMap<PathBuf, usize>,
+    _memory: Vec<Reservation>,
+    records_bytes: usize,
 }
 pub struct Catalog {
     root: PathBuf,
     profile: ServerProfile,
     state: Mutex<State>,
     _lock: File,
+    memory: OperationContext,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct CatalogStats {
@@ -201,6 +205,7 @@ pub struct ResourcePin {
     catalog: Arc<Catalog>,
     versions: Vec<ResourceKey>,
     paths: Vec<PathBuf>,
+    _memory: Vec<Reservation>,
 }
 impl Drop for ResourcePin {
     fn drop(&mut self) {
@@ -225,6 +230,14 @@ impl Drop for ResourcePin {
 }
 impl Catalog {
     pub fn open(root: &Path, profile: ServerProfile) -> Result<Arc<Self>> {
+        let memory = Scheduler::new(profile.clone()).memory_context();
+        Self::open_with_context(root, profile, memory)
+    }
+    pub(crate) fn open_with_context(
+        root: &Path,
+        profile: ServerProfile,
+        memory: OperationContext,
+    ) -> Result<Arc<Self>> {
         for p in [
             "managed",
             "external",
@@ -250,8 +263,12 @@ impl Catalog {
             .map_err(|_| ServerError::conflict("Resource directory already has a writer"))?;
         let pointer = root.join("registry/catalog.toml");
         let mut records = BTreeMap::new();
+        let mut holds = vec![];
         let generation = if pointer.exists() {
-            let p: Pointer = read_toml(&pointer, profile.max_registry_bytes)?;
+            let p_bytes = memory::read_file(&pointer, profile.max_registry_bytes, &memory)?;
+            let p: Pointer =
+                toml::from_str(std::str::from_utf8(&p_bytes).map_err(ServerError::io)?)
+                    .map_err(|_| ServerError::invalid("Invalid resource TOML"))?;
             if p.schema != 1 {
                 return Err(ServerError::io("unsupported pointer"));
             }
@@ -259,6 +276,7 @@ impl Catalog {
                 &root.join("registry/generations"),
                 &p.manifest,
                 profile.max_registry_bytes,
+                &memory,
             )?;
             let g: Generation = serde_json::from_slice(&bytes).map_err(ServerError::io)?;
             if g.schema != 1 || g.number != p.generation {
@@ -269,11 +287,13 @@ impl Catalog {
                     &root.join("registry/shards"),
                     member,
                     profile.max_registry_bytes,
+                    &memory,
                 )?;
                 let shard: Shard =
                     toml::from_str(std::str::from_utf8(&bytes).map_err(ServerError::io)?)
                         .map_err(ServerError::io)?;
                 for r in shard.records {
+                    holds.push(memory.reserve(memory::model_bytes(&r)?)?);
                     ResourceKey::new(r.key.kind, r.key.id.clone())?;
                     if records.insert(r.key.clone(), r).is_some() {
                         return Err(ServerError::io("duplicate catalog record"));
@@ -297,8 +317,12 @@ impl Catalog {
                 retired: BTreeSet::new(),
             }
         };
-        validate_graph(&records)?;
-        recover_deletions(&root, &records, profile.max_registry_bytes)?;
+        holds.push(memory.reserve(memory::model_bytes(&generation)?)?);
+        let records_bytes = records_memory(&records)?;
+        let _validation = memory.reserve(records_bytes)?;
+        let validation_ctx = memory.child(profile.context().limits(), None);
+        validate_graph(&records, &validation_ctx)?;
+        recover_deletions(&root, &records, profile.max_registry_bytes, &memory)?;
         Ok(Arc::new(Self {
             root,
             profile,
@@ -307,8 +331,11 @@ impl Catalog {
                 records,
                 pins: BTreeMap::new(),
                 pinned_paths: BTreeMap::new(),
+                _memory: holds,
+                records_bytes,
             }),
             _lock: lock,
+            memory,
         }))
     }
     pub fn root(&self) -> &Path {
@@ -333,6 +360,49 @@ impl Catalog {
             .ok_or_else(|| {
                 ServerError::new(404, "resource-not-found", "Resource is not registered")
             })
+    }
+    pub(crate) fn get_accounted(
+        &self,
+        key: &ResourceKey,
+    ) -> Result<crate::Accounted<ResourceRecord>> {
+        let state = self.state.lock().unwrap();
+        let record = state.records.get(key).ok_or_else(|| {
+            ServerError::new(404, "resource-not-found", "Resource is not registered")
+        })?;
+        let hold = self.memory.reserve(memory::model_bytes(record)?)?;
+        Ok(crate::Accounted::new(record.clone(), vec![hold]))
+    }
+    /// Retry suppression is useful only while its immutable publication remains
+    /// current. This lookup does not copy the resource definition.
+    pub(crate) fn is_current_version(&self, key: &ResourceKey, version: &str) -> bool {
+        self.state
+            .lock()
+            .unwrap()
+            .records
+            .get(key)
+            .is_some_and(|record| record.version == version)
+    }
+    pub(crate) fn list_accounted(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(u64, crate::Accounted<Vec<ResourceRecord>>)> {
+        if limit == 0 || limit > self.profile.max_list_items {
+            return Err(ServerError::invalid("List limit exceeds profile"));
+        }
+        let state = self.state.lock().unwrap();
+        let mut holds = vec![];
+        let mut records = vec![];
+        for record in state.records.values().skip(offset).take(limit) {
+            holds.push(self.memory.reserve(memory::model_bytes(record)?)?);
+            records.push(record.clone());
+        }
+        // The page's generation must describe these exact records, even if a
+        // publication occurs immediately after this critical section ends.
+        Ok((
+            state.generation.number,
+            crate::Accounted::new(records, holds),
+        ))
     }
     pub(crate) fn find_dataset_source(&self, path: &Path) -> Result<Option<ResourceKey>> {
         Ok(self
@@ -364,6 +434,7 @@ impl Catalog {
     }
     pub fn pin(self: &Arc<Self>, key: &ResourceKey) -> Result<ResourcePin> {
         let mut s = self.state.lock().unwrap();
+        let mut holds = vec![];
         let mut records = BTreeMap::new();
         let mut todo = vec![key.clone()];
         while let Some(k) = todo.pop() {
@@ -373,6 +444,7 @@ impl Catalog {
             let r = s.records.get(&k).filter(|r| r.published).ok_or_else(|| {
                 ServerError::new(404, "resource-unpublished", "Resource is not published")
             })?;
+            holds.push(self.memory.reserve(memory::model_bytes(r)?)?);
             todo.extend(r.dependencies.clone());
             records.insert(k, r.clone());
         }
@@ -405,6 +477,7 @@ impl Catalog {
             catalog: self.clone(),
             versions,
             paths,
+            _memory: holds,
         })
     }
     pub fn publish(
@@ -418,9 +491,11 @@ impl Catalog {
             return Err(ServerError::new(503, "registry-budget", "Catalog is full"));
         }
         record.published = true;
+        let _workspace = self.workspace(&s, memory::model_bytes(&record)?)?;
         let mut records = s.records.clone();
         records.insert(record.key.clone(), record.clone());
-        validate_graph(&records)?;
+        let validation_ctx = self.memory.child(self.profile.context().limits(), None);
+        validate_graph(&records, &validation_ctx)?;
         self.commit(&mut s, records, safe_shard(&record.key), None)?;
         Ok(record)
     }
@@ -428,6 +503,7 @@ impl Catalog {
         let mut s = self.state.lock().unwrap();
         condition.check(s.records.get(key))?;
         check_references(&s, key, false)?;
+        let _workspace = self.workspace(&s, 0)?;
         let mut records = s.records.clone();
         let r = records.get_mut(key).ok_or_else(|| {
             ServerError::new(404, "resource-not-found", "Resource not registered")
@@ -446,6 +522,7 @@ impl Catalog {
     ) -> Result<ResourceRecord> {
         let mut s = self.state.lock().unwrap();
         condition.check(s.records.get(key))?;
+        let _workspace = self.workspace(&s, 0)?;
         let record = s.records.get(key).cloned().ok_or_else(|| {
             ServerError::new(404, "resource-not-found", "Resource not registered")
         })?;
@@ -492,7 +569,9 @@ impl Catalog {
                 &journal_path,
                 &serde_json::to_vec(&journal).map_err(ServerError::io)?,
             )?;
+            crash_checkpoint("delete-journal", &self.root);
             fs::rename(&original, &trash).map_err(ServerError::io)?;
+            crash_checkpoint("delete-renamed", &self.root);
             if let Err(e) = self.commit(&mut s, records, safe_shard(key), None) {
                 fs::rename(&trash, &original).map_err(ServerError::io)?;
                 let _ = fs::remove_file(journal_path);
@@ -500,6 +579,7 @@ impl Catalog {
             }
             // Publication is committed. A purge failure leaves a durable journal
             // for roll-forward recovery; the directory can never become visible.
+            crash_checkpoint("delete-committed", &self.root);
             if fs::remove_dir_all(&trash).is_ok() {
                 let _ = fs::remove_file(journal_path);
             }
@@ -507,6 +587,23 @@ impl Catalog {
             self.commit(&mut s, records, safe_shard(key), detached)?;
         }
         Ok(record)
+    }
+    /// Reserve before copying the catalog or constructing serializer/graph
+    /// workspace. The previous generation remains charged until publication.
+    fn workspace(&self, state: &State, extra: usize) -> Result<Reservation> {
+        let bytes = state
+            .records_bytes
+            .checked_add(memory::model_bytes(&state.generation)?)
+            .and_then(|v| v.checked_add(extra))
+            .and_then(|v| v.checked_mul(2))
+            .ok_or(GeelloError::SizeOverflow)?;
+        Ok(self.memory.reserve(bytes)?)
+    }
+    fn retained(&self, records_bytes: usize, generation: &Generation) -> Result<Vec<Reservation>> {
+        let bytes = records_bytes
+            .checked_add(memory::model_bytes(generation)?)
+            .ok_or(GeelloError::SizeOverflow)?;
+        Ok(vec![self.memory.reserve(bytes)?])
     }
     fn commit(
         &self,
@@ -530,7 +627,13 @@ impl Catalog {
                 "Catalog shard exceeds profile",
             ));
         }
-        let shard = immutable_member(&self.root.join("registry/shards"), &bytes, "toml")?;
+        let shard = immutable_member(
+            &self.root.join("registry/shards"),
+            &bytes,
+            "toml",
+            &self.memory,
+        )?;
+        crash_checkpoint("publish-shard", &self.root);
         let mut generation = s.generation.clone();
         for (key, old) in &s.records {
             if records.get(key).is_none_or(|r| r.version != old.version) {
@@ -555,25 +658,46 @@ impl Catalog {
             .number
             .checked_add(1)
             .ok_or_else(|| ServerError::io("generation overflow"))?;
-        generation.shards.insert(shard_id, shard);
+        generation.shards.insert(shard_id.clone(), shard);
         if let Some(p) = detached {
             generation.detached.insert(p);
         }
+        let mut records_bytes = s.records_bytes;
+        for (key, old) in &s.records {
+            if safe_shard(key) == shard_id {
+                records_bytes = records_bytes
+                    .checked_sub(memory::model_bytes(old)?)
+                    .ok_or(GeelloError::SizeOverflow)?;
+            }
+        }
+        for (key, record) in &records {
+            if safe_shard(key) == shard_id {
+                records_bytes = records_bytes
+                    .checked_add(memory::model_bytes(record)?)
+                    .ok_or(GeelloError::SizeOverflow)?;
+            }
+        }
+        let holds = self.retained(records_bytes, &generation)?;
         self.save_generation(&generation)?;
         s.generation = generation;
         s.records = records;
+        s._memory = holds;
+        s.records_bytes = records_bytes;
         Ok(())
     }
     fn save_generation(&self, generation: &Generation) -> Result<()> {
-        let bytes = serde_json::to_vec(generation).map_err(ServerError::io)?;
-        if bytes.len() > self.profile.max_registry_bytes {
-            return Err(ServerError::new(
-                503,
-                "registry-budget",
-                "Generation manifest exceeds profile",
-            ));
-        }
-        let member = immutable_member(&self.root.join("registry/generations"), &bytes, "json")?;
+        let bytes = crate::derived::bounded_json(
+            generation,
+            self.profile.max_registry_bytes,
+            &self.memory,
+        )?;
+        let member = immutable_member(
+            &self.root.join("registry/generations"),
+            &bytes,
+            "json",
+            &self.memory,
+        )?;
+        crash_checkpoint("publish-generation", &self.root);
         let pointer = toml::to_string(&Pointer {
             schema: 1,
             generation: generation.number,
@@ -581,12 +705,14 @@ impl Catalog {
         })
         .map_err(ServerError::io)?;
         atomic_write(&self.root.join("registry/catalog.toml"), pointer.as_bytes())?;
+        crash_checkpoint("publish-pointer", &self.root);
         Ok(())
     }
     /// Reclaim only explicitly retired versions; unknown managed originals and
     /// detached record-only removals are never interpreted as GC permission.
     pub fn collect_garbage(&self) -> Result<usize> {
         let mut s = self.state.lock().unwrap();
+        let _workspace = self.workspace(&s, 0)?;
         let mut generation = s.generation.clone();
         let mut removed = 0;
         for path in &s.generation.retired {
@@ -615,16 +741,24 @@ impl Catalog {
         }
         if removed > 0 {
             generation.number += 1;
+            let holds = self.retained(s.records_bytes, &generation)?;
             self.save_generation(&generation)?;
             s.generation = generation;
+            s._memory = holds;
         }
-        recover_deletions(&self.root, &s.records, self.profile.max_registry_bytes)?;
+        recover_deletions(
+            &self.root,
+            &s.records,
+            self.profile.max_registry_bytes,
+            &self.memory,
+        )?;
         Ok(removed)
     }
     /// Explicit maintenance scan reports unknown managed directories. It never
     /// imports or removes originals and is not part of request-time lookup.
     pub fn reconcile(&self) -> Result<Vec<String>> {
         let s = self.state.lock().unwrap();
+        let _workspace = self.workspace(&s, 0)?;
         let known: BTreeSet<_> = s
             .records
             .values()
@@ -643,11 +777,35 @@ impl Catalog {
         }
         Ok(diagnostics)
     }
+    /// Bounded diagnostics for unregistered derived entries, including missing
+    /// or malformed manifests. Reporting never imports or deletes an artifact.
+    pub fn reconcile_derived(&self) -> Result<Vec<String>> {
+        let state = self.state.lock().unwrap();
+        let mut diagnostics = vec![];
+        for entry in fs::read_dir(self.root.join("derived")).map_err(ServerError::io)? {
+            let entry = entry.map_err(ServerError::io)?;
+            let path = entry.path();
+            if state.pinned_paths.contains_key(&path)
+                || state.generation.retired.contains(&path)
+                || state.records.values().any(|r| {
+                    r.derived_path.as_ref() == Some(&path) || r.source.path.starts_with(&path)
+                })
+            {
+                continue;
+            }
+            diagnostics.push(entry.file_name().to_string_lossy().into_owned());
+            if diagnostics.len() >= self.profile.max_list_items {
+                break;
+            }
+        }
+        Ok(diagnostics)
+    }
     /// Rebuild only from the authoritative loaded catalog. Unknown resource
     /// directories never become registered merely because maintenance finds them.
     /// The old pointer remains usable until every rebuilt shard has been synced.
     pub fn rebuild_index(&self) -> Result<()> {
         let mut state = self.state.lock().unwrap();
+        let _workspace = self.workspace(&state, 0)?;
         let mut grouped: BTreeMap<String, Vec<ResourceRecord>> = BTreeMap::new();
         for record in state.records.values() {
             grouped
@@ -670,15 +828,22 @@ impl Catalog {
             }
             generation.shards.insert(
                 key,
-                immutable_member(&self.root.join("registry/shards"), &bytes, "toml")?,
+                immutable_member(
+                    &self.root.join("registry/shards"),
+                    &bytes,
+                    "toml",
+                    &self.memory,
+                )?,
             );
         }
         generation.number = generation
             .number
             .checked_add(1)
             .ok_or_else(|| ServerError::io("generation overflow"))?;
+        let holds = self.retained(state.records_bytes, &generation)?;
         self.save_generation(&generation)?;
         state.generation = generation;
+        state._memory = holds;
         Ok(())
     }
     /// Explicit offline-style maintenance while holding the single-writer
@@ -686,10 +851,15 @@ impl Catalog {
     /// files. Original/detached content and derived blocks are untouched.
     pub fn compact_index(&self) -> Result<usize> {
         let state = self.state.lock().unwrap();
-        let pointer: Pointer = read_toml(
+        let _workspace = self.workspace(&state, 0)?;
+        let pointer_bytes = memory::read_file(
             &self.root.join("registry/catalog.toml"),
             self.profile.max_registry_bytes,
+            &self.memory,
         )?;
+        let pointer: Pointer =
+            toml::from_str(std::str::from_utf8(&pointer_bytes).map_err(ServerError::io)?)
+                .map_err(|_| ServerError::invalid("Invalid resource TOML"))?;
         let mut removed = 0;
         for (directory, keep) in [
             (
@@ -743,13 +913,18 @@ impl Catalog {
             let disposable = if name.starts_with("preparing-") {
                 true
             } else if name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()) {
-                let file = File::open(path.join("manifest.json")).map_err(ServerError::io)?;
-                let mut bytes = vec![];
-                file.take(self.profile.max_registry_bytes as u64 + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(ServerError::io)?;
-                bytes.len() <= self.profile.max_registry_bytes
-                    && blake3::hash(&bytes).to_hex().as_str() == name
+                // An unidentified directory is not evidence of permission to
+                // delete it, nor a reason to reject unrelated preparation.
+                // Keep malformed/unreadable artifacts for explicit diagnosis.
+                match memory::read_file(
+                    &path.join("manifest.json"),
+                    self.profile.max_registry_bytes,
+                    &self.memory,
+                ) {
+                    Ok(bytes) => blake3::hash(&bytes).to_hex().as_str() == name,
+                    Err(error) if error.status == 503 => return Err(error),
+                    Err(_) => false,
+                }
             } else {
                 false
             };
@@ -761,6 +936,33 @@ impl Catalog {
                 fs::remove_dir_all(resolved).map_err(ServerError::io)?;
                 removed += 1;
             }
+        }
+        Ok(removed)
+    }
+    /// Startup-only: the exclusive writer lock is held and deletion recovery
+    /// has completed, so no request can still own a private upload directory.
+    pub(crate) fn collect_abandoned_uploads(&self) -> Result<usize> {
+        let state = self.state.lock().unwrap();
+        let base = self.root.join("staging");
+        let mut removed = 0;
+        for entry in fs::read_dir(&base).map_err(ServerError::io)? {
+            let entry = entry.map_err(ServerError::io)?;
+            let path = entry.path();
+            if !entry.file_name().to_string_lossy().starts_with("upload-")
+                || !entry.file_type().map_err(ServerError::io)?.is_dir()
+                || state
+                    .records
+                    .values()
+                    .any(|r| r.source.path.starts_with(&path))
+            {
+                continue;
+            }
+            let resolved = path.canonicalize().map_err(ServerError::io)?;
+            if resolved.parent() != Some(base.as_path()) {
+                return Err(ServerError::io("unsafe upload staging target"));
+            }
+            fs::remove_dir_all(resolved).map_err(ServerError::io)?;
+            removed += 1;
         }
         Ok(removed)
     }
@@ -793,20 +995,11 @@ fn recover_deletions(
     root: &Path,
     records: &BTreeMap<ResourceKey, ResourceRecord>,
     max: usize,
+    ctx: &OperationContext,
 ) -> Result<()> {
     for entry in fs::read_dir(root.join("registry/deletions")).map_err(ServerError::io)? {
         let entry = entry.map_err(ServerError::io)?;
-        let file = File::open(entry.path()).map_err(ServerError::io)?;
-        if file.metadata().map_err(ServerError::io)?.len() > max as u64 {
-            return Err(ServerError::io("oversized deletion journal"));
-        }
-        let mut bytes = vec![];
-        file.take(max as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(ServerError::io)?;
-        if bytes.len() > max {
-            return Err(ServerError::io("oversized deletion journal"));
-        }
+        let bytes = memory::read_file(&entry.path(), max, ctx)?;
         let j: DeletionJournal = serde_json::from_slice(&bytes).map_err(ServerError::io)?;
         if j.original.parent() != Some(root.join("managed").as_path())
             || j.trash.parent() != Some(root.join("staging").as_path())
@@ -832,7 +1025,10 @@ fn recover_deletions(
     }
     Ok(())
 }
-fn validate_graph(records: &BTreeMap<ResourceKey, ResourceRecord>) -> Result<()> {
+fn validate_graph(
+    records: &BTreeMap<ResourceKey, ResourceRecord>,
+    ctx: &OperationContext,
+) -> Result<()> {
     // Iterative DFS keeps a large resource graph off the process call stack.
     // Both published and unpublished definitions must be acyclic.
     let mut done = BTreeSet::new();
@@ -860,6 +1056,7 @@ fn validate_graph(records: &BTreeMap<ResourceKey, ResourceRecord>) -> Result<()>
         }
     }
     for r in records.values().filter(|r| r.published) {
+        ctx.checkpoint(1)?;
         for dependency in &r.dependencies {
             if dependency == &r.key || !records.get(dependency).is_some_and(|v| v.published) {
                 return Err(ServerError::conflict(
@@ -876,8 +1073,75 @@ fn validate_graph(records: &BTreeMap<ResourceKey, ResourceRecord>) -> Result<()>
                 ));
             }
         }
+        // Revalidate against the graph being committed, including when a style
+        // or animation changes beneath an existing map. Preparation-time reads
+        // alone cannot prevent a concurrent dependency update from racing us.
+        if r.key.kind == ResourceKind::Map
+            && let Some(text) = r.definition.as_deref()
+        {
+            let _map_hold = ctx.reserve(memory::envelope(text.len())?)?;
+            let map = crate::config::parse_map(text)?;
+            for item in map
+                .items
+                .iter()
+                .filter(|i| !i.animation_bindings.is_empty())
+            {
+                let style_record = records
+                    .get(&ResourceKey::new(ResourceKind::Style, &item.style)?)
+                    .ok_or_else(|| ServerError::conflict("Missing animation style"))?;
+                let text = style_record
+                    .definition
+                    .as_deref()
+                    .ok_or_else(|| ServerError::conflict("Missing animation style definition"))?;
+                let _style_hold = ctx.reserve(memory::envelope(text.len())?)?;
+                let style = crate::config::parse_style(text)?;
+                let mut animations = BTreeMap::new();
+                let mut holds = vec![];
+                for binding in &item.animation_bindings {
+                    if animations.contains_key(&binding.animation) {
+                        continue;
+                    }
+                    let record = records
+                        .get(&ResourceKey::new(
+                            ResourceKind::Animation,
+                            &binding.animation,
+                        )?)
+                        .ok_or_else(|| ServerError::conflict("Missing animation"))?;
+                    let text = record
+                        .definition
+                        .as_deref()
+                        .ok_or_else(|| ServerError::conflict("Missing animation definition"))?;
+                    holds.push(ctx.reserve(memory::envelope(text.len())?)?);
+                    animations.insert(
+                        binding.animation.clone(),
+                        crate::config::parse_animation(text)?,
+                    );
+                }
+                crate::config::prepare_style_animations(&style, item, &animations, ctx)?;
+            }
+        }
     }
     Ok(())
+}
+/// Crash hooks are compiled only into unit-test binaries. The production
+/// binary has no environment-controlled pause or fault injection capability.
+fn crash_checkpoint(_name: &str, _root: &Path) {
+    #[cfg(test)]
+    if std::env::var("GEELLO_CATALOG_CRASH_POINT").as_deref() == Ok(_name)
+        && _root.join("crash-armed").exists()
+    {
+        fs::write(_root.join("crash-reached"), _name).unwrap();
+        loop {
+            std::thread::park();
+        }
+    }
+}
+fn records_memory(records: &BTreeMap<ResourceKey, ResourceRecord>) -> Result<usize> {
+    records.values().try_fold(0usize, |total, record| {
+        total
+            .checked_add(memory::model_bytes(record)?)
+            .ok_or_else(|| GeelloError::SizeOverflow.into())
+    })
 }
 fn safe_shard(key: &ResourceKey) -> String {
     let namespace = key.id.split(':').next().unwrap();
@@ -914,44 +1178,175 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     f.persist(path).map_err(ServerError::io)?;
     Ok(())
 }
-fn immutable_member(root: &Path, bytes: &[u8], extension: &str) -> Result<Member> {
+fn immutable_member(
+    root: &Path,
+    bytes: &[u8],
+    extension: &str,
+    ctx: &OperationContext,
+) -> Result<Member> {
     let hash = blake3::hash(bytes).to_hex().to_string();
     let name = format!("{hash}.{extension}");
-    let path = root.join(&name);
-    if !path.exists() {
-        atomic_write(&path, bytes)?;
-    }
-    Ok(Member {
+    let member = Member {
         name,
         hash,
         bytes: bytes.len(),
-    })
+    };
+    // Existence alone does not establish integrity. Rebuild/publication has
+    // authoritative bytes and can atomically restore a damaged member before
+    // committing a pointer to it. Never publish a known-bad reused index file.
+    match read_member(root, &member, bytes.len(), ctx) {
+        Ok(_) => {}
+        Err(error) if error.status == 503 => return Err(error),
+        Err(_) => atomic_write(&root.join(&member.name), bytes)?,
+    }
+    Ok(member)
 }
-fn read_member(root: &Path, m: &Member, max: usize) -> Result<Vec<u8>> {
+fn read_member(
+    root: &Path,
+    m: &Member,
+    max: usize,
+    ctx: &OperationContext,
+) -> Result<crate::Accounted<Vec<u8>>> {
     if m.name.contains(['/', '\\', ':']) || m.name.starts_with('.') || m.bytes > max {
         return Err(ServerError::io("invalid shard member"));
     }
-    let mut bytes = vec![];
-    File::open(root.join(&m.name))
-        .map_err(ServerError::io)?
-        .take(max as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(ServerError::io)?;
+    let bytes = memory::read_file(&root.join(&m.name), m.bytes, ctx)?;
     if bytes.len() != m.bytes || blake3::hash(&bytes).to_hex().as_str() != m.hash {
         return Err(ServerError::io("catalog checksum mismatch"));
     }
     Ok(bytes)
 }
-pub(crate) fn read_toml<T: for<'de> Deserialize<'de>>(path: &Path, max: usize) -> Result<T> {
-    let mut bytes = vec![];
-    File::open(path)
-        .map_err(ServerError::io)?
-        .take(max as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(ServerError::io)?;
-    if bytes.len() > max {
-        return Err(ServerError::new(413, "body-limit", "TOML exceeds profile"));
+#[cfg(all(test, feature = "render-cpu"))]
+mod tests {
+    use super::*;
+
+    fn fixture(root: &Path) -> (Arc<Catalog>, ResourceRecord) {
+        let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        let catalog = Catalog::open(root, config.profile).unwrap();
+        let directory = catalog.root().join("managed/original");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("definition.toml"), b"original bytes").unwrap();
+        let record = ResourceRecord {
+            key: ResourceKey::new(ResourceKind::Style, "crash:style").unwrap(),
+            ownership: Ownership::Managed,
+            version: "v1".into(),
+            published: true,
+            source: SourceSpec {
+                path: directory.join("definition.toml"),
+                format: "toml".into(),
+                encoding: None,
+                crs: None,
+                sample_kind: None,
+            },
+            dependencies: vec![],
+            data_version: "data-v1".into(),
+            derived_version: None,
+            derived_path: None,
+            managed_directory: Some(directory),
+            class: Some("vector".into()),
+            definition: Some("immutable definition".into()),
+            type_bindings: vec![],
+        };
+        (catalog, record)
     }
-    toml::from_str(std::str::from_utf8(&bytes).map_err(ServerError::io)?)
-        .map_err(|_| ServerError::invalid("Invalid resource TOML"))
+
+    #[test]
+    fn process_kill_at_catalog_commit_boundaries_recovers_complete_state() {
+        const ROOT_ENV: &str = "GEELLO_CATALOG_CRASH_ROOT";
+        if let Some(root) = std::env::var_os(ROOT_ENV) {
+            let (catalog, record) = fixture(Path::new(&root));
+            catalog
+                .publish(record.clone(), &Precondition::Absent)
+                .unwrap();
+            fs::write(catalog.root().join("crash-armed"), b"armed").unwrap();
+            let point = std::env::var("GEELLO_CATALOG_CRASH_POINT").unwrap();
+            if point.starts_with("delete-") {
+                catalog
+                    .remove(&record.key, &Precondition::Version("v1".into()), true)
+                    .unwrap();
+            } else {
+                let mut replacement = record;
+                replacement.version = "v2".into();
+                replacement.definition = Some("replacement definition".into());
+                catalog
+                    .publish(replacement, &Precondition::Version("v1".into()))
+                    .unwrap();
+            }
+            panic!("crash checkpoint was not reached");
+        }
+        struct Child(std::process::Child);
+        impl Drop for Child {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        for point in [
+            "publish-shard",
+            "publish-generation",
+            "publish-pointer",
+            "delete-journal",
+            "delete-renamed",
+            "delete-committed",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let mut child = Child(std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "server::catalog::tests::process_kill_at_catalog_commit_boundaries_recovers_complete_state", "--nocapture"])
+                .env(ROOT_ENV, root.path()).env("GEELLO_CATALOG_CRASH_POINT", point)
+                .stdout(std::process::Stdio::null()).spawn().unwrap());
+            let started = std::time::Instant::now();
+            while !root.path().join("crash-reached").exists() {
+                assert!(
+                    child.0.try_wait().unwrap().is_none(),
+                    "child exited before {point}"
+                );
+                assert!(
+                    started.elapsed() < std::time::Duration::from_secs(15),
+                    "checkpoint timeout: {point}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            child.0.kill().unwrap();
+            child.0.wait().unwrap();
+            let config =
+                ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+            let catalog = Catalog::open(root.path(), config.profile.clone()).unwrap();
+            let key = ResourceKey::new(ResourceKind::Style, "crash:style").unwrap();
+            if point == "delete-committed" {
+                assert_eq!(catalog.get(&key).unwrap_err().status, 404);
+                assert!(!catalog.root().join("managed/original").exists());
+            } else {
+                let record = catalog.get(&key).unwrap();
+                assert_eq!(
+                    record.version,
+                    if point == "publish-pointer" {
+                        "v2"
+                    } else {
+                        "v1"
+                    }
+                );
+                assert_eq!(fs::read(record.source.path).unwrap(), b"original bytes");
+            }
+            assert_eq!(
+                fs::read_dir(catalog.root().join("registry/deletions"))
+                    .unwrap()
+                    .count(),
+                0
+            );
+            assert_eq!(
+                fs::read_dir(catalog.root().join("staging"))
+                    .unwrap()
+                    .count(),
+                0
+            );
+            let generation = catalog.stats().generation;
+            drop(catalog);
+            let reopened = Catalog::open(root.path(), config.profile).unwrap();
+            assert_eq!(
+                reopened.stats().generation,
+                generation,
+                "second restart at {point}"
+            );
+        }
+    }
 }

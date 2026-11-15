@@ -305,22 +305,7 @@ pub fn resample(
             .checked_mul(32)
             .ok_or(GeelloError::SizeOverflow)?,
     )?;
-    let [a, b, c, d, e, f] = block.grid.affine;
-    let det = b * f - c * e;
-    let source_pixel = |x: f64, y: f64| -> Result<[f64; 2], GeelloError> {
-        let g = grid.affine;
-        let p = target_to_source([g[0] + g[1] * x + g[2] * y, g[3] + g[4] * x + g[5] * y])?;
-        let pixel = [
-            ((p[0] - a) * f - (p[1] - d) * c) / det,
-            ((p[1] - d) * b - (p[0] - a) * e) / det,
-        ];
-        if pixel.iter().any(|v| !v.is_finite()) {
-            return Err(GeelloError::Projection(
-                "nonfinite raster inverse mapping".into(),
-            ));
-        }
-        Ok(pixel)
-    };
+    let source_pixel = pixel_mapper(&block.grid, &grid, &target_to_source);
     for y in 0..height {
         for x in 0..width {
             context.checkpoint(1)?;
@@ -449,16 +434,110 @@ pub fn resample(
         _reservation: reservation,
     })
 }
+/// Half-open source pixels needed by a target view. Planning visits the actual
+/// resampling centers/footprints, including curved interiors, not just corners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SamplingWindow {
+    pub column: u32,
+    pub row: u32,
+    pub width: u32,
+    pub height: u32,
+}
+#[allow(clippy::too_many_arguments)]
+pub fn sampling_window(
+    source: &RasterGrid,
+    source_width: u32,
+    source_height: u32,
+    target: &RasterGrid,
+    width: u32,
+    height: u32,
+    method: Resampling,
+    target_to_source: impl Fn([f64; 2]) -> Result<[f64; 2], GeelloError>,
+    context: &OperationContext,
+) -> Result<Option<SamplingWindow>, GeelloError> {
+    source.validate()?;
+    target.validate()?;
+    if width == 0 || height == 0 || source_width == 0 || source_height == 0 {
+        return Err(GeelloError::InvalidRaster(
+            "positive sampling dimensions required".into(),
+        ));
+    }
+    let map = pixel_mapper(source, target, &target_to_source);
+    let mut bounds = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    let mut include = |points: [[f64; 2]; 4]| -> Result<(), GeelloError> {
+        for [x, y] in points {
+            bounds[0] = bounds[0].min(x);
+            bounds[1] = bounds[1].min(y);
+            bounds[2] = bounds[2].max(x);
+            bounds[3] = bounds[3].max(y);
+        }
+        Ok(())
+    };
+    for y in 0..height {
+        for x in 0..width {
+            context.checkpoint(1)?;
+            if method == Resampling::AreaAverage {
+                visit_footprints(
+                    [x as f64, y as f64, x as f64 + 1., y as f64 + 1.],
+                    0,
+                    &map,
+                    &mut include,
+                    context,
+                )?;
+            } else {
+                let p = map(x as f64 + 0.5, y as f64 + 0.5)?;
+                include([p; 4])?;
+            }
+        }
+    }
+    // Two source pixels cover the bilinear kernel and floating-point boundary
+    // differences when translating the native affine origin into a window.
+    let x0 = (bounds[0].floor() - 2.).clamp(0., source_width as f64) as u32;
+    let y0 = (bounds[1].floor() - 2.).clamp(0., source_height as f64) as u32;
+    let x1 = (bounds[2].ceil() + 2.).clamp(0., source_width as f64) as u32;
+    let y1 = (bounds[3].ceil() + 2.).clamp(0., source_height as f64) as u32;
+    Ok((x1 > x0 && y1 > y0).then_some(SamplingWindow {
+        column: x0,
+        row: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    }))
+}
+fn pixel_mapper<'a>(
+    source: &RasterGrid,
+    target: &RasterGrid,
+    target_to_source: &'a impl Fn([f64; 2]) -> Result<[f64; 2], GeelloError>,
+) -> impl Fn(f64, f64) -> Result<[f64; 2], GeelloError> + 'a {
+    let [a, b, c, d, e, f] = source.affine;
+    let det = b * f - c * e;
+    let g = target.affine;
+    move |x, y| {
+        let p = target_to_source([g[0] + g[1] * x + g[2] * y, g[3] + g[4] * x + g[5] * y])?;
+        let pixel = [
+            ((p[0] - a) * f - (p[1] - d) * c) / det,
+            ((p[1] - d) * b - (p[0] - a) * e) / det,
+        ];
+        if pixel.iter().any(|v| !v.is_finite()) {
+            return Err(GeelloError::Projection(
+                "nonfinite raster inverse mapping".into(),
+            ));
+        }
+        Ok(pixel)
+    }
+}
 /// Adaptive inverse footprints use a 1/64 source-pixel curvature tolerance.
 /// A discontinuity that cannot meet it within eight subdivisions fails explicitly.
 /// Affine footprints, including rotations, use exact polygon/cell intersections.
-fn area_cell(
+fn visit_footprints(
     cell: [f64; 4],
     depth: u8,
     map: &impl Fn(f64, f64) -> Result<[f64; 2], GeelloError>,
-    width: u32,
-    height: u32,
-    add: &mut impl FnMut(i64, i64, f64) -> Result<(), GeelloError>,
+    leaf: &mut impl FnMut([[f64; 2]; 4]) -> Result<(), GeelloError>,
     context: &OperationContext,
 ) -> Result<(), GeelloError> {
     context.checkpoint(1)?;
@@ -485,51 +564,71 @@ fn area_cell(
             [xm, ym, x1, y1],
             [x0, ym, xm, y1],
         ] {
-            area_cell(sub, depth + 1, map, width, height, add, context)?;
+            visit_footprints(sub, depth + 1, map, leaf, context)?;
         }
         return Ok(());
     }
-    let xmin = p
-        .iter()
-        .map(|p| p[0])
-        .fold(f64::INFINITY, f64::min)
-        .floor()
-        .max(0.)
-        .min(width as f64) as i64;
-    let xmax = p
-        .iter()
-        .map(|p| p[0])
-        .fold(f64::NEG_INFINITY, f64::max)
-        .ceil()
-        .max(0.)
-        .min(width as f64) as i64;
-    let ymin = p
-        .iter()
-        .map(|p| p[1])
-        .fold(f64::INFINITY, f64::min)
-        .floor()
-        .max(0.)
-        .min(height as f64) as i64;
-    let ymax = p
-        .iter()
-        .map(|p| p[1])
-        .fold(f64::NEG_INFINITY, f64::max)
-        .ceil()
-        .max(0.)
-        .min(height as f64) as i64;
-    // Triangulation also handles a concave inverse quadrilateral without assuming
-    // that the mapped ring is convex. Scratch storage is fixed on the stack.
-    for sy in ymin..ymax {
-        for sx in xmin..xmax {
-            let mut area = 0.;
-            for tri in [[p[0], p[1], p[2]], [p[0], p[2], p[3]]] {
-                area += clipped_area(tri, sx as f64, sy as f64);
-            }
-            add(sx, sy, area)?;
-        }
-    }
-    Ok(())
+    leaf(p)
 }
+fn area_cell(
+    cell: [f64; 4],
+    depth: u8,
+    map: &impl Fn(f64, f64) -> Result<[f64; 2], GeelloError>,
+    width: u32,
+    height: u32,
+    add: &mut impl FnMut(i64, i64, f64) -> Result<(), GeelloError>,
+    context: &OperationContext,
+) -> Result<(), GeelloError> {
+    visit_footprints(
+        cell,
+        depth,
+        map,
+        &mut |p| {
+            let xmin = p
+                .iter()
+                .map(|p| p[0])
+                .fold(f64::INFINITY, f64::min)
+                .floor()
+                .max(0.)
+                .min(width as f64) as i64;
+            let xmax = p
+                .iter()
+                .map(|p| p[0])
+                .fold(f64::NEG_INFINITY, f64::max)
+                .ceil()
+                .max(0.)
+                .min(width as f64) as i64;
+            let ymin = p
+                .iter()
+                .map(|p| p[1])
+                .fold(f64::INFINITY, f64::min)
+                .floor()
+                .max(0.)
+                .min(height as f64) as i64;
+            let ymax = p
+                .iter()
+                .map(|p| p[1])
+                .fold(f64::NEG_INFINITY, f64::max)
+                .ceil()
+                .max(0.)
+                .min(height as f64) as i64;
+            // Triangulation also handles a concave inverse quadrilateral without assuming
+            // that the mapped ring is convex. Scratch storage is fixed on the stack.
+            for sy in ymin..ymax {
+                for sx in xmin..xmax {
+                    let mut area = 0.;
+                    for tri in [[p[0], p[1], p[2]], [p[0], p[2], p[3]]] {
+                        area += clipped_area(tri, sx as f64, sy as f64);
+                    }
+                    add(sx, sy, area)?;
+                }
+            }
+            Ok(())
+        },
+        context,
+    )
+}
+
 fn clipped_area(triangle: [[f64; 2]; 3], x: f64, y: f64) -> f64 {
     let mut points = [[0.; 2]; 12];
     points[..3].copy_from_slice(&triangle);

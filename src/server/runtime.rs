@@ -32,7 +32,16 @@ pub struct ResourceOperation {
     pub version: Option<String>,
     pub diagnostics: Vec<String>,
 }
-#[derive(Clone)]
+struct RecordedOperation {
+    operation: ResourceOperation,
+    _memory: crate::operation::Reservation,
+}
+impl std::ops::Deref for RecordedOperation {
+    type Target = ResourceOperation;
+    fn deref(&self) -> &Self::Target {
+        &self.operation
+    }
+}
 pub struct EncodedResponse {
     pub bytes: Vec<u8>,
     pub etag: String,
@@ -40,15 +49,54 @@ pub struct EncodedResponse {
     pub render_revision: String,
     pub backend: String,
     pub incomplete: bool,
+    _memory: Vec<crate::operation::Reservation>,
 }
 enum Backend {
     #[cfg(feature = "render-cpu")]
     Cpu,
     #[cfg(feature = "render-gpu")]
-    Gpu(Box<tokio::sync::Mutex<GpuRenderer>>),
+    Gpu(Arc<tokio::sync::Mutex<GpuRenderer>>),
 }
 type Flight = watch::Sender<Option<Result<Arc<EncodedResponse>>>>;
-type PixelFlight = watch::Sender<Option<Result<Arc<Accounted<RgbaImage>>>>>;
+/// Area caches retain the preparation outcome alongside pixels so a different
+/// tile encode cannot lose the scene's incomplete-result summary.
+struct RenderedArea {
+    image: Accounted<RgbaImage>,
+    incomplete: bool,
+}
+impl std::ops::Deref for RenderedArea {
+    type Target = RgbaImage;
+    fn deref(&self) -> &Self::Target {
+        &self.image
+    }
+}
+type PixelFlight = watch::Sender<Option<Result<Arc<RenderedArea>>>>;
+#[derive(Clone)]
+enum CachedObject {
+    Image(Arc<RenderedArea>),
+    Native(Arc<Accounted<RasterBlock>>),
+}
+impl CachedObject {
+    fn weight(&self, key: &str) -> u64 {
+        let bytes = match self {
+            Self::Image(image) => image.pixels().len() as u64,
+            Self::Native(block) => {
+                // Eight bytes/sample conservatively covers every native type;
+                // include masks, alpha and metadata rather than encoded length.
+                let n = block.width as u64 * block.height as u64;
+                n.saturating_mul(
+                    (block.bands.len() as u64)
+                        .saturating_mul(9)
+                        .saturating_add(4),
+                )
+                .saturating_add(1024)
+                .saturating_add((block.bands.len() as u64).saturating_mul(128))
+                .saturating_add((block.grid.crs.definition().len() as u64).saturating_mul(2))
+            }
+        };
+        bytes.saturating_add(key.len() as u64).saturating_add(256)
+    }
+}
 pub struct ServerState {
     pub config: ServerConfig,
     pub catalog: Arc<Catalog>,
@@ -56,51 +104,72 @@ pub struct ServerState {
     backend: Backend,
     pub backend_name: String,
     pub backend_diagnostic: Option<String>,
-    operations: Mutex<BTreeMap<String, ResourceOperation>>,
-    objects: Cache<String, Arc<Accounted<RgbaImage>>>,
+    operations: Mutex<BTreeMap<String, RecordedOperation>>,
+    objects: Cache<String, CachedObject>,
     responses: foyer::HybridCache<String, Vec<u8>>,
+    _response_memory: crate::operation::Reservation,
     render_flights: Mutex<BTreeMap<String, PixelFlight>>,
     encode_flights: Mutex<BTreeMap<String, Flight>>,
     preparation_commit: Mutex<()>,
-    overview_attempts: Mutex<std::collections::BTreeSet<String>>,
-    restore_attempts: Mutex<BTreeMap<String, String>>,
+    overview_attempts: Mutex<BTreeMap<(ResourceKey, String), crate::operation::Reservation>>,
+    restore_attempts: Mutex<BTreeMap<(ResourceKey, String), Accounted<String>>>,
     cache_failures: std::sync::atomic::AtomicU64,
     renders: std::sync::atomic::AtomicU64,
     encodes: std::sync::atomic::AtomicU64,
+    native_decodes: std::sync::atomic::AtomicU64,
     pub(crate) uploads: Arc<tokio::sync::Semaphore>,
+    pub(crate) requests: Arc<tokio::sync::Semaphore>,
+    pub(crate) activities: Arc<super::activity::Activities>,
+    shutdown_lock: tokio::sync::Mutex<bool>,
 }
 impl ServerState {
     pub async fn open(config: ServerConfig) -> Result<Arc<Self>> {
+        Self::open_with_initializer(config, |ctx| async move {
+            #[cfg(feature = "render-gpu")]
+            {
+                let (renderer, _) =
+                    GpuRenderer::new(wgpu::Backends::DX12 | wgpu::Backends::VULKAN, &ctx).await?;
+                Ok(Backend::Gpu(Arc::new(tokio::sync::Mutex::new(renderer))))
+            }
+            #[cfg(not(feature = "render-gpu"))]
+            {
+                let _ = ctx;
+                Err(ServerError::invalid(
+                    "GPU backend is not compiled; select cpu explicitly",
+                ))
+            }
+        })
+        .await
+    }
+    /// Injection is private and used by offline policy tests. Backend selection
+    /// happens exactly once during startup; execution never invokes this hook.
+    async fn open_with_initializer<F, Fut>(config: ServerConfig, initialize: F) -> Result<Arc<Self>>
+    where
+        F: FnOnce(OperationContext) -> Fut,
+        Fut: std::future::Future<Output = Result<Backend>>,
+    {
         config.validate()?;
-        let catalog = Catalog::open(&config.data_directory, config.profile.clone())?;
         let scheduler = Arc::new(Scheduler::new(config.profile.clone()));
-        #[cfg(feature = "render-gpu")]
-        let ctx = scheduler.context();
-        #[cfg(feature = "render-gpu")]
+        let memory = scheduler.memory_context();
+        let catalog = Catalog::open_with_context(
+            &config.data_directory,
+            config.profile.clone(),
+            memory.clone(),
+        )?;
         let mut diagnostic = None;
-        #[cfg(not(feature = "render-gpu"))]
-        let diagnostic: Option<String> = None;
         let backend = match config.backend {
             BackendSelection::Cpu => cpu_backend()?,
             BackendSelection::Gpu | BackendSelection::GpuPreferred => {
-                #[cfg(feature = "render-gpu")]
-                {
-                    match GpuRenderer::new(wgpu::Backends::DX12 | wgpu::Backends::VULKAN, &ctx)
-                        .await
+                match initialize(scheduler.context()).await {
+                    Ok(backend) => backend,
+                    Err(e)
+                        if cfg!(feature = "render-gpu")
+                            && config.backend == BackendSelection::GpuPreferred =>
                     {
-                        Ok((r, _)) => Backend::Gpu(Box::new(tokio::sync::Mutex::new(r))),
-                        Err(e) if config.backend == BackendSelection::GpuPreferred => {
-                            diagnostic = Some(format!("GPU initialization failed: {e}"));
-                            cpu_backend()?
-                        }
-                        Err(e) => return Err(e.into()),
+                        diagnostic = Some(format!("GPU initialization failed: {e}"));
+                        cpu_backend()?
                     }
-                }
-                #[cfg(not(feature = "render-gpu"))]
-                {
-                    return Err(ServerError::invalid(
-                        "GPU backend is not compiled; select cpu explicitly",
-                    ));
+                    Err(e) => return Err(e),
                 }
             }
         };
@@ -112,6 +181,22 @@ impl ServerState {
         }
         .to_owned();
         let p = &config.profile;
+        let cache_buffer_bytes = p.response_memory_bytes.max(4096) / 4096 * 4096;
+        // Foyer has two alternating flush buffers and a soft submit threshold.
+        // Cover concurrent producer overshoot separately from memory retention.
+        // Engine indexes and OS/allocator overhead remain external estimates.
+        let cache_memory_bytes = cache_buffer_bytes
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(p.response_memory_bytes.checked_mul(2)?))
+            .and_then(|n| {
+                n.checked_add(
+                    response_limit(p.max_image_bytes)
+                        .ok()?
+                        .checked_mul(p.active_http.checked_add(p.queued_per_class)?)?,
+                )
+            })
+            .ok_or(GeelloError::SizeOverflow)?;
+        let response_memory = memory.reserve(cache_memory_bytes)?;
         let device = foyer::FsDeviceBuilder::new(catalog.root().join("response-cache"))
             .with_capacity(p.response_disk_bytes)
             .build()
@@ -123,16 +208,19 @@ impl ServerState {
             .storage()
             .with_io_engine_config(foyer::PsyncIoEngineConfig::new())
             .with_compression(foyer::Compression::None)
-            .with_engine_config(foyer::BlockEngineConfig::new(device))
+            .with_engine_config(
+                foyer::BlockEngineConfig::new(device)
+                    .with_flushers(1)
+                    .with_buffer_pool_size(cache_buffer_bytes)
+                    .with_submit_queue_size_threshold(p.response_memory_bytes),
+            )
             .build()
             .await
             .map_err(ServerError::io)?;
         let objects = Cache::builder()
             .max_capacity(p.object_cache_bytes)
             .time_to_live(std::time::Duration::from_millis(p.operation_timeout_ms))
-            .weigher(|_: &String, v: &Arc<Accounted<RgbaImage>>| {
-                v.pixels().len().min(u32::MAX as usize) as u32
-            })
+            .weigher(|key: &String, v: &CachedObject| v.weight(key).min(u32::MAX as u64) as u32)
             .build();
         let mut operations = BTreeMap::new();
         for entry in fs::read_dir(catalog.root().join("operations")).map_err(ServerError::io)? {
@@ -145,9 +233,24 @@ impl ServerState {
                         "Operation ledger exceeds profile",
                     ));
                 }
-                let bytes = read_bounded(&path, p.max_registry_bytes)?;
+                let bytes = memory::read_file(&path, p.max_registry_bytes, &memory)?;
                 let mut op: ResourceOperation =
                     serde_json::from_slice(&bytes).map_err(ServerError::io)?;
+                // Persisted metadata must not choose a write destination during
+                // restart recovery. Reject a damaged authority without touching
+                // paths outside the operation ledger.
+                if !op.operation_id.starts_with("op-")
+                    || op.operation_id.len() > 128
+                    || !op
+                        .operation_id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                    || path.file_name().and_then(|n| n.to_str())
+                        != Some(format!("{}.json", op.operation_id).as_str())
+                {
+                    return Err(ServerError::io("invalid operation identity"));
+                }
+                ResourceKey::new(op.resource.kind, op.resource.id.clone())?;
                 if matches!(
                     op.status,
                     OperationStatus::Staging | OperationStatus::Preparing
@@ -164,12 +267,26 @@ impl ServerState {
                         op.version = Some(record.version);
                         op.diagnostics.clear();
                     }
-                    atomic_operation(catalog.root(), &op)?;
+                    atomic_operation(catalog.root(), &op, p.max_registry_bytes, &memory)?;
                 }
-                operations.insert(op.operation_id.clone(), op);
+                let hold = memory.reserve(memory::model_bytes(&op)?)?;
+                operations.insert(
+                    op.operation_id.clone(),
+                    RecordedOperation {
+                        operation: op,
+                        _memory: hold,
+                    },
+                );
             }
         }
+        // The writer lock and recovered deletion journals prove there are no
+        // live upload owners at startup. Only private upload directories are
+        // reclaimable; originals and unknown staging entries remain untouched.
+        catalog.collect_abandoned_uploads()?;
         let uploads = Arc::new(tokio::sync::Semaphore::new(p.active_background));
+        let requests = Arc::new(tokio::sync::Semaphore::new(
+            p.active_http + p.queued_per_class,
+        ));
         Ok(Arc::new(Self {
             config,
             catalog,
@@ -180,15 +297,20 @@ impl ServerState {
             operations: Mutex::new(operations),
             objects,
             responses,
+            _response_memory: response_memory,
             render_flights: Mutex::new(BTreeMap::new()),
             encode_flights: Mutex::new(BTreeMap::new()),
             preparation_commit: Mutex::new(()),
-            overview_attempts: Mutex::new(std::collections::BTreeSet::new()),
+            overview_attempts: Mutex::new(BTreeMap::new()),
             restore_attempts: Mutex::new(BTreeMap::new()),
             cache_failures: std::sync::atomic::AtomicU64::new(0),
             renders: std::sync::atomic::AtomicU64::new(0),
             encodes: std::sync::atomic::AtomicU64::new(0),
+            native_decodes: std::sync::atomic::AtomicU64::new(0),
             uploads,
+            requests,
+            activities: super::activity::Activities::new(),
+            shutdown_lock: tokio::sync::Mutex::new(false),
         }))
     }
     pub fn operation(&self, id: &str) -> Result<ResourceOperation> {
@@ -196,10 +318,21 @@ impl ServerState {
             .lock()
             .unwrap()
             .get(id)
-            .cloned()
+            .map(|entry| entry.operation.clone())
             .ok_or_else(|| {
                 ServerError::new(404, "operation-not-found", "Operation is not recorded")
             })
+    }
+    pub(crate) fn operation_accounted(&self, id: &str) -> Result<Accounted<ResourceOperation>> {
+        let operations = self.operations.lock().unwrap();
+        let entry = operations.get(id).ok_or_else(|| {
+            ServerError::new(404, "operation-not-found", "Operation is not recorded")
+        })?;
+        let hold = self
+            .scheduler
+            .memory_context()
+            .reserve(memory::model_bytes(&entry.operation)?)?;
+        Ok(Accounted::new(entry.operation.clone(), vec![hold]))
     }
     /// Indexed catalog maintenance is explicit and separate from public lookup.
     /// It does not register or remove detached original content.
@@ -207,12 +340,77 @@ impl ServerState {
         let _disk = self.preparation_commit.lock().unwrap();
         Ok(self.catalog.collect_garbage()? + self.catalog.collect_derived_orphans()?)
     }
+    /// Explicit terminal-ledger retention, without an invented deployment TTL.
+    /// The caller supplies an absolute modification-time cutoff and batch cap.
+    /// Active work and repair diagnostics still referenced by retry suppression
+    /// are retained. Removed operation IDs subsequently return 404, including
+    /// after restart; this never removes resource records or original content.
+    pub fn prune_operations(
+        &self,
+        before: std::time::SystemTime,
+        max_remove: usize,
+    ) -> Result<usize> {
+        if max_remove == 0 || max_remove > self.config.profile.max_operations {
+            return Err(ServerError::invalid(
+                "Operation retention batch exceeds profile",
+            ));
+        }
+        // Match request_base_restore's lock order to avoid a maintenance/repair
+        // inversion. Do not drop failed-repair evidence and trigger retry storms.
+        let mut repairs = self.restore_attempts.lock().unwrap();
+        repairs.retain(|(key, version), _| self.catalog.is_current_version(key, version));
+        self.overview_attempts
+            .lock()
+            .unwrap()
+            .retain(|(key, version), _| self.catalog.is_current_version(key, version));
+        let mut operations = self.operations.lock().unwrap();
+        let mut removed = vec![];
+        for (id, op) in operations.iter() {
+            if !matches!(op.status, OperationStatus::Ready | OperationStatus::Failed)
+                || repairs.values().any(|repair| &**repair == id)
+            {
+                continue;
+            }
+            let path = self
+                .catalog
+                .root()
+                .join("operations")
+                .join(format!("{id}.json"));
+            let modified = fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .map_err(ServerError::io)?;
+            if modified < before {
+                removed.push(id.clone());
+                if removed.len() == max_remove {
+                    break;
+                }
+            }
+        }
+        for id in &removed {
+            fs::remove_file(
+                self.catalog
+                    .root()
+                    .join("operations")
+                    .join(format!("{id}.json")),
+            )
+            .map_err(ServerError::io)?;
+            // Keep memory consistent after each successful deletion even if a
+            // later filesystem operation in the same batch fails.
+            operations.remove(id);
+        }
+        Ok(removed.len())
+    }
     pub fn execution_counts(&self) -> (u64, u64) {
         use std::sync::atomic::Ordering;
         (
             self.renders.load(Ordering::Relaxed),
             self.encodes.load(Ordering::Relaxed),
         )
+    }
+    /// Native cache misses that reached the checksum/decode loader.
+    pub fn native_decode_count(&self) -> u64 {
+        self.native_decodes
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
     /// Cache failures are observable even when a correct uncached render can
     /// proceed. A damaged encoded entry is discarded before regeneration.
@@ -236,8 +434,21 @@ impl ServerState {
             version: None,
             diagnostics: vec![],
         };
-        atomic_operation(self.catalog.root(), &op)?;
-        all.insert(op.operation_id.clone(), op.clone());
+        let memory = self.scheduler.memory_context();
+        let hold = memory.reserve(memory::model_bytes(&op)?)?;
+        atomic_operation(
+            self.catalog.root(),
+            &op,
+            self.config.profile.max_registry_bytes,
+            &memory,
+        )?;
+        all.insert(
+            op.operation_id.clone(),
+            RecordedOperation {
+                operation: op.clone(),
+                _memory: hold,
+            },
+        );
         Ok(op)
     }
     fn set_operation(
@@ -253,11 +464,21 @@ impl ServerState {
                 Err(e) => op.diagnostics = vec![e.title.clone()],
             }
         }
-        atomic_operation(self.catalog.root(), &op)?;
-        self.operations
-            .lock()
-            .unwrap()
-            .insert(op.operation_id.clone(), op);
+        let memory = self.scheduler.memory_context();
+        let hold = memory.reserve(memory::model_bytes(&op)?)?;
+        atomic_operation(
+            self.catalog.root(),
+            &op,
+            self.config.profile.max_registry_bytes,
+            &memory,
+        )?;
+        self.operations.lock().unwrap().insert(
+            op.operation_id.clone(),
+            RecordedOperation {
+                operation: op,
+                _memory: hold,
+            },
+        );
         Ok(())
     }
     pub(crate) fn fail_upload(&self, op: ResourceOperation, error: ServerError) {
@@ -269,10 +490,18 @@ impl ServerState {
         mut source: SourceSpec,
         ownership: Ownership,
         condition: Precondition,
-        staging: Option<tempfile::TempDir>,
-    ) {
+        staging: Option<Arc<tempfile::TempDir>>,
+    ) -> Result<()> {
+        let activity = match self.activities.enter() {
+            Ok(activity) => activity,
+            Err(e) => {
+                self.fail_upload(op, e.clone());
+                return Err(e);
+            }
+        };
         let state = self.clone();
         tokio::spawn(async move {
+            let _activity = activity;
             let _ = state.set_operation(op.clone(), OperationStatus::Preparing, None);
             let worker = state.clone();
             let key = op.resource.clone();
@@ -284,10 +513,12 @@ impl ServerState {
                     // Serialize disk-producing preparation separately from the
                     // catalog mutex. Readers keep serving the complete old graph.
                     let _disk = worker.preparation_commit.lock().unwrap();
+                    ctx.check()?;
                     worker.catalog.check(&key, &condition)?;
                     worker.catalog.collect_garbage()?;
                     worker.catalog.collect_derived_orphans()?;
-                    let derived_used = directory_bytes(&worker.catalog.root().join("derived"))?;
+                    let derived_used =
+                        directory_bytes(&worker.catalog.root().join("derived"), &ctx)?;
                     if derived_used >= worker.config.profile.max_derived_bytes {
                         return Err(ServerError::new(
                             503,
@@ -322,8 +553,9 @@ impl ServerState {
                     record.version = opid;
                     if let Some((dest, relative)) = final_directory {
                         let stage = staging.as_ref().unwrap();
-                        let current = directory_bytes(&worker.catalog.root().join("managed"))?;
-                        let extra = directory_bytes(stage.path())?;
+                        let current =
+                            directory_bytes(&worker.catalog.root().join("managed"), &ctx)?;
+                        let extra = directory_bytes(stage.path(), &ctx)?;
                         if current
                             .checked_add(extra)
                             .is_none_or(|v| v > worker.config.profile.max_managed_bytes)
@@ -340,7 +572,13 @@ impl ServerState {
                         }
                         record.managed_directory = Some(dest);
                     }
-                    match worker.catalog.publish(record.clone(), &condition) {
+                    // Cancellation after a committed publication must never
+                    // roll back acknowledged catalog state. Check before commit.
+                    let publication = ctx
+                        .check()
+                        .map_err(ServerError::from)
+                        .and_then(|()| worker.catalog.publish(record.clone(), &condition));
+                    match publication {
                         Ok(r) => Ok(r),
                         Err(e) => {
                             if let Some(path) = &record.managed_directory {
@@ -363,6 +601,7 @@ impl ServerState {
             };
             let _ = state.set_operation(op, status, Some(&result));
         });
+        Ok(())
     }
     fn validate_external(&self, path: &Path, format: &str) -> Result<PathBuf> {
         let canonical = path
@@ -420,7 +659,7 @@ impl ServerState {
         let mut store_limits = p.store_limits();
         store_limits.max_disk_bytes = store_limits
             .max_disk_bytes
-            .saturating_sub(directory_bytes(&self.catalog.root().join("derived"))?);
+            .saturating_sub(directory_bytes(&self.catalog.root().join("derived"), ctx)?);
         let source_fingerprint = fingerprint(&source, p.max_source_bytes, ctx)?;
         let data_version = super::catalog::identity(&[
             source_fingerprint.as_bytes(),
@@ -432,6 +671,7 @@ impl ServerState {
         let mut class = None;
         let mut definition = dataset_body;
         let mut type_bindings = vec![];
+        let mut definition_holds = vec![];
         match key.kind {
             ResourceKind::Dataset => {
                 if source.format == "geotiff"
@@ -445,7 +685,10 @@ impl ServerState {
                     ));
                 }
                 if source.format == "toml" {
-                    let text = String::from_utf8(read_bounded(&source.path, p.max_registry_bytes)?)
+                    let (bytes, reservations) =
+                        memory::read_file(&source.path, p.max_registry_bytes, ctx)?.into_parts();
+                    definition_holds.extend(reservations);
+                    let text = String::from_utf8(bytes)
                         .map_err(|_| ServerError::invalid("TOML must be UTF-8"))?;
                     let definition = parse_dataset(&text, &source.path)?;
                     if definition.id != key.id {
@@ -609,7 +852,10 @@ impl ServerState {
                 if source.format != "toml" {
                     return Err(ServerError::invalid("Definition resource requires TOML"));
                 }
-                let text = String::from_utf8(read_bounded(&source.path, p.max_registry_bytes)?)
+                let (bytes, reservations) =
+                    memory::read_file(&source.path, p.max_registry_bytes, ctx)?.into_parts();
+                definition_holds.extend(reservations);
+                let text = String::from_utf8(bytes)
                     .map_err(|_| ServerError::invalid("TOML must be UTF-8"))?;
                 let id = match key.kind {
                     ResourceKind::Style => {
@@ -655,12 +901,14 @@ impl ServerState {
                             }
                         }
                         for item in &m.items {
-                            let d = self
-                                .catalog
-                                .get(&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?)?;
-                            let s = self
-                                .catalog
-                                .get(&ResourceKey::new(ResourceKind::Style, &item.style)?)?;
+                            let d = self.catalog.get_accounted(&ResourceKey::new(
+                                ResourceKind::Dataset,
+                                &item.dataset,
+                            )?)?;
+                            let s = self.catalog.get_accounted(&ResourceKey::new(
+                                ResourceKind::Style,
+                                &item.style,
+                            )?)?;
                             if d.class != s.class {
                                 return Err(ServerError::invalid(
                                     "Map dataset/style type mismatch",
@@ -677,7 +925,7 @@ impl ServerState {
                 definition = Some(text);
             }
             ResourceKind::Font => {
-                let bytes = read_bounded(&source.path, p.max_upload_bytes)?;
+                let bytes = memory::read_file(&source.path, p.max_upload_bytes, ctx)?;
                 if bytes.len() < 12 || !matches!(&bytes[..4], b"\0\x01\0\0" | b"OTTO" | b"ttcf") {
                     return Err(ServerError::invalid("Unsupported font container"));
                 }
@@ -708,8 +956,32 @@ impl ServerState {
             type_bindings,
         })
     }
+    /// Close request/task admission before cancelling workers. Call this when
+    /// the listener starts graceful shutdown, not after waiting for HTTP bodies.
+    pub fn begin_shutdown(&self) {
+        self.activities.close();
+        self.uploads.close();
+        self.requests.close();
+        self.scheduler.begin_shutdown();
+    }
+    pub fn is_shutting_down(&self) -> bool {
+        self.activities.is_closed()
+    }
+    /// Wait for handlers, background orchestration and detached blocking work;
+    /// only then release object-cache reservations and close response storage.
     pub async fn shutdown(&self) -> Result<()> {
-        self.responses.close().await.map_err(ServerError::io)
+        self.begin_shutdown();
+        let mut complete = self.shutdown_lock.lock().await;
+        if *complete {
+            return Ok(());
+        }
+        self.activities.drained().await;
+        self.scheduler.shutdown().await;
+        self.objects.invalidate_all();
+        self.objects.run_pending_tasks();
+        self.responses.close().await.map_err(ServerError::io)?;
+        *complete = true;
+        Ok(())
     }
     /// Overviews are lazy background work, deduplicated per immutable base.
     /// Serving continues with the pinned base while a complete replacement is
@@ -719,26 +991,43 @@ impl ServerState {
         if record.class.as_deref() != Some("raster") {
             return;
         }
-        let identity = format!(
-            "{}:{}",
-            record.key.id,
-            record.derived_version.as_deref().unwrap_or("")
-        );
+        let Ok(activity) = self.activities.enter() else {
+            return;
+        };
+        let Ok(bytes) = memory::model_bytes(record) else {
+            return;
+        };
+        let Ok(record_hold) = self.scheduler.memory_context().reserve(bytes) else {
+            return;
+        };
+        let identity = (record.key.clone(), record.version.clone());
         {
             let mut attempts = self.overview_attempts.lock().unwrap();
-            if attempts.contains(&identity) || attempts.len() >= self.config.profile.max_operations
+            attempts.retain(|(key, version), _| self.catalog.is_current_version(key, version));
+            if attempts.contains_key(&identity)
+                || attempts.len() >= self.config.profile.max_operations
             {
                 return;
             }
-            attempts.insert(identity);
+            let Ok(bytes) = memory::model_bytes(&identity) else {
+                return;
+            };
+            let Ok(hold) = self.scheduler.memory_context().reserve(bytes) else {
+                return;
+            };
+            attempts.insert(identity, hold);
         }
         let state = self.clone();
         let record = record.clone();
         tokio::spawn(async move {
+            let _activity = activity;
             let Some(path) = &record.derived_path else {
                 return;
             };
-            let Ok(base) = DerivedRaster::open(path, state.config.profile.store_limits()) else {
+            let ctx = state.scheduler.context();
+            let Ok(base) =
+                DerivedRaster::open_with_context(path, state.config.profile.store_limits(), &ctx)
+            else {
                 return;
             };
             if base.level_count() != 1 || base.dimensions() == (1, 1) {
@@ -755,7 +1044,9 @@ impl ServerState {
             let result = state
                 .scheduler
                 .blocking(WorkClass::Background, ctx, move |ctx| {
+                    let _record_memory = record_hold;
                     let _disk = worker.preparation_commit.lock().unwrap();
+                    ctx.check()?;
                     let condition = Precondition::Version(record.version.clone());
                     worker.catalog.check(&record.key, &condition)?;
                     let _pin = worker.catalog.pin(&record.key)?;
@@ -764,8 +1055,12 @@ impl ServerState {
                     let mut limits = worker.config.profile.store_limits();
                     limits.max_disk_bytes = limits
                         .max_disk_bytes
-                        .saturating_sub(directory_bytes(&parent)?);
-                    let base = DerivedRaster::open(record.derived_path.as_ref().unwrap(), limits)?;
+                        .saturating_sub(directory_bytes(&parent, &ctx)?);
+                    let base = DerivedRaster::open_with_context(
+                        record.derived_path.as_ref().unwrap(),
+                        limits,
+                        &ctx,
+                    )?;
                     let overview = base.build_overviews(
                         &parent,
                         record.source.sample_kind.as_deref() == Some("categorical"),
@@ -775,6 +1070,7 @@ impl ServerState {
                     replacement.version = opid;
                     replacement.derived_version = Some(overview.derived_version().into());
                     replacement.derived_path = Some(parent.join(overview.derived_version()));
+                    ctx.check()?;
                     worker.catalog.publish(replacement, &condition)
                 })
                 .await;
@@ -791,10 +1087,11 @@ impl ServerState {
     /// It must reproduce the pinned DataVersion: changed originals require an
     /// explicit administrative refresh rather than becoming a silent update.
     fn request_base_restore(self: &Arc<Self>, record: &ResourceRecord) -> Result<()> {
-        let identity = format!("{}:{}", record.key.id, record.version);
+        let identity = (record.key.clone(), record.version.clone());
         let mut attempts = self.restore_attempts.lock().unwrap();
+        attempts.retain(|(key, version), _| self.catalog.is_current_version(key, version));
         let id = if let Some(id) = attempts.get(&identity) {
-            id.clone()
+            (**id).clone()
         } else {
             if attempts.len() >= self.config.profile.max_operations {
                 return Err(ServerError::new(
@@ -803,12 +1100,23 @@ impl ServerState {
                     "Preparation capacity exhausted",
                 ));
             }
+            let activity = self.activities.enter()?;
+            let hold = self.scheduler.memory_context().reserve(
+                memory::model_bytes(&identity)?
+                    .checked_add(memory::envelope(128)?)
+                    .ok_or(GeelloError::SizeOverflow)?,
+            )?;
+            let record_hold = self
+                .scheduler
+                .memory_context()
+                .reserve(memory::model_bytes(record)?)?;
             let op = self.new_operation(record.key.clone())?;
             let id = op.operation_id.clone();
-            attempts.insert(identity, id.clone());
+            attempts.insert(identity, Accounted::new(id.clone(), vec![hold]));
             let state = self.clone();
             let record = record.clone();
             tokio::spawn(async move {
+                let _activity = activity;
                 let _ = state.set_operation(op.clone(), OperationStatus::Preparing, None);
                 let worker = state.clone();
                 let opid = op.operation_id.clone();
@@ -816,7 +1124,9 @@ impl ServerState {
                 let result = state
                     .scheduler
                     .blocking(WorkClass::Background, ctx, move |ctx| {
+                        let _record_memory = record_hold;
                         let _disk = worker.preparation_commit.lock().unwrap();
+                        ctx.check()?;
                         let condition = Precondition::Version(record.version.clone());
                         worker.catalog.check(&record.key, &condition)?;
                         let _pin = worker.catalog.pin(&record.key)?;
@@ -835,6 +1145,7 @@ impl ServerState {
                         replacement.version = opid;
                         replacement.managed_directory = record.managed_directory;
                         replacement.dependencies = record.dependencies;
+                        ctx.check()?;
                         worker.catalog.publish(replacement, &condition)
                     })
                     .await;
@@ -868,7 +1179,17 @@ impl ServerState {
         id: &str,
         view: View,
     ) -> Result<Arc<EncodedResponse>> {
-        self.render_request(id, view, None).await
+        self.render_map_at(id, view, 0.).await
+    }
+    /// Render a fixed published graph at finite, nonnegative seconds. Time is
+    /// part of cache/singleflight identity, not the resource RenderRevision.
+    pub async fn render_map_at(
+        self: &Arc<Self>,
+        id: &str,
+        view: View,
+        time: f64,
+    ) -> Result<Arc<EncodedResponse>> {
+        self.render_request(id, view, None, time).await
     }
     pub async fn render_tile(
         self: &Arc<Self>,
@@ -877,6 +1198,18 @@ impl ServerState {
         x: u32,
         y: u32,
     ) -> Result<Arc<EncodedResponse>> {
+        self.render_tile_at(id, z, x, y, 0.).await
+    }
+    pub async fn render_tile_at(
+        self: &Arc<Self>,
+        id: &str,
+        z: u32,
+        x: u32,
+        y: u32,
+        time: f64,
+    ) -> Result<Arc<EncodedResponse>> {
+        crate::animation::validate_time(time)
+            .map_err(|_| ServerError::invalid("Invalid animation time"))?;
         if z > 30 || x >= 1u32 << z || y >= 1u32 << z {
             return Err(ServerError::invalid("Tile is outside WebMercatorQuad"));
         }
@@ -909,6 +1242,7 @@ impl ServerState {
                 256,
                 256,
             ]),
+            time,
         )
         .await
     }
@@ -917,7 +1251,12 @@ impl ServerState {
         id: &str,
         view: View,
         crop: Option<[u32; 4]>,
+        time: f64,
     ) -> Result<Arc<EncodedResponse>> {
+        let _activity = self.activities.enter()?;
+        crate::animation::validate_time(time)
+            .map_err(|_| ServerError::invalid("Invalid animation time"))?;
+        let time = if time == 0. { 0. } else { time };
         view.validate()?;
         if view.width > self.config.profile.max_dimension
             || view.height > self.config.profile.max_dimension
@@ -940,38 +1279,60 @@ impl ServerState {
             }
             self.request_overviews(resource);
         }
+        let ctx = self.scheduler.context();
+        let _graph_memory = ctx.reserve(memory::envelope(
+            pin.records
+                .len()
+                .checked_mul(64)
+                .ok_or(GeelloError::SizeOverflow)?,
+        )?)?;
         let versions = pin
             .records
             .values()
             .map(|r| (&r.key, &r.version, &r.data_version, &r.derived_version))
             .collect::<Vec<_>>();
-        let revision =
-            super::catalog::identity(&[&serde_json::to_vec(&versions).map_err(ServerError::io)?]);
+        let version_bytes =
+            crate::derived::bounded_json(&versions, self.config.profile.max_registry_bytes, &ctx)?;
+        let revision = super::catalog::identity(&[&version_bytes]);
+        let view_bytes =
+            crate::derived::bounded_json(&view, self.config.profile.max_registry_bytes, &ctx)?;
+        let crop_bytes =
+            crate::derived::bounded_json(&crop, self.config.profile.max_registry_bytes, &ctx)?;
         let area_key = super::catalog::identity(&[
+            // Bump when scene/response semantics change across binary upgrades.
+            b"geello-timed-render-v3",
             revision.as_bytes(),
             self.backend_name.as_bytes(),
-            &serde_json::to_vec(&view).map_err(ServerError::io)?,
+            &view_bytes,
+            &time.to_le_bytes(),
         ]);
-        let key = super::catalog::identity(&[
-            area_key.as_bytes(),
-            &serde_json::to_vec(&crop).map_err(ServerError::io)?,
-            b"png",
-        ]);
+        let key = super::catalog::identity(&[area_key.as_bytes(), &crop_bytes, b"png"]);
+        let cache_limit = response_limit(self.config.profile.max_image_bytes)?;
+        let _cache_read = ctx.reserve(cache_limit)?;
         let cached = self.responses.get(&key).await;
         if cached.is_err() {
             self.cache_failures
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         if let Ok(Some(entry)) = cached {
-            if let Ok(value) =
-                decode_response(entry.value(), &key, self.config.profile.max_image_bytes)
-            {
-                return Ok(Arc::new(value));
+            match decode_response(
+                entry.value(),
+                &key,
+                self.config.profile.max_image_bytes,
+                &ctx,
+            ) {
+                Ok(value) => return Ok(Arc::new(value)),
+                Err(error) if error.status == 503 => return Err(error),
+                Err(_) => {}
             }
             self.responses.remove(&key);
             self.cache_failures
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
+        drop(_cache_read);
+        drop(version_bytes);
+        drop(view_bytes);
+        drop(crop_bytes);
         let mut receiver = {
             let mut flights = self.encode_flights.lock().unwrap();
             if let Some(tx) = flights.get(&key) {
@@ -986,19 +1347,30 @@ impl ServerState {
                         "Render singleflight capacity exhausted",
                     ));
                 }
+                let activity = self.activities.enter()?;
+                let definition_hold = self.scheduler.memory_context().reserve(memory::envelope(
+                    record.definition.as_ref().map_or(0, String::len),
+                )?)?;
+                let definition = record
+                    .definition
+                    .clone()
+                    .ok_or_else(|| ServerError::io("missing immutable map definition"))?;
+                let definition = Accounted::new(definition, vec![definition_hold]);
+                // Admission and validation must finish before publishing a flight.
+                // Otherwise an early error leaves subscribers waiting forever.
                 let (tx, rx) = watch::channel(None);
                 flights.insert(key.clone(), tx.clone());
                 let state = self.clone();
                 let key = key.clone();
                 let view = view.clone();
-                let definition = record
-                    .definition
-                    .clone()
-                    .ok_or_else(|| ServerError::io("missing immutable map definition"))?;
                 let revision = revision.clone();
                 tokio::spawn(async move {
+                    let _activity = activity;
                     let work = async {
-                        let pixels = state.area_pixels(area_key, definition, pin, view).await?;
+                        let pixels = state
+                            .area_pixels(area_key, definition, pin, view, time)
+                            .await?;
+                        let incomplete = pixels.incomplete;
                         let max = state.config.profile.max_image_bytes;
                         let c = state.scheduler.context();
                         state
@@ -1026,29 +1398,43 @@ impl ServerState {
                                 } else {
                                     (**pixels).clone()
                                 };
-                                Ok((*crate::encoding::encode(
+                                Ok(crate::encoding::encode(
                                     &image,
                                     crate::encoding::ImageFormat::Png,
                                     max,
                                     &c,
                                 )?)
-                                .clone())
                             })
                             .await?;
                         let etag = format!("\"{}\"", blake3::hash(&encoded).to_hex());
+                        let (bytes, encoding_holds) = encoded.into_parts();
+                        let hold = state.scheduler.memory_context().reserve(
+                            bytes
+                                .capacity()
+                                .checked_add(RESPONSE_HEADER_MAX)
+                                .ok_or(GeelloError::SizeOverflow)?,
+                        )?;
+                        drop(encoding_holds);
                         Ok(EncodedResponse {
-                            bytes: encoded,
+                            bytes,
                             etag,
                             content_type: "image/png".into(),
                             render_revision: revision,
                             backend: state.backend_name.clone(),
-                            incomplete: false,
+                            incomplete,
+                            _memory: vec![hold],
                         })
                     };
                     let result = tokio::select! {r=work=>r,_=tx.closed()=>Err(ServerError::new(503,"cancelled","All encoding waiters disconnected"))};
                     if let Ok(response) = &result
-                        && let Ok(bytes) = encode_response(response, &key)
+                        && let Ok(bytes) = encode_response(
+                            response,
+                            &key,
+                            state.config.profile.max_image_bytes,
+                            &state.scheduler.context(),
+                        )
                     {
+                        let (bytes, _hold) = bytes.into_parts();
                         state.responses.insert(key.clone(), bytes);
                     }
                     tx.send_replace(Some(result.map(Arc::new)));
@@ -1070,11 +1456,12 @@ impl ServerState {
     async fn area_pixels(
         self: &Arc<Self>,
         key: String,
-        definition: String,
+        definition: Accounted<String>,
         pin: ResourcePin,
         view: View,
-    ) -> Result<Arc<Accounted<RgbaImage>>> {
-        if let Some(image) = self.objects.get(&key) {
+        time: f64,
+    ) -> Result<Arc<RenderedArea>> {
+        if let Some(CachedObject::Image(image)) = self.objects.get(&key) {
             return Ok(image);
         }
         let mut rx = {
@@ -1091,16 +1478,19 @@ impl ServerState {
                         "Area render capacity exhausted",
                     ));
                 }
+                let activity = self.activities.enter()?;
                 let (tx, rx) = watch::channel(None);
                 flights.insert(key.clone(), tx.clone());
                 let state = self.clone();
                 tokio::spawn(async move {
+                    let _activity = activity;
                     let ctx = state.scheduler.context();
                     let worker = state.clone();
                     let work = async {
                         let scene = state
                             .scheduler
                             .blocking(WorkClass::Http, ctx.clone(), move |c| {
+                                let _map_memory = c.reserve(memory::envelope(definition.len())?)?;
                                 let map = parse_map(&definition)?;
                                 if !map.output_crs.contains(&view.crs.definition().to_owned()) {
                                     return Err(ServerError::invalid(
@@ -1116,22 +1506,24 @@ impl ServerState {
                                         "Projection backend is not available",
                                     ));
                                 }
-                                if map.items.iter().any(|i| !i.animation_bindings.is_empty()) {
-                                    return Err(ServerError::new(
-                                        422,
-                                        "animation-pending",
-                                        "Animation execution belongs to M4",
-                                    ));
-                                }
-                                worker.prepare_map(&map, &pin, &view, &c)
+                                worker.prepare_map(&map, &pin, &view, time, &c)
                             })
                             .await?;
-                        state.execute_pixels(scene, &ctx).await
+                        let incomplete = scene.summary().incompatible_components > 0;
+                        Ok(RenderedArea {
+                            image: state.execute_pixels(scene, &ctx).await?,
+                            incomplete,
+                        })
                     };
                     let result = tokio::select! {r=work=>r,_=tx.closed()=>{ctx.cancel();Err(ServerError::new(503,"cancelled","All area waiters disconnected"))}};
                     let result = result.map(Arc::new);
                     if let Ok(image) = &result {
-                        state.objects.insert(key.clone(), image.clone());
+                        let object = CachedObject::Image(image.clone());
+                        if object.weight(&key)
+                            <= state.config.profile.object_cache_bytes.min(u32::MAX as u64)
+                        {
+                            state.objects.insert(key.clone(), object);
+                        }
                     }
                     tx.send_replace(Some(result));
                     state.render_flights.lock().unwrap().remove(&key);
@@ -1153,6 +1545,7 @@ impl ServerState {
         map: &MapDefinition,
         pin: &ResourcePin,
         view: &View,
+        time: f64,
         ctx: &OperationContext,
     ) -> Result<PreparedScene> {
         let mut composition = MapComposition {
@@ -1160,24 +1553,52 @@ impl ServerState {
             background: map.background.as_deref().map(parse_color).transpose()?,
         };
         let mut holds = vec![];
+        let mut animations = BTreeMap::new();
+        for record in pin
+            .records
+            .values()
+            .filter(|r| r.key.kind == ResourceKind::Animation)
+        {
+            let text = record
+                .definition
+                .as_deref()
+                .ok_or_else(|| ServerError::io("missing animation definition"))?;
+            holds.push(ctx.reserve(memory::envelope(text.len())?)?);
+            animations.insert(record.key.id.clone(), parse_animation(text)?);
+        }
         for item in &map.items {
             let dataset = &pin.records[&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?];
             let style_record = &pin.records[&ResourceKey::new(ResourceKind::Style, &item.style)?];
+            let _style_memory = ctx.reserve(memory::envelope(
+                style_record.definition.as_ref().map_or(0, String::len),
+            )?)?;
             let style = parse_style(
                 style_record
                     .definition
                     .as_deref()
                     .ok_or_else(|| ServerError::io("missing immutable style definition"))?,
             )?;
+            let bindings = prepare_style_animations(&style, item, &animations, ctx)?;
             let path = dataset.derived_path.as_ref().ok_or_else(|| {
                 ServerError::new(503, "preparing", "Dataset has no complete derived version")
             })?;
             if dataset.class.as_deref() == Some("raster") {
-                let raster = DerivedRaster::open(path, self.config.profile.store_limits())?;
+                let raster = DerivedRaster::open_with_context(
+                    path,
+                    self.config.profile.store_limits(),
+                    ctx,
+                )?;
                 for rule in &style.rules {
                     for symbol in &rule.symbols {
                         let ranges = raster.ranges();
-                        let colors = symbol.raster_options(&ranges)?;
+                        let mut colors = symbol.raster_options(&ranges)?;
+                        for binding in bindings.iter() {
+                            ctx.checkpoint(1)?;
+                            if binding.rule == rule.id && binding.symbol == symbol.id() {
+                                colors.opacity =
+                                    binding.track.raster_opacity(colors.opacity, time, ctx)?;
+                            }
+                        }
                         let kind = if dataset.source.sample_kind.as_deref() == Some("categorical") {
                             crate::raster_processing::RasterKind::Categorical
                         } else if dataset.source.sample_kind.as_deref() == Some("continuous") {
@@ -1208,23 +1629,20 @@ impl ServerState {
                                 reduce == crate::raster_processing::Resampling::AreaAverage
                             }
                         };
-                        let Some((level, window)) =
-                            raster_window(&raster, view, compatible_overview)?
-                        else {
-                            continue;
-                        };
-                        let block = raster.read_window(level, window, ctx)?;
-                        let inverse = if block.grid.crs != view.crs {
+                        let level = raster_level(&raster, view, compatible_overview);
+                        let source_grid = raster.grid();
+                        let inverse = if source_grid.crs != view.crs {
                             Some(crate::projection::RustProjection::new(
                                 view.crs.clone(),
-                                block.grid.crs.clone(),
+                                source_grid.crs.clone(),
                             )?)
                         } else {
                             None
                         };
-                        let [a, b, c, d, e, f] = block.grid.affine;
+                        let [a, b, c, d, e, f] = source_grid.affine;
                         let _ = (a, d);
-                        let pixel = ((b * b + e * e).sqrt()).min((c * c + f * f).sqrt());
+                        let factor = raster.level_dimensions(level).unwrap().2 as f64;
+                        let pixel = ((b * b + e * e).sqrt()).min((c * c + f * f).sqrt()) * factor;
                         let scale = ((view.bounds.max_x - view.bounds.min_x) / view.width as f64)
                             .max((view.bounds.max_y - view.bounds.min_y) / view.height as f64);
                         let method = if inverse.is_some() || scale > pixel {
@@ -1232,8 +1650,8 @@ impl ServerState {
                         } else {
                             enlarge
                         };
-                        let sampled = crate::raster_processing::resample(
-                            &block,
+                        let Some(sampled) = raster.resample_view_cached(
+                            level,
                             view.width,
                             view.height,
                             RasterGrid {
@@ -1252,7 +1670,11 @@ impl ServerState {
                             method,
                             |p| inverse.as_ref().map_or(Ok(p), |op| op.transform_xy(p)),
                             ctx,
-                        )?;
+                            Some(self),
+                        )?
+                        else {
+                            continue;
+                        };
                         let image = crate::raster_processing::colorize(&sampled, &colors, ctx)?;
                         holds.push(ctx.reserve(image.image().pixels().len())?);
                         composition.items.push(DrawItem::Image(ImagePlacement {
@@ -1264,7 +1686,11 @@ impl ServerState {
                     }
                 }
             } else {
-                let store = DerivedVector::open(path, self.config.profile.store_limits())?;
+                let store = DerivedVector::open_with_context(
+                    path,
+                    self.config.profile.store_limits(),
+                    ctx,
+                )?;
                 let mut cursor = store.query(VectorQuery::default(), ctx)?;
                 let mut batches = vec![];
                 while let Some(batch) = cursor.next_batch(
@@ -1276,7 +1702,7 @@ impl ServerState {
                     holds.extend(reservations);
                     batches.push(Arc::new(batch));
                 }
-                let resolved = resolve_vector_style(&style, &batches, ctx)?;
+                let resolved = resolve_vector_style_at(&style, &batches, &bindings, time, ctx)?;
                 let (mut resolved, reservations) = resolved.into_parts();
                 holds.extend(reservations);
                 for draw in &mut resolved.items {
@@ -1318,9 +1744,15 @@ impl ServerState {
             }
             #[cfg(feature = "render-gpu")]
             Backend::Gpu(renderer) => {
+                let renderer = renderer.clone();
+                let render_context = ctx.clone();
                 self.scheduler
-                    .asynchronous(WorkClass::Http, ctx.clone(), async {
-                        Ok(renderer.lock().await.render_pixels(&scene, ctx).await?)
+                    .asynchronous(WorkClass::Http, ctx.clone(), async move {
+                        Ok(renderer
+                            .lock()
+                            .await
+                            .render_pixels(&scene, &render_context)
+                            .await?)
                     })
                     .await?
             }
@@ -1329,112 +1761,164 @@ impl ServerState {
         Ok(Accounted::new(pixels, vec![hold]))
     }
 }
-#[derive(Serialize, Deserialize)]
-struct ResponseEnvelope {
-    key: String,
-    etag: String,
-    revision: String,
-    backend: String,
-    incomplete: bool,
-    bytes: Vec<u8>,
-}
-/// Affine views use a conservative native window with a two-pixel kernel halo.
-/// Nonlinear projection deliberately retains base-level coverage: bounding a
-/// curved footprint by its corners can silently omit visible source samples.
-fn raster_window(
-    store: &DerivedRaster,
-    view: &View,
-    allow_overview: bool,
-) -> Result<Option<(usize, BlockWindow)>> {
-    let grid = store.grid();
-    let (width, height) = store.dimensions();
-    if grid.crs != view.crs {
-        return Ok(Some((
-            0,
-            BlockWindow {
-                column: 0,
-                row: 0,
-                width,
-                height,
-            },
-        )));
+impl RasterBlockCache for ServerState {
+    fn get_or_load(
+        &self,
+        key: String,
+        load: &mut dyn FnMut() -> std::result::Result<Accounted<RasterBlock>, GeelloError>,
+    ) -> std::result::Result<Arc<Accounted<RasterBlock>>, GeelloError> {
+        let loaded = self.objects.try_get_with(key.clone(), || {
+            self.native_decodes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            load().map(|block| CachedObject::Native(Arc::new(block)))
+        });
+        let value = match loaded {
+            Ok(value) => value,
+            Err(e)
+                if matches!(
+                    *e,
+                    GeelloError::Cancelled
+                        | GeelloError::DeadlineExceeded
+                        | GeelloError::BudgetExceeded(_)
+                ) =>
+            {
+                // A shared miss may have run with another request's cancelled
+                // or exhausted context. Retry once with this caller's loader;
+                // cancellation/budget errors are never retained as cache values.
+                self.native_decodes
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let value = CachedObject::Native(Arc::new(load()?));
+                if value.weight(&key) <= self.config.profile.object_cache_bytes.min(u32::MAX as u64)
+                {
+                    self.objects.insert(key.clone(), value.clone());
+                }
+                value
+            }
+            Err(e) => return Err((*e).clone()),
+        };
+        // Moka's weighted admission is eventual. Explicitly invalidate oversized
+        // entries so the u32 weigher cannot undercount a larger allocation.
+        if value.weight(&key) > self.config.profile.object_cache_bytes.min(u32::MAX as u64) {
+            self.objects.invalidate(&key);
+        }
+        match value {
+            CachedObject::Native(block) => Ok(block),
+            CachedObject::Image(_) => Err(GeelloError::InvalidSource(
+                "native cache key collision".into(),
+            )),
+        }
     }
-    let [a, b, c, d, e, f] = grid.affine;
-    let det = b * f - c * e;
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResponseEnvelope<'a> {
+    key: std::borrow::Cow<'a, str>,
+    etag: std::borrow::Cow<'a, str>,
+    revision: std::borrow::Cow<'a, str>,
+    backend: std::borrow::Cow<'a, str>,
+    incomplete: bool,
+    bytes: usize,
+}
+/// Overview selection is conservative for affine views. Curved views retain
+/// the base resolution; bounded footprint planning lives in the library.
+fn raster_level(store: &DerivedRaster, view: &View, allow_overview: bool) -> usize {
+    let grid = store.grid();
+    if grid.crs != view.crs || !allow_overview {
+        return 0;
+    }
+    let [_, b, c, _, e, f] = grid.affine;
     let dx = (view.bounds.max_x - view.bounds.min_x) / view.width as f64;
     let dy = (view.bounds.max_y - view.bounds.min_y) / view.height as f64;
-    // The Frobenius norm bounds the largest native sampling direction;
-    // a rotated/sheared grid must not select a coarser level along one axis.
-    let sampling = dx.min(dy) / (b * b + c * c + e * e + f * f).sqrt();
-    let level = if allow_overview {
-        store.select_level(sampling)
-    } else {
-        0
-    };
-    let (width, height, factor) = store
-        .level_dimensions(level)
-        .ok_or_else(|| ServerError::io("missing raster level"))?;
-    let factor = factor as f64;
-    let mut bounds = [
-        f64::INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::NEG_INFINITY,
-    ];
-    for (x, y) in [
-        (view.bounds.min_x, view.bounds.min_y),
-        (view.bounds.max_x, view.bounds.min_y),
-        (view.bounds.max_x, view.bounds.max_y),
-        (view.bounds.min_x, view.bounds.max_y),
-    ] {
-        let px = ((x - a) * f - (y - d) * c) / det / factor;
-        let py = ((y - d) * b - (x - a) * e) / det / factor;
-        bounds[0] = bounds[0].min(px);
-        bounds[1] = bounds[1].min(py);
-        bounds[2] = bounds[2].max(px);
-        bounds[3] = bounds[3].max(py);
-    }
-    let x0 = (bounds[0].floor() - 2.).clamp(0., width as f64) as u32;
-    let y0 = (bounds[1].floor() - 2.).clamp(0., height as f64) as u32;
-    let x1 = (bounds[2].ceil() + 2.).clamp(0., width as f64) as u32;
-    let y1 = (bounds[3].ceil() + 2.).clamp(0., height as f64) as u32;
-    Ok((x1 > x0 && y1 > y0).then_some((
-        level,
-        BlockWindow {
-            column: x0,
-            row: y0,
-            width: x1 - x0,
-            height: y1 - y0,
-        },
-    )))
+    store.select_level(dx.min(dy) / (b * b + c * c + e * e + f * f).sqrt())
 }
 
-fn encode_response(v: &EncodedResponse, key: &str) -> Result<Vec<u8>> {
-    serde_json::to_vec(&ResponseEnvelope {
-        key: key.into(),
-        etag: v.etag.clone(),
-        revision: v.render_revision.clone(),
-        backend: v.backend.clone(),
-        incomplete: v.incomplete,
-        bytes: v.bytes.clone(),
-    })
-    .map_err(ServerError::io)
+const RESPONSE_MAGIC: &[u8; 8] = b"GLRC0002";
+const RESPONSE_HEADER_MAX: usize = 4096;
+fn response_limit(max: usize) -> Result<usize> {
+    max.checked_add(RESPONSE_HEADER_MAX + 44)
+        .ok_or_else(|| GeelloError::SizeOverflow.into())
 }
-fn decode_response(bytes: &[u8], key: &str, max: usize) -> Result<EncodedResponse> {
-    let v: ResponseEnvelope = serde_json::from_slice(bytes).map_err(ServerError::io)?;
+fn encode_response(
+    v: &EncodedResponse,
+    key: &str,
+    max: usize,
+    ctx: &OperationContext,
+) -> Result<Accounted<Vec<u8>>> {
+    if v.bytes.len() > max {
+        return Err(GeelloError::BudgetExceeded("encoded cache image").into());
+    }
+    let header = crate::derived::bounded_json(
+        &ResponseEnvelope {
+            key: key.into(),
+            etag: v.etag.as_str().into(),
+            revision: v.render_revision.as_str().into(),
+            backend: v.backend.as_str().into(),
+            incomplete: v.incomplete,
+            bytes: v.bytes.len(),
+        },
+        RESPONSE_HEADER_MAX,
+        ctx,
+    )?;
+    let length = v
+        .bytes
+        .len()
+        .checked_add(header.len())
+        .and_then(|v| v.checked_add(44))
+        .ok_or(GeelloError::SizeOverflow)?;
+    let hold = ctx.reserve(length)?;
+    let mut bytes = Vec::with_capacity(length);
+    bytes.extend_from_slice(RESPONSE_MAGIC);
+    bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    let mut hash = blake3::Hasher::new();
+    hash.update(&header);
+    hash.update(&v.bytes);
+    bytes.extend_from_slice(hash.finalize().as_bytes());
+    bytes.extend_from_slice(&header);
+    bytes.extend_from_slice(&v.bytes);
+    Ok(Accounted::new(bytes, vec![hold]))
+}
+fn decode_response(
+    bytes: &[u8],
+    key: &str,
+    max: usize,
+    ctx: &OperationContext,
+) -> Result<EncodedResponse> {
+    if bytes.len() < 44 || bytes.len() > response_limit(max)? || &bytes[..8] != RESPONSE_MAGIC {
+        return Err(ServerError::io("invalid response cache framing"));
+    }
+    let header_length = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    if header_length > RESPONSE_HEADER_MAX
+        || header_length > bytes.len() - 44
+        || blake3::hash(&bytes[44..]).as_bytes() != &bytes[12..44]
+    {
+        return Err(ServerError::io("invalid response cache header length"));
+    }
+    let _header_memory = ctx.reserve(memory::envelope(header_length)?)?;
+    let v: ResponseEnvelope<'_> =
+        serde_json::from_slice(&bytes[44..44 + header_length]).map_err(ServerError::io)?;
+    let payload = &bytes[44 + header_length..];
     if v.key != key
-        || v.bytes.len() > max
-        || v.etag != format!("\"{}\"", blake3::hash(&v.bytes).to_hex())
+        || payload.len() > max
+        || payload.len() != v.bytes
+        || !matches!(v.backend.as_ref(), "cpu" | "gpu")
+        || v.etag != format!("\"{}\"", blake3::hash(payload).to_hex())
     {
         return Err(ServerError::io("invalid response cache"));
     }
+    let hold = ctx.reserve(
+        payload
+            .len()
+            .checked_add(RESPONSE_HEADER_MAX)
+            .ok_or(GeelloError::SizeOverflow)?,
+    )?;
     Ok(EncodedResponse {
-        bytes: v.bytes,
-        etag: v.etag,
-        render_revision: v.revision,
-        backend: v.backend,
+        bytes: payload.to_vec(),
+        etag: v.etag.into_owned(),
+        render_revision: v.revision.into_owned(),
+        backend: v.backend.into_owned(),
         incomplete: v.incomplete,
         content_type: "image/png".into(),
+        _memory: vec![hold],
     })
 }
 fn cpu_backend() -> Result<Backend> {
@@ -1457,30 +1941,13 @@ pub(crate) fn parse_crs(id: &str) -> Result<Crs> {
         },
     )?)
 }
-pub(crate) fn read_bounded(path: &Path, max: usize) -> Result<Vec<u8>> {
-    let f = File::open(path).map_err(ServerError::io)?;
-    if f.metadata().map_err(ServerError::io)?.len() > max as u64 {
-        return Err(ServerError::new(
-            413,
-            "source-limit",
-            "Source exceeds profile",
-        ));
-    }
-    let mut bytes = vec![];
-    f.take(max as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(ServerError::io)?;
-    if bytes.len() > max {
-        return Err(ServerError::new(
-            413,
-            "source-limit",
-            "Source exceeds profile",
-        ));
-    }
-    Ok(bytes)
-}
-fn atomic_operation(root: &Path, op: &ResourceOperation) -> Result<()> {
-    let bytes = serde_json::to_vec(op).map_err(ServerError::io)?;
+fn atomic_operation(
+    root: &Path,
+    op: &ResourceOperation,
+    max: usize,
+    ctx: &OperationContext,
+) -> Result<()> {
+    let bytes = crate::derived::bounded_json(op, max, ctx)?;
     super::catalog::atomic_write(
         &root
             .join("operations")
@@ -1532,34 +1999,54 @@ fn fingerprint(source: &SourceSpec, max: usize, ctx: &OperationContext) -> Resul
             return Err(GeelloError::SourceChanged.into());
         }
     }
-    hash.update(
-        &serde_json::to_vec(&(
+    hash.update(&crate::derived::bounded_json(
+        &(
             &source.format,
             &source.crs,
             &source.encoding,
             &source.sample_kind,
-        ))
-        .map_err(ServerError::io)?,
-    );
+        ),
+        max,
+        ctx,
+    )?);
     Ok(hash.finalize().to_hex().to_string())
 }
-fn directory_bytes(root: &Path) -> Result<u64> {
+fn directory_bytes(root: &Path, ctx: &OperationContext) -> Result<u64> {
+    fn open(
+        path: &Path,
+        ctx: &OperationContext,
+    ) -> Result<(fs::ReadDir, crate::operation::Reservation)> {
+        // Reserve the path/iterator envelope before opening it. Depth-first
+        // traversal retains one iterator per ancestor, never a breadth-sized
+        // queue of paths. Work, cancellation and depth all consume admission.
+        let bytes = path
+            .as_os_str()
+            .len()
+            .checked_mul(4)
+            .and_then(|n| n.checked_add(4096))
+            .ok_or(GeelloError::SizeOverflow)?;
+        let hold = ctx.reserve(bytes)?;
+        Ok((fs::read_dir(path).map_err(ServerError::io)?, hold))
+    }
     let mut total = 0u64;
-    let mut todo = vec![root.to_owned()];
-    while let Some(path) = todo.pop() {
-        for entry in fs::read_dir(path).map_err(ServerError::io)? {
+    let mut todo = vec![open(root, ctx)?];
+    while let Some((entries, _hold)) = todo.last_mut() {
+        ctx.checkpoint(1)?;
+        if let Some(entry) = entries.next() {
             let entry = entry.map_err(ServerError::io)?;
             let meta = entry.metadata().map_err(ServerError::io)?;
             if entry.file_type().map_err(ServerError::io)?.is_symlink() {
                 return Err(ServerError::io("owned directory contains a link"));
             }
             if meta.is_dir() {
-                todo.push(entry.path());
+                todo.push(open(&entry.path(), ctx)?);
             } else {
                 total = total
                     .checked_add(meta.len())
                     .ok_or_else(|| ServerError::io("disk accounting overflow"))?;
             }
+        } else {
+            todo.pop();
         }
     }
     Ok(total)
@@ -1568,6 +2055,191 @@ fn directory_bytes(root: &Path) -> Result<u64> {
 #[cfg(all(test, feature = "render-cpu"))]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "render-gpu")]
+    #[tokio::test]
+    #[ignore = "Requires a real GPU; explicitly destroys the test device"]
+    async fn runtime_device_loss_never_switches_to_cpu() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config =
+            ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.data_directory = temp.path().into();
+        config.backend = BackendSelection::GpuPreferred;
+        let state = ServerState::open(config).await.unwrap();
+        assert_eq!(state.backend_name, "gpu");
+        let ctx = state.scheduler.context();
+        let view = View {
+            crs: Crs::new("OGC:CRS84", CoordinateSpace::GeographicXy).unwrap(),
+            bounds: Bounds {
+                min_x: -1.,
+                min_y: -1.,
+                max_x: 1.,
+                max_y: 1.,
+            },
+            width: 16,
+            height: 16,
+            aspect: AspectPolicy::Stretch,
+        };
+        let scene = crate::prepare_scene(
+            &MapComposition {
+                items: vec![],
+                background: None,
+            },
+            &view,
+            &ctx,
+        )
+        .unwrap();
+        assert!(state.execute_pixels(scene.clone(), &ctx).await.is_ok());
+        let Backend::Gpu(renderer) = &state.backend else {
+            panic!("Expected real GPU");
+        };
+        renderer.lock().await.device().destroy();
+        for _ in 0..2 {
+            let error = state
+                .execute_pixels(scene.clone(), &ctx)
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(error.status, 503);
+            assert_eq!(error.kind, "urn:geello:problem:backend");
+        }
+        assert_eq!(state.backend_name, "gpu");
+        assert!(state.backend_diagnostic.is_none());
+        state.shutdown().await.unwrap();
+    }
+
+    #[cfg(feature = "render-gpu")]
+    #[tokio::test]
+    async fn startup_fallback_is_explicit_and_strict_gpu_failure_releases_catalog() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config =
+            ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.data_directory = temp.path().into();
+        config.backend = BackendSelection::Gpu;
+        let failure = ServerError::new(503, "backend", "Injected GPU initialization failure");
+        let error = ServerState::open_with_initializer(config.clone(), |_| {
+            std::future::ready(Err(failure.clone()))
+        })
+        .await
+        .err()
+        .unwrap();
+        assert_eq!(error.title, failure.title);
+        assert_eq!(error.status, 503);
+
+        // Reopening the same root also proves failed startup released its lock.
+        config.backend = BackendSelection::GpuPreferred;
+        let state = ServerState::open_with_initializer(config.clone(), |_| {
+            std::future::ready(Err(failure.clone()))
+        })
+        .await
+        .unwrap();
+        assert_eq!(state.backend_name, "cpu");
+        assert!(
+            state
+                .backend_diagnostic
+                .as_ref()
+                .unwrap()
+                .contains(&failure.title)
+        );
+        state.shutdown().await.unwrap();
+        drop(state);
+
+        config.backend = BackendSelection::Cpu;
+        let state = ServerState::open_with_initializer(
+            config,
+            |_| -> std::future::Ready<Result<Backend>> {
+                panic!("Explicit CPU selection must not attempt GPU initialization");
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.backend_name, "cpu");
+        assert!(state.backend_diagnostic.is_none());
+        state.shutdown().await.unwrap();
+    }
+
+    #[test]
+    fn directory_accounting_is_cancellable_and_bounded_by_depth_and_work() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("a/b/c")).unwrap();
+        fs::write(temp.path().join("a/b/c/data"), [0; 12]).unwrap();
+        let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        let limits = config.profile.context().limits();
+        let ctx = OperationContext::new(limits, None);
+        assert_eq!(directory_bytes(temp.path(), &ctx).unwrap(), 12);
+        assert_eq!(ctx.live_bytes(), 0);
+        for limits in [
+            OperationLimits {
+                max_live_bytes: 8192,
+                ..limits
+            },
+            OperationLimits {
+                max_work: 2,
+                ..limits
+            },
+        ] {
+            let limited = OperationContext::new(limits, None);
+            assert_eq!(
+                directory_bytes(temp.path(), &limited).unwrap_err().status,
+                503
+            );
+            assert_eq!(limited.live_bytes(), 0);
+        }
+        ctx.cancel();
+        assert!(directory_bytes(temp.path(), &ctx).is_err());
+        assert_eq!(ctx.live_bytes(), 0);
+    }
+
+    #[test]
+    fn encoded_cache_framing_and_budget_fail_before_payload_allocation() {
+        let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        let ctx = config.profile.context();
+        let response = EncodedResponse {
+            bytes: vec![123; 65536],
+            etag: format!("\"{}\"", blake3::hash(&vec![123; 65536]).to_hex()),
+            content_type: "image/png".into(),
+            render_revision: "revision".into(),
+            backend: "cpu".into(),
+            incomplete: false,
+            _memory: vec![],
+        };
+        let encoded = encode_response(&response, "cache-key", response.bytes.len(), &ctx).unwrap();
+        assert!(encoded.len() < response.bytes.len() + 512);
+        let retained = ctx.live_bytes();
+        for index in [0, 8, 12, 44, encoded.len() - 1] {
+            let mut damaged = encoded.to_vec();
+            damaged[index] ^= 1;
+            assert!(decode_response(&damaged, "cache-key", response.bytes.len(), &ctx).is_err());
+            assert_eq!(ctx.live_bytes(), retained);
+        }
+        for length in [0, 7, 43, encoded.len() - 1] {
+            assert!(
+                decode_response(&encoded[..length], "cache-key", response.bytes.len(), &ctx)
+                    .is_err()
+            );
+        }
+        assert!(decode_response(&encoded, "wrong-key", response.bytes.len(), &ctx).is_err());
+        assert!(decode_response(&encoded, "cache-key", response.bytes.len() - 1, &ctx).is_err());
+        let small = OperationContext::new(
+            OperationLimits {
+                max_live_bytes: 2048,
+                ..ctx.limits()
+            },
+            None,
+        );
+        let error = decode_response(&encoded, "cache-key", response.bytes.len(), &small)
+            .err()
+            .unwrap();
+        assert_eq!(error.status, 503);
+        assert_eq!(small.live_bytes(), 0);
+        let decoded = decode_response(&encoded, "cache-key", response.bytes.len(), &ctx).unwrap();
+        assert!(ctx.live_bytes() > retained);
+        assert_eq!(decoded.bytes, response.bytes);
+        drop(decoded);
+        assert_eq!(ctx.live_bytes(), retained);
+        drop(encoded);
+        assert_eq!(ctx.live_bytes(), 0);
+    }
 
     #[tokio::test]
     async fn encoded_cache_checksums_reject_corruption_and_allow_replacement() {
@@ -1585,22 +2257,38 @@ mod tests {
             render_revision: "revision".into(),
             backend: "cpu".into(),
             incomplete: false,
+            _memory: vec![],
         };
-        let mut bytes = encode_response(&response, &key).unwrap();
-        let mut envelope: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        envelope["bytes"][0] = serde_json::json!(9);
-        bytes = serde_json::to_vec(&envelope).unwrap();
+        let ctx = state.scheduler.context();
+        let encoded = encode_response(&response, &key, 1024, &ctx).unwrap();
+        let (mut bytes, _) = encoded.into_parts();
+        let payload = bytes.len() - response.bytes.len();
+        bytes[payload] ^= 1;
         state.responses.insert(key.clone(), bytes);
+        // Close and reopen before lookup: this exercises the disk engine and
+        // recovery path rather than only the hybrid cache's memory tier.
+        let config = state.config.clone();
+        state.shutdown().await.unwrap();
+        drop(state);
+        let state = ServerState::open(config).await.unwrap();
+        let ctx = state.scheduler.context();
+        assert!(state.responses.memory().get(&key).is_none());
         let entry = state.responses.get(&key).await.unwrap().unwrap();
-        assert!(decode_response(entry.value(), &key, 1024).is_err());
+        assert!(decode_response(entry.value(), &key, 1024, &ctx).is_err());
         state.responses.remove(&key);
         assert!(state.responses.get(&key).await.unwrap().is_none());
-        state
-            .responses
-            .insert(key.clone(), encode_response(&response, &key).unwrap());
+        state.responses.insert(
+            key.clone(),
+            encode_response(&response, &key, 1024, &ctx)
+                .unwrap()
+                .into_parts()
+                .0,
+        );
         let entry = state.responses.get(&key).await.unwrap().unwrap();
         assert_eq!(
-            decode_response(entry.value(), &key, 1024).unwrap().bytes,
+            decode_response(entry.value(), &key, 1024, &ctx)
+                .unwrap()
+                .bytes,
             response.bytes
         );
         state.shutdown().await.unwrap();

@@ -111,6 +111,11 @@ impl GpuRenderer {
         self.validate_size(scene)
     }
     fn validate_size(&self, scene: &PreparedScene) -> Result<(), GeelloError> {
+        // Dispatch pending device-loss callbacks before allocating another target.
+        // Poll is nonblocking; submission completion still uses its worker.
+        self.device
+            .poll(wgpu::PollType::Poll)
+            .map_err(|error| GeelloError::Backend(error.to_string()))?;
         let limit = self.device.limits().max_texture_dimension_2d;
         if scene.summary().width > limit || scene.summary().height > limit {
             return Err(GeelloError::DimensionOverflow);
@@ -313,6 +318,10 @@ impl GpuRenderer {
             return Err(GeelloError::InvalidTarget(e.to_string()));
         }
         context.check()?;
+        // Loss can race with the pre-submit checks. Keep submit/map validation
+        // scoped as well, so an invalid readback buffer becomes an error rather
+        // than reaching wgpu's default uncaptured-error panic handler.
+        let submission_scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         self.queue.submit([command_buffer]);
         let completed = Arc::new(AtomicBool::new(false));
         let done = completed.clone();
@@ -335,7 +344,6 @@ impl GpuRenderer {
         let ctx = context.clone();
         let active = self.busy.clone();
         let keep_scene = scene.clone();
-        busy.0.take();
         std::thread::Builder::new()
             .name("geello-gpu-completion".into())
             .spawn(move || {
@@ -392,7 +400,16 @@ impl GpuRenderer {
                 }
             })
             .map_err(|e| GeelloError::TargetInvalid(e.to_string()))?;
-        Completion { state }.await
+        // Transfer lifetime ownership before the next await. Dropping the
+        // caller while an error scope resolves must not free submitted work's
+        // scene, reservations or exclusive-submission guard prematurely.
+        busy.0.take();
+        let submission_error = submission_scope.pop().await;
+        let completion = Completion { state }.await;
+        if let Some(error) = submission_error {
+            return Err(GeelloError::TargetInvalid(error.to_string()));
+        }
+        completion
     }
 }
 struct BusyGuard(Option<Arc<AtomicBool>>);

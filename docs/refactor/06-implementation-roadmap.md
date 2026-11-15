@@ -2,7 +2,7 @@
 
 This roadmap sequences the **whole first-stage refactor**. M1–M5 are milestones inside that stage, not permission to omit its later capabilities. All implementation work remains on `refactor`; reference branches stay unchanged. Breaking compatibility is allowed with documented migration.
 
-M0 documentation is complete. M1 memory-core, M2 reader/configuration and the M3 basic service closed loop have implementation evidence on `refactor`; protocol and deployment milestones remain pending. The [M2 dependency closure](07-m2-dependency-closure.md) and [M3 candidate inventory](08-m3-dependency-closure.md) are review evidence and do not close G-01. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
+M0 documentation is complete. M1 memory-core, M2 reader/configuration and the M3 basic service closed loop have implementation evidence on `refactor`; protocol and deployment milestones remain pending. The [M2 dependency closure](07-m2-dependency-closure.md) and [M3 inventory](08-m3-dependency-closure.md) record the current closure, accepted by the owner on 2026-11-15. Future dependency/platform additions still require their named gates. See [requirements](02-requirements-and-acceptance.md), [architecture](03-architecture-and-data-flow.md), [interfaces](04-public-apis-and-configuration.md) and [gates](05-decisions-and-dependencies.md).
 
 ## 1. Common work and completion rules
 
@@ -108,11 +108,11 @@ DAT-001/002/003/004/005/007, RAS-002/003/004, PRJ-001/002 and STY-001/002 and sc
 T-04–T-15, T-23–T-25 and T-34. GeoTIFF overview policy remains base-IFD access
 with explicit SubIFD validation boundaries; full overview generation, derived
 storage and production publication remain M3/G-03 work. Native PROJ and performance-scale claims remain separate validation gates.
-Reader-to-style and native-raster-to-view composition helpers are present. The
-complete TIFF sample/codec matrix and remaining fidelity/budget audit must pass
-before declaring M2 complete. G-01
-remains open; candidate-closure compatibility testing was owner-authorized on
-2026-11-13. [Closure evidence](07-m2-dependency-closure.md) is available for review.
+Reader-to-style and native-raster-to-view composition helpers are present.
+The generated-file matrix and subsequent M3 fidelity/admission follow-ups
+provide Windows evidence for the documented supported layouts; unvalidated
+layouts remain explicit errors. G-01 for the current package closure was accepted on 2026-11-15, following
+candidate compatibility authorization on 2026-11-13. [Historical closure evidence](07-m2-dependency-closure.md) remains available.
 
 ### M3 — Derived storage and basic service closed loop
 
@@ -128,7 +128,7 @@ remains open; candidate-closure compatibility testing was owner-authorized on
 
 **Exit:** registered source to consistent HTTP image/tile response works under bounded concurrency; atomic publication/refresh and cache identities are proven; caches do not retain full source snapshots; old live versions are protected; error/preparing/revalidation behavior is documented. Formal numerical performance goals remain open until M5.
 
-**Resource exit:** managed single-file and Shapefile ZIP uploads, external path registration, unpublish/record removal/content deletion, ETag conflicts, reference protection and operation failure rollback have evidence. The catalog generation is indexed at request time, survives restart from the last complete generation, and reports orphaned files without registering them. G-08 and G-09 remain open until archive helper dependencies and scale measurements are approved.
+**Resource exit:** managed single-file and Shapefile ZIP uploads, external path registration, unpublish/record removal/content deletion, ETag conflicts, reference protection and operation failure rollback have evidence. The catalog generation is indexed at request time, survives restart from the last complete generation, and reports orphaned files without registering them. Archive helper dependencies are approved; G-08 and G-09 retain their remaining fault-matrix and platform validation obligations.
 
 ### M3 implementation evidence (refactor)
 
@@ -146,18 +146,50 @@ Moka/Foyer and separate area-render/tile-encode singleflight. Ordinary offline
 tests pass; a real GPU server image test and a 1,000-resource index rebuild,
 compaction and restart experiment also pass on Windows MSVC.
 
-This is functional implementation evidence, not formal closure of G-01/G-03/
-G-07/G-08/G-09. Remaining M3 acceptance work includes filesystem/power-loss fault
-injection, additional archive/corruption matrices, orphan/operation retention,
-transient FGB disk and allocation accounting, broader scale/contention and
-platform recovery evidence. Nonlinear raster views still admit a full base
-level; decoded-block caching and bounded projection-window optimization remain
-open. Preserve these accepted requirements; do not infer completion from the
-successful MVP or move them into M4 by omission.
+This is functional implementation evidence, not formal cross-platform closure
+of G-03/G-07/G-08/G-09. G-01 for the existing package closure is Accepted as of
+2026-11-15. Follow-up verification covers filesystem faults, archive/corruption
+matrices, orphan/operation retention, metadata/allocation admission and
+scale/contention. Physical power-loss and Linux platform evidence remain open.
+Nonlinear raster views now plan native windows using the shared resampling
+footprints. Native-block and rendered-area objects now share a bounded Moka
+cache. Aggregate catalog/ledger admission, retained HTTP output accounting,
+server-owned worker draining and an actual child-process kill/restart are now
+implemented and regression-tested. Follow-up adds binary response framing,
+retained encoded output admission, accounted definition/index reads and bounded
+directory traversal, six process-kill commit boundaries, changed-source repair
+refusal and malformed TIFF replacement rollback. The application admission audit
+is complete for this milestone; exact RSS, cache-engine internals and transport
+costs remain the explicit G-07 measurement boundary. Preserve the implemented
+contracts in M4 and retain cross-platform recovery checks in M5.
+
+Additional hardening bounds startup TOML, releases stale retry bookkeeping after
+refresh, accounts Foyer flush/submit capacities and verifies all-render-waiter
+cancellation/retry. The service evidence records these limits separately from
+cache indexes, OS/transport buffers and final performance approval.
+
+The [2026-11-15 M3 exit review](09-m3-service-and-evidence.md#m3-exit-review--2026-11-15)
+reproduced and fixed index-reuse, orphan and interrupted-upload failures,
+added explicit staging/terminal-operation maintenance, exercised pointer-write
+failure, and measured a four-writer 3,000-resource catalog. Its final exit matrix
+records **M3 Implemented with Windows functional exit conditions satisfied**:
+104 ordinary tests / 7 opt-in tests before M4, persisted-cache and diagnostic
+retention, initialization fallback, actual destroyed-device errors and owned
+async worker draining. M4 has started with memory-only animation evaluation.
+Dependency acceptance and platform/formal validation remain separate statuses.
 
 ### M4 — Text, complete protocol subset, animation and WebSocket
 
 **Prerequisites:** M3 stable resource/scheduler contracts; G-04 text/font proof; G-06 exact protocol contract and advertised classes; approved helper dependencies if needed.
+
+The first M4 increment is implemented: `src/animation.rs` provides stateless
+memory-only step/linear tracks, arbitrary-time once/loop clocks, raw-angle and
+linear-light premultiplied color interpolation, typed symbol overrides and
+raster-opacity-only evaluation. TOML animation bindings are validated at
+publication, included in render/cache identity through `geello_time`, and
+exercised by library, vector HTTP, tile HTTP and raster HTTP tests. Geometry
+trajectory, text layout, font shaping, WebSocket and OGC work remain in this
+milestone.
 
 **Deliverables:** explicit isolated font stacks and approved test subsets; Unicode shaping/bidi/wrap and global collision layout; curved text/metatiles; stateless geometry/style animation; full agreed WMS/WMTS and OGC API Features/Maps/Tiles surfaces; honest WFS query subset with metadata/schema; complete WS state machine and paired image writer; JSON OpenAPI and static HTML API docs; independent demonstrations/request examples without server viewer hosting.
 
@@ -247,6 +279,6 @@ Do not publish new usage commands as operationally verified until implemented an
 - Only README/docs changed; no Rust, Cargo files/lock, runtime configs, fixture downloads, CI, installation or auto-commit.
 
 Handoff should provide the navigation link, summarize verification and identify
-open gates. At the current M3 checkpoint, review the candidate dependency
+open gates. At the current M3 checkpoint, use the accepted dependency
 closure and remaining acceptance evidence in document 09 before claiming M3
 fully validated; M4 protocol/text/animation and M5 deployment remain scheduled.

@@ -117,6 +117,209 @@ fn derived_corruption_and_disk_exhaustion_do_not_replace_a_complete_store() {
     bytes[0] ^= 1;
     std::fs::write(path, bytes).unwrap();
     assert!(store.query(VectorQuery::default(), &ctx).is_err());
+    assert!(DerivedVector::build(dir.path(), &snapshot, limits(), &ctx).is_err());
+}
+#[test]
+fn vector_exact_disk_admission_and_failed_build_cleanup() {
+    let ctx = context();
+    let snapshot = vector(&ctx);
+    let first = tempfile::tempdir().unwrap();
+    let store = DerivedVector::build(first.path(), &snapshot, limits(), &ctx).unwrap();
+    let root = first.path().join(store.derived_version());
+    let exact: u64 = std::fs::read_dir(root)
+        .unwrap()
+        .map(|e| e.unwrap().metadata().unwrap().len())
+        .sum();
+    let mut bounded = limits();
+    bounded.max_disk_bytes = exact;
+    let second = tempfile::tempdir().unwrap();
+    let rebuilt = DerivedVector::build(second.path(), &snapshot, bounded, &ctx).unwrap();
+    assert_eq!(rebuilt.derived_version(), store.derived_version());
+    let third = tempfile::tempdir().unwrap();
+    bounded.max_disk_bytes -= 1;
+    let before = ctx.live_bytes();
+    assert!(DerivedVector::build(third.path(), &snapshot, bounded, &ctx).is_err());
+    assert_eq!(std::fs::read_dir(third.path()).unwrap().count(), 0);
+    assert_eq!(ctx.live_bytes(), before);
+    let tiny = OperationContext::new(
+        OperationLimits {
+            max_live_bytes: 1,
+            ..ctx.limits()
+        },
+        None,
+    );
+    assert!(matches!(
+        DerivedVector::open_with_context(
+            &first.path().join(store.derived_version()),
+            limits(),
+            &tiny
+        ),
+        Err(GeelloError::BudgetExceeded(_))
+    ));
+    assert_eq!(tiny.live_bytes(), 0);
+}
+
+#[test]
+fn curved_raster_window_matches_full_source_with_bounded_memory() {
+    use geello::raster_processing::*;
+    let ctx = context();
+    let dir = tempfile::tempdir().unwrap();
+    let source = RasterGrid {
+        affine: [0., 1., 0.2, 0., 0.1, 1.],
+        ..grid()
+    };
+    let store = DerivedRaster::build_base(
+        dir.path(),
+        "curved",
+        256,
+        256,
+        &source,
+        16,
+        limits(),
+        &ctx,
+        |w, _| {
+            let mut samples = Vec::new();
+            let mut valid = Vec::new();
+            let mut alpha = Vec::new();
+            for y in w.row..w.row + w.height {
+                for x in w.column..w.column + w.width {
+                    samples.push((x * x + y * 7) as u64);
+                    valid.push((x + y) % 9 != 0);
+                    alpha.push(if (x + y) % 7 == 0 { 0.25 } else { 1. });
+                }
+            }
+            Ok(RasterBlock {
+                width: w.width,
+                height: w.height,
+                grid: RasterGrid {
+                    affine: [
+                        w.column as f64 + 0.2 * w.row as f64,
+                        1.,
+                        0.2,
+                        0.1 * w.column as f64 + w.row as f64,
+                        0.1,
+                        1.,
+                    ],
+                    ..source.clone()
+                },
+                bands: vec![RasterBand {
+                    samples: RasterSamples::U64(samples.into()),
+                    validity: Some(valid.into()),
+                    no_data: None,
+                    scale: 2.,
+                    offset: 3.,
+                }],
+                alpha: Some(alpha.into()),
+                alpha_association: AlphaAssociation::Straight,
+            })
+        },
+    )
+    .unwrap();
+    let full = store
+        .read_window(
+            0,
+            BlockWindow {
+                column: 0,
+                row: 0,
+                width: 256,
+                height: 256,
+            },
+            &ctx,
+        )
+        .unwrap();
+    let target = RasterGrid {
+        affine: [24., 0.9, 0., 22., 0., 0.7],
+        ..source.clone()
+    };
+    // The interior sinusoidal extrema extend beyond the corner envelope.
+    let map = |p: [f64; 2]| Ok([p[0] + 8. * (p[1] / 2.).sin(), p[1] + 0.003 * p[0] * p[0]]);
+    for method in [
+        Resampling::Nearest,
+        Resampling::Bilinear,
+        Resampling::AreaAverage,
+    ] {
+        let expected = resample(
+            &full,
+            12,
+            16,
+            target.clone(),
+            RasterKind::Continuous,
+            method,
+            map,
+            &ctx,
+        )
+        .unwrap();
+        let small = OperationContext::new(
+            OperationLimits {
+                max_live_bytes: 512 << 10,
+                ..ctx.limits()
+            },
+            None,
+        );
+        assert!(
+            store
+                .read_window(
+                    0,
+                    BlockWindow {
+                        column: 0,
+                        row: 0,
+                        width: 256,
+                        height: 256
+                    },
+                    &small
+                )
+                .is_err()
+        );
+        let actual = store
+            .resample_view(
+                0,
+                12,
+                16,
+                target.clone(),
+                RasterKind::Continuous,
+                method,
+                map,
+                &small,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.bands[0].validity, expected.bands[0].validity);
+        match (&actual.bands[0].samples, &expected.bands[0].samples) {
+            (RasterSamples::U64(a), RasterSamples::U64(b)) => assert_eq!(a, b),
+            (RasterSamples::F64(a), RasterSamples::F64(b)) => {
+                for (a, b) in a.iter().zip(b.iter()) {
+                    assert!((a - b).abs() < 1e-8, "{method:?}: {a} vs {b}");
+                }
+            }
+            _ => panic!("unexpected output sample type"),
+        }
+        for (a, b) in actual
+            .alpha
+            .as_ref()
+            .unwrap()
+            .iter()
+            .zip(expected.alpha.as_ref().unwrap().iter())
+        {
+            assert!((a - b).abs() < 1e-6);
+        }
+        drop(actual);
+        assert_eq!(small.live_bytes(), 0);
+    }
+    let cancelled = context();
+    cancelled.cancel();
+    assert!(matches!(
+        store.resample_view(
+            0,
+            12,
+            16,
+            target,
+            RasterKind::Continuous,
+            Resampling::AreaAverage,
+            map,
+            &cancelled
+        ),
+        Err(GeelloError::Cancelled)
+    ));
 }
 fn grid() -> RasterGrid {
     RasterGrid {

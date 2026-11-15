@@ -6,14 +6,8 @@ use crate::{
     Accounted, Crs, Feature, FeatureId, OperationContext, Properties, PropertyValue,
     SourceOrdinate, VectorBatch,
 };
-use flatgeobuf::geozero::{
-    ColumnValue, CoordDimensions, GeomProcessor, GeozeroGeometry, PropertyProcessor,
-};
-use flatgeobuf::{
-    ColumnType, FallibleStreamingIterator, FeatureProperties, FgbReader, FgbWriter,
-    FgbWriterOptions, GeometryType,
-};
-use geo::BoundingRect;
+use flatgeobuf::{FallibleStreamingIterator, FeatureProperties, FgbReader};
+use geo::MapCoords;
 use geo_types::Geometry;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -71,7 +65,7 @@ impl From<Value> for PropertyValue {
 struct Record {
     source_id: Option<Value>,
     id: Option<FeatureId>,
-    geometry: Option<Geometry<f64>>,
+    geometry: Option<Geometry<u64>>,
     properties: BTreeMap<String, Value>,
     ordinal: u64,
     ordinates: Vec<(Vec<usize>, Vec<u64>)>,
@@ -81,7 +75,12 @@ impl From<&Feature> for Record {
         Self {
             source_id: f.source_id.as_ref().map(Value::from),
             id: f.id.clone(),
-            geometry: f.geometry.clone(),
+            geometry: f.geometry.as_ref().map(|g| {
+                g.map_coords(|c| geo_types::Coord {
+                    x: c.x.to_bits(),
+                    y: c.y.to_bits(),
+                })
+            }),
             properties: f
                 .properties
                 .iter()
@@ -106,7 +105,12 @@ impl From<Record> for Feature {
         Self {
             source_id: r.source_id.map(PropertyValue::from),
             id: r.id,
-            geometry: r.geometry,
+            geometry: r.geometry.map(|g| {
+                g.map_coords(|c| geo_types::Coord {
+                    x: f64::from_bits(c.x),
+                    y: f64::from_bits(c.y),
+                })
+            }),
             properties: r
                 .properties
                 .into_iter()
@@ -135,6 +139,8 @@ struct Locator {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Shard {
+    #[serde(skip)]
+    _metadata: Option<std::sync::Arc<crate::operation::Reservation>>,
     index: Option<StoredFile>,
     records: StoredFile,
     locations: Vec<Locator>,
@@ -152,7 +158,8 @@ struct Manifest {
 #[derive(Debug, Clone)]
 pub struct DerivedVector {
     root: PathBuf,
-    manifest: Manifest,
+    manifest: std::sync::Arc<Manifest>,
+    _metadata: Option<std::sync::Arc<crate::operation::Reservation>>,
     limits: StoreLimits,
     version: String,
 }
@@ -206,22 +213,36 @@ impl DerivedVector {
             )?);
         }
         let manifest_value = Manifest {
-            schema: 1,
+            schema: 2,
             data_version: source.metadata().data_version.clone(),
             crs: source.metadata().crs.clone(),
             shards,
         };
-        let version = manifest(staging.path(), &manifest_value, &mut used, limits)?;
+        let version = manifest(staging.path(), &manifest_value, &mut used, limits, ctx)?;
         let destination = parent.join(&version);
+        verify_reused_directory(staging.path(), &destination, ctx)?;
         if !destination.exists() {
             std::fs::rename(staging.path(), &destination).map_err(error)?;
         }
-        Self::open(&destination, limits)
+        Self::open_with_context(&destination, limits, ctx)
     }
+    /// Admit metadata before deserialization and retain it for every cursor.
+    pub fn open_with_context(
+        root: &Path,
+        limits: StoreLimits,
+        ctx: &OperationContext,
+    ) -> Result<Self, GeelloError> {
+        let hold = metadata_memory(root, limits, ctx)?;
+        let mut store = Self::open(root, limits)?;
+        store._metadata = Some(std::sync::Arc::new(hold));
+        Ok(store)
+    }
+    /// Caller-owned metadata, bounded by max_manifest_bytes. Server operations
+    /// must use open_with_context to retain hierarchical memory admission.
     pub fn open(root: &Path, limits: StoreLimits) -> Result<Self, GeelloError> {
         limits.validate()?;
         let manifest: Manifest = load_manifest(root, limits.max_manifest_bytes)?;
-        if manifest.schema != 1
+        if manifest.schema != 2
             || manifest.shards.iter().any(|s| {
                 s.locations.len() > limits.max_shard_features
                     || s.locations.iter().any(|l| {
@@ -241,7 +262,8 @@ impl DerivedVector {
         }
         Ok(Self {
             root: root.into(),
-            manifest,
+            manifest: std::sync::Arc::new(manifest),
+            _metadata: None,
             limits,
             version,
         })
@@ -403,45 +425,19 @@ fn write_shard(
     limits: StoreLimits,
     ctx: &OperationContext,
 ) -> Result<Shard, GeelloError> {
-    // Upstream FgbWriter spools an unnamed system temporary file. Charge a
-    // conservative shard envelope before construction, including coexistence
-    // with the final index. No process-wide temporary-directory mutation is
-    // used to redirect another crate's files.
-    let envelope = features.iter().try_fold(4096u64, |n, f| {
-        n.checked_add(
-            (crate::core::feature_clone_bytes(f)? as u64)
-                .checked_mul(4)
-                .ok_or(GeelloError::SizeOverflow)?,
-        )
-        .and_then(|v| v.checked_add(4096))
-        .ok_or(GeelloError::SizeOverflow)
+    // All serialized shard bytes live in admitted memory until exact disk
+    // admission in write_file. No files are written outside this staging root.
+    let envelope = features.iter().try_fold(4096usize, |n, f| {
+        n.checked_add(super::fgb::envelope(f)?)
+            .ok_or(GeelloError::SizeOverflow)
     })?;
-    if envelope > limits.max_block_bytes as u64
-        || used
-            .checked_add(envelope.saturating_mul(3))
-            .is_none_or(|v| v > limits.max_disk_bytes)
-    {
-        return Err(GeelloError::BudgetExceeded("FGB transient disk envelope"));
-    }
-    let _scratch =
-        ctx.reserve(usize::try_from(envelope).map_err(|_| GeelloError::SizeOverflow)?)?;
-    let mut writer = FgbWriter::create_with_options(
-        "geello-xy",
-        GeometryType::Unknown,
-        FgbWriterOptions {
-            detect_type: false,
-            promote_to_multi: false,
-            ..Default::default()
-        },
-    )
-    .map_err(error)?;
-    writer.add_column("ordinal", ColumnType::ULong, |_, c| c.nullable = false);
+    let _scratch = ctx.reserve(envelope.checked_mul(4).ok_or(GeelloError::SizeOverflow)?)?;
+    let index_bytes = super::fgb::encode(features, limits.max_block_bytes, ctx)?;
     let mut bytes = vec![];
     let mut locations = vec![];
-    let mut indexed = 0;
     for f in features {
         ctx.checkpoint(1)?;
-        let record = serde_json::to_vec(&Record::from(f)).map_err(error)?;
+        let record = bounded_json(&Record::from(f), limits.max_record_bytes, ctx)?;
         if record.len() > limits.max_record_bytes {
             return Err(GeelloError::BudgetExceeded("companion record"));
         }
@@ -458,18 +454,7 @@ fn write_shard(
             ordinal: f.source_ordinal,
             id: f.id.clone(),
         });
-        bytes.extend(record);
-        if let Some(g) = &f.geometry
-            && g.bounding_rect().is_some()
-        {
-            writer
-                .add_feature_geom(Xy(g), |p| {
-                    p.property(0, "ordinal", &ColumnValue::ULong(f.source_ordinal))
-                        .expect("declared ordinal column");
-                })
-                .map_err(error)?;
-            indexed += 1;
-        }
+        bytes.extend_from_slice(&record);
     }
     let records = write_file(
         root,
@@ -478,12 +463,7 @@ fn write_shard(
         used,
         limits.max_disk_bytes,
     )?;
-    let index = if indexed > 0 {
-        let mut buffer = vec![];
-        writer.write(&mut buffer).map_err(error)?;
-        if buffer.len() > limits.max_block_bytes {
-            return Err(GeelloError::BudgetExceeded("FGB shard"));
-        }
+    let index = if let Some(buffer) = index_bytes {
         Some(write_file(
             root,
             &format!("{n}.fgb"),
@@ -494,90 +474,19 @@ fn write_shard(
     } else {
         None
     };
+    let metadata_bytes = features.iter().try_fold(1024usize, |n, f| {
+        let id_bytes = match &f.id {
+            Some(FeatureId::String(s)) => s.len(),
+            _ => 0,
+        };
+        n.checked_add(512)
+            .and_then(|n| n.checked_add(id_bytes.checked_mul(4)?))
+            .ok_or(GeelloError::SizeOverflow)
+    })?;
     Ok(Shard {
+        _metadata: Some(std::sync::Arc::new(ctx.reserve(metadata_bytes)?)),
         index,
         records,
         locations,
     })
-}
-struct Xy<'a>(&'a Geometry<f64>);
-impl GeozeroGeometry for Xy<'_> {
-    fn dims(&self) -> CoordDimensions {
-        CoordDimensions::xy()
-    }
-    fn process_geom<P: GeomProcessor>(&self, p: &mut P) -> flatgeobuf::geozero::error::Result<()> {
-        process(self.0, p, 0)
-    }
-}
-fn process<P: GeomProcessor>(
-    g: &Geometry<f64>,
-    p: &mut P,
-    i: usize,
-) -> flatgeobuf::geozero::error::Result<()> {
-    use geo_types::Geometry::*;
-    fn line<P: GeomProcessor>(
-        l: &geo_types::LineString,
-        p: &mut P,
-        tagged: bool,
-        i: usize,
-    ) -> flatgeobuf::geozero::error::Result<()> {
-        p.linestring_begin(tagged, l.0.len(), i)?;
-        for (n, c) in l.0.iter().enumerate() {
-            p.xy(c.x, c.y, n)?;
-        }
-        p.linestring_end(tagged, i)
-    }
-    fn polygon<P: GeomProcessor>(
-        v: &geo_types::Polygon,
-        p: &mut P,
-        tagged: bool,
-        i: usize,
-    ) -> flatgeobuf::geozero::error::Result<()> {
-        p.polygon_begin(tagged, v.interiors().len() + 1, i)?;
-        line(v.exterior(), p, false, 0)?;
-        for (n, l) in v.interiors().iter().enumerate() {
-            line(l, p, false, n + 1)?;
-        }
-        p.polygon_end(tagged, i)
-    }
-    match g {
-        Point(v) => {
-            p.point_begin(i)?;
-            p.xy(v.x(), v.y(), 0)?;
-            p.point_end(i)
-        }
-        LineString(v) => line(v, p, true, i),
-        Polygon(v) => polygon(v, p, true, i),
-        MultiPoint(v) => {
-            p.multipoint_begin(v.0.len(), i)?;
-            for (n, v) in v.0.iter().enumerate() {
-                p.xy(v.x(), v.y(), n)?;
-            }
-            p.multipoint_end(i)
-        }
-        MultiLineString(v) => {
-            p.multilinestring_begin(v.0.len(), i)?;
-            for (n, l) in v.0.iter().enumerate() {
-                line(l, p, false, n)?;
-            }
-            p.multilinestring_end(i)
-        }
-        MultiPolygon(v) => {
-            p.multipolygon_begin(v.0.len(), i)?;
-            for (n, v) in v.0.iter().enumerate() {
-                polygon(v, p, false, n)?;
-            }
-            p.multipolygon_end(i)
-        }
-        GeometryCollection(v) => {
-            p.geometrycollection_begin(v.0.len(), i)?;
-            for (n, g) in v.0.iter().enumerate() {
-                process(g, p, n)?;
-            }
-            p.geometrycollection_end(i)
-        }
-        Line(v) => line(&geo_types::LineString(vec![v.start, v.end]), p, true, i),
-        Rect(v) => polygon(&v.to_polygon(), p, true, i),
-        Triangle(v) => polygon(&v.to_polygon(), p, true, i),
-    }
 }

@@ -171,3 +171,52 @@ pub(crate) fn extract(
     let _ = primary;
     Ok(destination.join(format!("{base}.shp")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncated_encrypted_and_crc_damaged_archives_are_rejected() {
+        let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(vec![]));
+        for name in ["roads.shp", "roads.shx", "roads.dbf"] {
+            writer
+                .start_file(
+                    name,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
+                .unwrap();
+            writer.write_all(b"crc-test-payload").unwrap();
+        }
+        let valid = writer.finish().unwrap().into_inner();
+        let mut damaged = valid.clone();
+        let payload = damaged
+            .windows(16)
+            .position(|v| v == b"crc-test-payload")
+            .unwrap();
+        damaged[payload] ^= 1;
+        let mut encrypted = valid.clone();
+        // Set the traditional encryption flag in both local and central
+        // headers; no encryption support is compiled into the upload reader.
+        for (signature, flag_offset) in [(b"PK\x03\x04", 6), (b"PK\x01\x02", 8)] {
+            for i in 0..encrypted.len() - flag_offset {
+                if encrypted.get(i..i + 4) == Some(signature.as_slice()) {
+                    encrypted[i + flag_offset] |= 1;
+                }
+            }
+        }
+        for bytes in [
+            &valid[..valid.len() - 12],
+            damaged.as_slice(),
+            encrypted.as_slice(),
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let input = root.path().join("input.zip");
+            let output = root.path().join("unpacked");
+            std::fs::write(&input, bytes).unwrap();
+            assert!(extract(&input, &output, &config.profile, &config.profile.context()).is_err());
+        }
+    }
+}

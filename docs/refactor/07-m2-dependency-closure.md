@@ -1,6 +1,6 @@
 # M2 candidate dependency closure
 
-Status: **candidate; G-01 pending owner review**. On 2026-11-13 the owner authorized compatibility testing with this closure, without approving it as the formal dependency baseline. Exact direct versions remain those in the decision register.
+Status: **historical M2 inventory; superseded by the accepted M3 closure**. Compatibility testing was authorized on 2026-11-13. On 2026-11-15 the owner approved all existing dependencies; see the [current M3 inventory](08-m3-dependency-closure.md) and versioned approval record. Exact versions remain pinned.
 
 Generated from `cargo metadata --all-features --locked --format-version 1` and `Cargo.lock` on Windows x86_64 MSVC. This is the all-target resolver graph (including platform-specific packages), not evidence that every listed package was built on this host. The configured Cargo registry replacement downloaded archives from the USTC mirror; canonical lockfile sources remain crates.io.
 
@@ -372,6 +372,6 @@ These declarations identify review candidates; a build script does not necessari
 
 ## Toolchain and native-input boundary
 
-Compatibility tests used Rust/Cargo 1.96.0 on Windows x86_64 MSVC. M2 uses Rust projection and Rust TIFF decoding; native PROJ, GDAL, SQLite resource storage, archive helpers, Axum, container APK packages and musl tooling are not added by this change. Existing GPU closures expose platform interfaces, including the Vulkan loader and Windows DX12, and still require platform-specific runtime verification. Build scripts and target SDK/link requirements above remain part of G-01 review.
+Compatibility tests used Rust/Cargo 1.96.0 on Windows x86_64 MSVC. M2 uses Rust projection and Rust TIFF decoding; native PROJ, GDAL, SQLite resource storage, archive helpers, Axum, container APK packages and musl tooling are not added by this change. Existing GPU closures expose platform interfaces, including the Vulkan loader and Windows DX12, and still require platform-specific runtime verification. Build scripts and target SDK/link requirements above are retained as approval evidence; platform validation remains separate.
 
-The table contains 288 packages, including the workspace. No missing third-party checksum is accepted. Metadata license declarations and native declarations are an inventory, not a completed license/notices audit. G-01 remains open until the owner approves the concrete closure and required platform inputs.
+The table contains 288 packages, including the workspace. No missing third-party checksum is accepted. Metadata license declarations and native declarations are an inventory, not a completed license/notices audit. The current M1-M3 closure has owner approval dated 2026-11-15; platform validation and future native/container inputs remain separate gates.

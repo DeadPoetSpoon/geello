@@ -47,13 +47,13 @@ readable after the refactor.
 
 | Area | Evidence | Current responsibility |
 | --- | --- | --- |
-| Library entry | [src/lib.rs](../../src/lib.rs) | Mutable geometry/style input, Vello scene creation, GPU texture output, blocking GPU readback |
+| Library entry | [src/lib.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/lib.rs) | Mutable geometry/style input, Vello scene creation, GPU texture output, blocking GPU readback |
 | Geometry | [src/rendered_geometry.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/rendered_geometry.rs) | Original geometry plus cached line/area/anchor conversions and properties |
 | Configuration | [src/render_option.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/render_option.rs), [src/magic_value.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/magic_value.rs) | RON-era options, dynamic values, fetching/conversion, viewport and output settings |
-| Symbols | [src/renderer](../../src/renderer) | Point/line/area preparation and drawing coupled together |
+| Symbols | [src/renderer](https://github.com/DeadPoetSpoon/geello/tree/841b0df833bfce86c308e777cec157b40b0c0de0/src/renderer) | Point/line/area preparation and drawing coupled together |
 | Coordinates | [src/utils.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/utils.rs) | Hardcoded 4326/3857 transforms and tile bounds |
 | Server | [src/server.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/server.rs), [src/main.rs](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/src/main.rs) | Rocket routes, data/style loading, caches, GPU management, image encoding, WS loop |
-| Dependencies | [Cargo.toml](../../Cargo.toml) | Old Vello 0.5.0/Rocket design; server feature; runtime coupled into library dependencies |
+| Dependencies | [Cargo.toml](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/Cargo.toml) | Old Vello 0.5.0/Rocket design; server feature; runtime coupled into library dependencies |
 
 Existing capabilities are experimental GPU vector drawing, image output, WMS-like and WMTS-like endpoints, local/URL loading, and a message-driven WebSocket demo. They are not a complete standards implementation. Shapefile reading, GeoTIFF processing, lossless feature queries, a CPU backend, Unicode shaping, and the new snapshot lifecycle are absent.
 
@@ -102,9 +102,9 @@ The 42 test attributes are static evidence only. They do not establish coverage 
 
 ## 4. Build, deployment, and documentation findings
 
-The baseline [Dockerfile](../../Dockerfile) installs the registry crate with `cargo install -F server geello` rather than building the checked-out redesign. It uses a moving Rust base and installs Vulkan support, but has no musl builder plus pinned Alpine runtime, no default-GPU/independent-CPU image variants, and no resource volume/staging contract. It cannot validate the new local source or the approved dependency graph.
+The baseline [Dockerfile](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/Dockerfile) installs the registry crate with `cargo install -F server geello` rather than building the checked-out redesign. It uses a moving Rust base and installs Vulkan support, but has no musl builder plus pinned Alpine runtime, no default-GPU/independent-CPU image variants, and no resource volume/staging contract. It cannot validate the new local source or the approved dependency graph.
 
-The tracked [Docker publishing workflow](../../.github/workflows/docker-publish.yml) builds/publishes/signs an image on version tags. No general feature-matrix/test CI was identified. A publish workflow is not a substitute for Windows/Linux and real-GPU acceptance.
+The tracked [Docker publishing workflow](https://github.com/DeadPoetSpoon/geello/blob/841b0df833bfce86c308e777cec157b40b0c0de0/.github/workflows/docker-publish.yml) builds/publishes/signs an image on version tags. No general feature-matrix/test CI was identified. A publish workflow is not a substitute for Windows/Linux and real-GPU acceptance.
 
 The existing root README describes experimental URLs, direct path parameters, old mutable APIs, and GPU deployment assumptions. This delivery adds a design entry point while retaining those prototype instructions as historical/current-code documentation. Migration guidance must later replace the old operational instructions when the new implementation exists.
 

@@ -3,6 +3,7 @@
 //! Scene preparation and execution own memory only. Optional readers and TOML
 //! loading perform explicit, budgeted I/O before preparing an immutable scene.
 
+pub mod animation;
 #[cfg(any(feature = "render-cpu", feature = "render-gpu"))]
 mod backend;
 #[cfg(feature = "config-toml")]

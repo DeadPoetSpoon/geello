@@ -150,12 +150,6 @@ impl<T> Accounted<T> {
     pub(crate) fn into_parts(self) -> (T, Vec<Reservation>) {
         (self.value, self._reservations)
     }
-    #[cfg(any(
-        feature = "config-toml",
-        feature = "rust-proj",
-        feature = "derived-store",
-        feature = "encode-images"
-    ))]
     pub(crate) fn new(value: T, reservations: Vec<Reservation>) -> Self {
         Self {
             value,

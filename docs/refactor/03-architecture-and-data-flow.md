@@ -1,6 +1,8 @@
 # Architecture and data flow
 
-This is the Accepted target architecture. It is not implemented at the baseline. See [requirements](02-requirements-and-acceptance.md) for acceptance IDs and [interfaces](04-public-apis-and-configuration.md) for target contracts.
+This is the Accepted target architecture. M1–M3 and the memory-only M4
+animation subset are implemented on `refactor`; text, geometry trajectories and
+public protocol surfaces remain staged work. See [requirements](02-requirements-and-acceptance.md) for acceptance IDs and [interfaces](04-public-apis-and-configuration.md) for target contracts.
 
 The [M3 implementation checkpoint](09-m3-service-and-evidence.md) records the
 current derived formats, resource publication/retention, lazy preparation,

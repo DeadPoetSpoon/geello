@@ -33,12 +33,16 @@ independent vector cursors, exact/bbox spatial query modes, Rust projection,
 typed raster validity/calibration/resampling, and strict TOML resource/style
 validation. M3 adds immutable vector/raster derived stores, a protected
 `/admin/v1` resource lifecycle API, sharded atomic catalog generations,
-bounded scheduling/caches and basic Axum map/tile PNG responses. See the
+bounded scheduling/caches and basic Axum map/tile PNG responses. M4 now adds
+stateless style/raster animation at `geello_time`. See the
 [M3 service guide and evidence](docs/refactor/09-m3-service-and-evidence.md)
-for actual interfaces and remaining acceptance gaps. OGC services and WebSocket
-animation remain M4. The old mutable
+for actual interfaces and evidence. OGC services, WebSocket animation, text,
+and geometry trajectories remain M4. The old mutable
 `RenderedGeometry`/`RenderOption` and Rocket prototype were removed during the
 refactor.
+
+The [M4 animation checkpoint](docs/refactor/10-m4-animation-and-evidence.md)
+includes uploadable style/map/animation bodies and image/tile time examples.
 
 ## M1 library example
 

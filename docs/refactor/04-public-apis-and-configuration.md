@@ -1,11 +1,19 @@
 # Public APIs, configuration, and protocol contracts
 
-This document describes the **target**. None of the new APIs or schemas is implemented by this documentation change. Behavioral requirements are Accepted; Rust identifiers and example field spellings below are proposed interface forms to carry those requirements into implementation. They are not a claim of source compatibility, a released wire schema, or executable examples for v0.2.0.
+This document describes the **target**. The M1–M3 checkpoint and the memory-only
+M4 animation subset are implemented on `refactor`; OGC/WebSocket/text contracts
+remain targets. Behavioral requirements are Accepted; Rust identifiers and
+example field spellings below are proposed interface forms to carry those
+requirements into implementation. They are not a claim of source compatibility
+or a released wire schema.
 
 Implementation checkpoint: M1–M3 now provide library and basic server contracts.
 Use the [M3 service guide](09-m3-service-and-evidence.md) for runnable startup,
 current resource API/operation shapes, HTTP routes and explicit limitations.
-The OGC/WebSocket contracts below remain targets for M4.
+The OGC/WebSocket/text contracts below remain targets for M4.
+The [M4 animation checkpoint](10-m4-animation-and-evidence.md) defines the
+implemented style parameter/units, binding conflicts and basic HTTP
+`geello_time` subset independently of those target protocols.
 
 ## 1. Public library surfaces
 
