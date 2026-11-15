@@ -42,6 +42,9 @@ def main():
         fail("font manifest hash drifted")
     subprocess.run([sys.executable, "tools/generate_http_docs.py", "--check"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "tools/generate_sbom.py", "--check"], cwd=ROOT, check=True)
+    sbom = json.loads((ROOT / "docs/refactor/m6-sbom.json").read_text(encoding="utf-8"))
+    if any(component["purl"].startswith("path+file:") for component in sbom["components"]):
+        fail("SBOM contains checkout-specific local PURLs")
     print(json.dumps({"status": "pass", "version": cargo["package"]["version"],
                       "lock_sha256": hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest(),
                       "native_versions": expected}, indent=2))

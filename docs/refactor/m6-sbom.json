@@ -20,7 +20,7 @@
       "type": "library",
       "name": "adler2",
       "version": "2.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#adler2@2.0.1",
+      "purl": "pkg:cargo/adler2@2.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -39,7 +39,7 @@
       "type": "library",
       "name": "aho-corasick",
       "version": "1.1.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#aho-corasick@1.1.3",
+      "purl": "pkg:cargo/aho-corasick@1.1.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -58,7 +58,7 @@
       "type": "library",
       "name": "allocator-api2",
       "version": "0.2.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#allocator-api2@0.2.21",
+      "purl": "pkg:cargo/allocator-api2@0.2.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -77,7 +77,7 @@
       "type": "library",
       "name": "android_system_properties",
       "version": "0.1.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#android_system_properties@0.1.5",
+      "purl": "pkg:cargo/android_system_properties@0.1.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -96,7 +96,7 @@
       "type": "library",
       "name": "annotate-snippets",
       "version": "0.12.18",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#annotate-snippets@0.12.18",
+      "purl": "pkg:cargo/annotate-snippets@0.12.18",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -115,7 +115,7 @@
       "type": "library",
       "name": "anstyle",
       "version": "1.0.14",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#anstyle@1.0.14",
+      "purl": "pkg:cargo/anstyle@1.0.14",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -134,7 +134,7 @@
       "type": "library",
       "name": "anyhow",
       "version": "1.0.104",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
+      "purl": "pkg:cargo/anyhow@1.0.104",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -153,7 +153,7 @@
       "type": "library",
       "name": "approx",
       "version": "0.5.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#approx@0.5.1",
+      "purl": "pkg:cargo/approx@0.5.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -172,7 +172,7 @@
       "type": "library",
       "name": "arrayvec",
       "version": "0.7.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#arrayvec@0.7.6",
+      "purl": "pkg:cargo/arrayvec@0.7.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -191,7 +191,7 @@
       "type": "library",
       "name": "as-slice",
       "version": "0.1.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#as-slice@0.1.5",
+      "purl": "pkg:cargo/as-slice@0.1.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -210,7 +210,7 @@
       "type": "library",
       "name": "ascii-canvas",
       "version": "4.0.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ascii-canvas@4.0.0",
+      "purl": "pkg:cargo/ascii-canvas@4.0.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -229,7 +229,7 @@
       "type": "library",
       "name": "ash",
       "version": "0.38.0+1.3.281",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ash@0.38.0+1.3.281",
+      "purl": "pkg:cargo/ash@0.38.0+1.3.281",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -248,7 +248,7 @@
       "type": "library",
       "name": "asyncband",
       "version": "0.7.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#asyncband@0.7.4",
+      "purl": "pkg:cargo/asyncband@0.7.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -267,7 +267,7 @@
       "type": "library",
       "name": "atomic-polyfill",
       "version": "1.0.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#atomic-polyfill@1.0.3",
+      "purl": "pkg:cargo/atomic-polyfill@1.0.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -286,7 +286,7 @@
       "type": "library",
       "name": "atomic-waker",
       "version": "1.1.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#atomic-waker@1.1.2",
+      "purl": "pkg:cargo/atomic-waker@1.1.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -305,7 +305,7 @@
       "type": "library",
       "name": "autocfg",
       "version": "1.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#autocfg@1.4.0",
+      "purl": "pkg:cargo/autocfg@1.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -324,7 +324,7 @@
       "type": "library",
       "name": "axum",
       "version": "0.8.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#axum@0.8.9",
+      "purl": "pkg:cargo/axum@0.8.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -343,7 +343,7 @@
       "type": "library",
       "name": "axum-core",
       "version": "0.5.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#axum-core@0.5.6",
+      "purl": "pkg:cargo/axum-core@0.5.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -362,7 +362,7 @@
       "type": "library",
       "name": "base64",
       "version": "0.22.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
+      "purl": "pkg:cargo/base64@0.22.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -381,7 +381,7 @@
       "type": "library",
       "name": "bit-set",
       "version": "0.10.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bit-set@0.10.0",
+      "purl": "pkg:cargo/bit-set@0.10.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -400,7 +400,7 @@
       "type": "library",
       "name": "bit-set",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bit-set@0.8.0",
+      "purl": "pkg:cargo/bit-set@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -419,7 +419,7 @@
       "type": "library",
       "name": "bit-vec",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bit-vec@0.8.0",
+      "purl": "pkg:cargo/bit-vec@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -438,7 +438,7 @@
       "type": "library",
       "name": "bit-vec",
       "version": "0.9.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bit-vec@0.9.1",
+      "purl": "pkg:cargo/bit-vec@0.9.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -457,7 +457,7 @@
       "type": "library",
       "name": "bitflags",
       "version": "1.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bitflags@1.3.2",
+      "purl": "pkg:cargo/bitflags@1.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -476,7 +476,7 @@
       "type": "library",
       "name": "bitflags",
       "version": "2.13.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bitflags@2.13.2",
+      "purl": "pkg:cargo/bitflags@2.13.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -495,7 +495,7 @@
       "type": "library",
       "name": "blake3",
       "version": "1.8.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.7",
+      "purl": "pkg:cargo/blake3@1.8.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -514,7 +514,7 @@
       "type": "library",
       "name": "block-buffer",
       "version": "0.10.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#block-buffer@0.10.4",
+      "purl": "pkg:cargo/block-buffer@0.10.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -533,7 +533,7 @@
       "type": "library",
       "name": "bufrw",
       "version": "0.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bufrw@0.2.0",
+      "purl": "pkg:cargo/bufrw@0.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -552,7 +552,7 @@
       "type": "library",
       "name": "bumpalo",
       "version": "3.18.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bumpalo@3.18.1",
+      "purl": "pkg:cargo/bumpalo@3.18.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -571,7 +571,7 @@
       "type": "library",
       "name": "bytemuck",
       "version": "1.25.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bytemuck@1.25.2",
+      "purl": "pkg:cargo/bytemuck@1.25.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -590,7 +590,7 @@
       "type": "library",
       "name": "bytemuck_derive",
       "version": "1.12.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bytemuck_derive@1.12.1",
+      "purl": "pkg:cargo/bytemuck_derive@1.12.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -609,7 +609,7 @@
       "type": "library",
       "name": "byteorder",
       "version": "1.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#byteorder@1.5.0",
+      "purl": "pkg:cargo/byteorder@1.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -628,7 +628,7 @@
       "type": "library",
       "name": "byteorder-lite",
       "version": "0.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#byteorder-lite@0.1.0",
+      "purl": "pkg:cargo/byteorder-lite@0.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -647,7 +647,7 @@
       "type": "library",
       "name": "bytes",
       "version": "1.12.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
+      "purl": "pkg:cargo/bytes@1.12.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -666,7 +666,7 @@
       "type": "library",
       "name": "cc",
       "version": "1.11.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cc@1.11.1",
+      "purl": "pkg:cargo/cc@1.11.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -685,7 +685,7 @@
       "type": "library",
       "name": "cfg-if",
       "version": "1.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cfg-if@1.0.1",
+      "purl": "pkg:cargo/cfg-if@1.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -704,7 +704,7 @@
       "type": "library",
       "name": "cfg_aliases",
       "version": "0.2.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cfg_aliases@0.2.2",
+      "purl": "pkg:cargo/cfg_aliases@0.2.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -723,7 +723,7 @@
       "type": "library",
       "name": "chacha20",
       "version": "0.10.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#chacha20@0.10.2",
+      "purl": "pkg:cargo/chacha20@0.10.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -742,7 +742,7 @@
       "type": "library",
       "name": "codepage",
       "version": "0.1.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#codepage@0.1.2",
+      "purl": "pkg:cargo/codepage@0.1.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -761,7 +761,7 @@
       "type": "library",
       "name": "codespan-reporting",
       "version": "0.13.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#codespan-reporting@0.13.1",
+      "purl": "pkg:cargo/codespan-reporting@0.13.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -780,7 +780,7 @@
       "type": "library",
       "name": "color",
       "version": "0.3.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#color@0.3.3",
+      "purl": "pkg:cargo/color@0.3.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -799,7 +799,7 @@
       "type": "library",
       "name": "console_log",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#console_log@1.1.0",
+      "purl": "pkg:cargo/console_log@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -818,7 +818,7 @@
       "type": "library",
       "name": "constant_time_eq",
       "version": "0.4.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#constant_time_eq@0.4.2",
+      "purl": "pkg:cargo/constant_time_eq@0.4.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -837,7 +837,7 @@
       "type": "library",
       "name": "constant_time_eq",
       "version": "0.6.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#constant_time_eq@0.6.1",
+      "purl": "pkg:cargo/constant_time_eq@0.6.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -856,7 +856,7 @@
       "type": "library",
       "name": "convert_case",
       "version": "0.10.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#convert_case@0.10.0",
+      "purl": "pkg:cargo/convert_case@0.10.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -875,7 +875,7 @@
       "type": "library",
       "name": "core_affinity",
       "version": "0.8.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#core_affinity@0.8.3",
+      "purl": "pkg:cargo/core_affinity@0.8.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -894,7 +894,7 @@
       "type": "library",
       "name": "core_maths",
       "version": "0.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#core_maths@0.1.1",
+      "purl": "pkg:cargo/core_maths@0.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -913,7 +913,7 @@
       "type": "library",
       "name": "cosmic-text",
       "version": "0.19.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cosmic-text@0.19.0",
+      "purl": "pkg:cargo/cosmic-text@0.19.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -932,7 +932,7 @@
       "type": "library",
       "name": "cpufeatures",
       "version": "0.2.17",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cpufeatures@0.2.17",
+      "purl": "pkg:cargo/cpufeatures@0.2.17",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -951,7 +951,7 @@
       "type": "library",
       "name": "cpufeatures",
       "version": "0.3.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#cpufeatures@0.3.1",
+      "purl": "pkg:cargo/cpufeatures@0.3.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -970,7 +970,7 @@
       "type": "library",
       "name": "crc32fast",
       "version": "1.5.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crc32fast@1.5.5",
+      "purl": "pkg:cargo/crc32fast@1.5.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -989,7 +989,7 @@
       "type": "library",
       "name": "critical-section",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#critical-section@1.2.0",
+      "purl": "pkg:cargo/critical-section@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1008,7 +1008,7 @@
       "type": "library",
       "name": "crossbeam-channel",
       "version": "0.5.17",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crossbeam-channel@0.5.17",
+      "purl": "pkg:cargo/crossbeam-channel@0.5.17",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1027,7 +1027,7 @@
       "type": "library",
       "name": "crossbeam-deque",
       "version": "0.8.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crossbeam-deque@0.8.6",
+      "purl": "pkg:cargo/crossbeam-deque@0.8.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1046,7 +1046,7 @@
       "type": "library",
       "name": "crossbeam-epoch",
       "version": "0.9.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crossbeam-epoch@0.9.21",
+      "purl": "pkg:cargo/crossbeam-epoch@0.9.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1065,7 +1065,7 @@
       "type": "library",
       "name": "crossbeam-utils",
       "version": "0.8.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crossbeam-utils@0.8.21",
+      "purl": "pkg:cargo/crossbeam-utils@0.8.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1084,7 +1084,7 @@
       "type": "library",
       "name": "crs-definitions",
       "version": "0.6.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crs-definitions@0.6.0",
+      "purl": "pkg:cargo/crs-definitions@0.6.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1103,7 +1103,7 @@
       "type": "library",
       "name": "crunchy",
       "version": "0.2.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crunchy@0.2.3",
+      "purl": "pkg:cargo/crunchy@0.2.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1122,7 +1122,7 @@
       "type": "library",
       "name": "crypto-common",
       "version": "0.1.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#crypto-common@0.1.6",
+      "purl": "pkg:cargo/crypto-common@0.1.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1141,7 +1141,7 @@
       "type": "library",
       "name": "data-encoding",
       "version": "2.11.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#data-encoding@2.11.1",
+      "purl": "pkg:cargo/data-encoding@2.11.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1160,7 +1160,7 @@
       "type": "library",
       "name": "datasketches",
       "version": "0.3.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#datasketches@0.3.0",
+      "purl": "pkg:cargo/datasketches@0.3.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1179,7 +1179,7 @@
       "type": "library",
       "name": "dbase",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#dbase@0.8.0",
+      "purl": "pkg:cargo/dbase@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1198,7 +1198,7 @@
       "type": "library",
       "name": "deranged",
       "version": "0.5.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#deranged@0.5.9",
+      "purl": "pkg:cargo/deranged@0.5.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1217,7 +1217,7 @@
       "type": "library",
       "name": "derive_more",
       "version": "2.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#derive_more@2.1.1",
+      "purl": "pkg:cargo/derive_more@2.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1236,7 +1236,7 @@
       "type": "library",
       "name": "derive_more-impl",
       "version": "2.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#derive_more-impl@2.1.1",
+      "purl": "pkg:cargo/derive_more-impl@2.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1255,7 +1255,7 @@
       "type": "library",
       "name": "digest",
       "version": "0.10.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#digest@0.10.7",
+      "purl": "pkg:cargo/digest@0.10.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1274,7 +1274,7 @@
       "type": "library",
       "name": "dispatch2",
       "version": "0.3.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#dispatch2@0.3.1",
+      "purl": "pkg:cargo/dispatch2@0.3.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1293,7 +1293,7 @@
       "type": "library",
       "name": "document-features",
       "version": "0.2.11",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#document-features@0.2.11",
+      "purl": "pkg:cargo/document-features@0.2.11",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1312,7 +1312,7 @@
       "type": "library",
       "name": "either",
       "version": "1.15.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#either@1.15.0",
+      "purl": "pkg:cargo/either@1.15.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1331,7 +1331,7 @@
       "type": "library",
       "name": "ena",
       "version": "0.14.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ena@0.14.4",
+      "purl": "pkg:cargo/ena@0.14.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1350,7 +1350,7 @@
       "type": "library",
       "name": "encoding_rs",
       "version": "0.8.35",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#encoding_rs@0.8.35",
+      "purl": "pkg:cargo/encoding_rs@0.8.35",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1369,7 +1369,7 @@
       "type": "library",
       "name": "equivalent",
       "version": "1.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#equivalent@1.0.2",
+      "purl": "pkg:cargo/equivalent@1.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1388,7 +1388,7 @@
       "type": "library",
       "name": "errno",
       "version": "0.3.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#errno@0.3.15",
+      "purl": "pkg:cargo/errno@0.3.15",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1407,7 +1407,7 @@
       "type": "library",
       "name": "euclid",
       "version": "0.22.14",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#euclid@0.22.14",
+      "purl": "pkg:cargo/euclid@0.22.14",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1426,7 +1426,7 @@
       "type": "library",
       "name": "fallible-streaming-iterator",
       "version": "0.1.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fallible-streaming-iterator@0.1.9",
+      "purl": "pkg:cargo/fallible-streaming-iterator@0.1.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1445,7 +1445,7 @@
       "type": "library",
       "name": "fastant",
       "version": "0.1.11",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fastant@0.1.11",
+      "purl": "pkg:cargo/fastant@0.1.11",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1464,7 +1464,7 @@
       "type": "library",
       "name": "fastrand",
       "version": "2.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fastrand@2.5.0",
+      "purl": "pkg:cargo/fastrand@2.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1483,7 +1483,7 @@
       "type": "library",
       "name": "fax",
       "version": "0.2.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fax@0.2.7",
+      "purl": "pkg:cargo/fax@0.2.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1502,7 +1502,7 @@
       "type": "library",
       "name": "fdeflate",
       "version": "0.3.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fdeflate@0.3.7",
+      "purl": "pkg:cargo/fdeflate@0.3.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1521,7 +1521,7 @@
       "type": "library",
       "name": "fearless_simd",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fearless_simd@1.2.0",
+      "purl": "pkg:cargo/fearless_simd@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1540,7 +1540,7 @@
       "type": "library",
       "name": "fearless_simd_macros",
       "version": "0.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fearless_simd_macros@0.1.0",
+      "purl": "pkg:cargo/fearless_simd_macros@0.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1559,7 +1559,7 @@
       "type": "library",
       "name": "find-msvc-tools",
       "version": "0.1.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#find-msvc-tools@0.1.15",
+      "purl": "pkg:cargo/find-msvc-tools@0.1.15",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1578,7 +1578,7 @@
       "type": "library",
       "name": "fixedbitset",
       "version": "0.5.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fixedbitset@0.5.9",
+      "purl": "pkg:cargo/fixedbitset@0.5.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1597,7 +1597,7 @@
       "type": "library",
       "name": "flatbuffers",
       "version": "24.12.23",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#flatbuffers@24.12.23",
+      "purl": "pkg:cargo/flatbuffers@24.12.23",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1616,7 +1616,7 @@
       "type": "library",
       "name": "flate2",
       "version": "1.1.11",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#flate2@1.1.11",
+      "purl": "pkg:cargo/flate2@1.1.11",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1635,7 +1635,7 @@
       "type": "library",
       "name": "flatgeobuf",
       "version": "6.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#flatgeobuf@6.0.1",
+      "purl": "pkg:cargo/flatgeobuf@6.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1654,7 +1654,7 @@
       "type": "library",
       "name": "float_next_after",
       "version": "2.0.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#float_next_after@2.0.0",
+      "purl": "pkg:cargo/float_next_after@2.0.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1673,7 +1673,7 @@
       "type": "library",
       "name": "fnv",
       "version": "1.0.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fnv@1.0.7",
+      "purl": "pkg:cargo/fnv@1.0.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1692,7 +1692,7 @@
       "type": "library",
       "name": "foldhash",
       "version": "0.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foldhash@0.2.0",
+      "purl": "pkg:cargo/foldhash@0.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1711,7 +1711,7 @@
       "type": "library",
       "name": "font-types",
       "version": "0.11.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#font-types@0.11.3",
+      "purl": "pkg:cargo/font-types@0.11.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1730,7 +1730,7 @@
       "type": "library",
       "name": "font-types",
       "version": "0.12.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#font-types@0.12.7",
+      "purl": "pkg:cargo/font-types@0.12.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1749,7 +1749,7 @@
       "type": "library",
       "name": "fontdb",
       "version": "0.23.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fontdb@0.23.0",
+      "purl": "pkg:cargo/fontdb@0.23.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1768,7 +1768,7 @@
       "type": "library",
       "name": "form_urlencoded",
       "version": "1.2.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#form_urlencoded@1.2.2",
+      "purl": "pkg:cargo/form_urlencoded@1.2.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1787,7 +1787,7 @@
       "type": "library",
       "name": "foyer",
       "version": "0.22.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer@0.22.6",
+      "purl": "pkg:cargo/foyer@0.22.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1806,7 +1806,7 @@
       "type": "library",
       "name": "foyer-common",
       "version": "0.22.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer-common@0.22.6",
+      "purl": "pkg:cargo/foyer-common@0.22.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1825,7 +1825,7 @@
       "type": "library",
       "name": "foyer-intrusive-collections",
       "version": "0.10.0-dev",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer-intrusive-collections@0.10.0-dev",
+      "purl": "pkg:cargo/foyer-intrusive-collections@0.10.0-dev",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1844,7 +1844,7 @@
       "type": "library",
       "name": "foyer-memory",
       "version": "0.22.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer-memory@0.22.6",
+      "purl": "pkg:cargo/foyer-memory@0.22.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1863,7 +1863,7 @@
       "type": "library",
       "name": "foyer-storage",
       "version": "0.22.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer-storage@0.22.6",
+      "purl": "pkg:cargo/foyer-storage@0.22.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1882,7 +1882,7 @@
       "type": "library",
       "name": "foyer-tokio",
       "version": "0.22.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#foyer-tokio@0.22.6",
+      "purl": "pkg:cargo/foyer-tokio@0.22.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1901,7 +1901,7 @@
       "type": "library",
       "name": "fs4",
       "version": "0.13.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#fs4@0.13.1",
+      "purl": "pkg:cargo/fs4@0.13.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1920,7 +1920,7 @@
       "type": "library",
       "name": "futures-core",
       "version": "0.3.34",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#futures-core@0.3.34",
+      "purl": "pkg:cargo/futures-core@0.3.34",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1939,7 +1939,7 @@
       "type": "library",
       "name": "futures-sink",
       "version": "0.3.34",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#futures-sink@0.3.34",
+      "purl": "pkg:cargo/futures-sink@0.3.34",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1958,7 +1958,7 @@
       "type": "library",
       "name": "futures-task",
       "version": "0.3.34",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#futures-task@0.3.34",
+      "purl": "pkg:cargo/futures-task@0.3.34",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1977,7 +1977,7 @@
       "type": "library",
       "name": "futures-util",
       "version": "0.3.34",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#futures-util@0.3.34",
+      "purl": "pkg:cargo/futures-util@0.3.34",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -1996,7 +1996,7 @@
       "type": "library",
       "name": "geello",
       "version": "0.2.0",
-      "purl": "path+file:///D:/Rust/geello#0.2.0",
+      "purl": "pkg:cargo/geello@0.2.0",
       "hashes": [],
       "licenses": [
         {
@@ -2010,7 +2010,7 @@
       "type": "library",
       "name": "generic-array",
       "version": "0.12.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#generic-array@0.12.4",
+      "purl": "pkg:cargo/generic-array@0.12.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2029,7 +2029,7 @@
       "type": "library",
       "name": "generic-array",
       "version": "0.13.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#generic-array@0.13.3",
+      "purl": "pkg:cargo/generic-array@0.13.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2048,7 +2048,7 @@
       "type": "library",
       "name": "generic-array",
       "version": "0.14.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#generic-array@0.14.7",
+      "purl": "pkg:cargo/generic-array@0.14.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2067,7 +2067,7 @@
       "type": "library",
       "name": "geo",
       "version": "0.33.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geo@0.33.1",
+      "purl": "pkg:cargo/geo@0.33.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2086,7 +2086,7 @@
       "type": "library",
       "name": "geo-traits",
       "version": "0.3.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geo-traits@0.3.0",
+      "purl": "pkg:cargo/geo-traits@0.3.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2105,7 +2105,7 @@
       "type": "library",
       "name": "geo-types",
       "version": "0.7.20",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geo-types@0.7.20",
+      "purl": "pkg:cargo/geo-types@0.7.20",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2124,7 +2124,7 @@
       "type": "library",
       "name": "geographiclib-rs",
       "version": "0.2.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geographiclib-rs@0.2.5",
+      "purl": "pkg:cargo/geographiclib-rs@0.2.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2143,7 +2143,7 @@
       "type": "library",
       "name": "geojson",
       "version": "1.0.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geojson@1.0.0",
+      "purl": "pkg:cargo/geojson@1.0.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2162,7 +2162,7 @@
       "type": "library",
       "name": "geozero",
       "version": "0.15.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#geozero@0.15.1",
+      "purl": "pkg:cargo/geozero@0.15.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2181,7 +2181,7 @@
       "type": "library",
       "name": "getrandom",
       "version": "0.3.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.3.4",
+      "purl": "pkg:cargo/getrandom@0.3.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2200,7 +2200,7 @@
       "type": "library",
       "name": "getrandom",
       "version": "0.4.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.4.3",
+      "purl": "pkg:cargo/getrandom@0.4.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2219,7 +2219,7 @@
       "type": "library",
       "name": "glifo",
       "version": "0.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#glifo@0.5.0",
+      "purl": "pkg:cargo/glifo@0.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2238,7 +2238,7 @@
       "type": "library",
       "name": "gpu-allocator",
       "version": "0.28.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#gpu-allocator@0.28.0",
+      "purl": "pkg:cargo/gpu-allocator@0.28.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2257,7 +2257,7 @@
       "type": "library",
       "name": "guillotiere",
       "version": "0.7.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#guillotiere@0.7.0",
+      "purl": "pkg:cargo/guillotiere@0.7.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2276,7 +2276,7 @@
       "type": "library",
       "name": "half",
       "version": "2.6.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#half@2.6.0",
+      "purl": "pkg:cargo/half@2.6.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2295,7 +2295,7 @@
       "type": "library",
       "name": "harfrust",
       "version": "0.5.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#harfrust@0.5.2",
+      "purl": "pkg:cargo/harfrust@0.5.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2314,7 +2314,7 @@
       "type": "library",
       "name": "hash32",
       "version": "0.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hash32@0.1.1",
+      "purl": "pkg:cargo/hash32@0.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2333,7 +2333,7 @@
       "type": "library",
       "name": "hash32",
       "version": "0.2.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hash32@0.2.1",
+      "purl": "pkg:cargo/hash32@0.2.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2352,7 +2352,7 @@
       "type": "library",
       "name": "hash32",
       "version": "0.3.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hash32@0.3.1",
+      "purl": "pkg:cargo/hash32@0.3.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2371,7 +2371,7 @@
       "type": "library",
       "name": "hashbrown",
       "version": "0.16.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hashbrown@0.16.1",
+      "purl": "pkg:cargo/hashbrown@0.16.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2390,7 +2390,7 @@
       "type": "library",
       "name": "hashbrown",
       "version": "0.17.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hashbrown@0.17.1",
+      "purl": "pkg:cargo/hashbrown@0.17.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2409,7 +2409,7 @@
       "type": "library",
       "name": "heapless",
       "version": "0.6.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#heapless@0.6.1",
+      "purl": "pkg:cargo/heapless@0.6.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2428,7 +2428,7 @@
       "type": "library",
       "name": "heapless",
       "version": "0.7.17",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#heapless@0.7.17",
+      "purl": "pkg:cargo/heapless@0.7.17",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2447,7 +2447,7 @@
       "type": "library",
       "name": "heapless",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#heapless@0.8.0",
+      "purl": "pkg:cargo/heapless@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2466,7 +2466,7 @@
       "type": "library",
       "name": "hermit-abi",
       "version": "0.5.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hermit-abi@0.5.3",
+      "purl": "pkg:cargo/hermit-abi@0.5.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2485,7 +2485,7 @@
       "type": "library",
       "name": "http",
       "version": "1.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
+      "purl": "pkg:cargo/http@1.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2504,7 +2504,7 @@
       "type": "library",
       "name": "http-body",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#http-body@1.1.0",
+      "purl": "pkg:cargo/http-body@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2523,7 +2523,7 @@
       "type": "library",
       "name": "http-body-util",
       "version": "0.1.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#http-body-util@0.1.5",
+      "purl": "pkg:cargo/http-body-util@0.1.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2542,7 +2542,7 @@
       "type": "library",
       "name": "httparse",
       "version": "1.10.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#httparse@1.10.1",
+      "purl": "pkg:cargo/httparse@1.10.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2561,7 +2561,7 @@
       "type": "library",
       "name": "httpdate",
       "version": "1.0.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#httpdate@1.0.3",
+      "purl": "pkg:cargo/httpdate@1.0.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2580,7 +2580,7 @@
       "type": "library",
       "name": "hyper",
       "version": "1.12.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hyper@1.12.0",
+      "purl": "pkg:cargo/hyper@1.12.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2599,7 +2599,7 @@
       "type": "library",
       "name": "hyper-util",
       "version": "0.1.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#hyper-util@0.1.21",
+      "purl": "pkg:cargo/hyper-util@0.1.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2618,7 +2618,7 @@
       "type": "library",
       "name": "i_float",
       "version": "1.16.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#i_float@1.16.0",
+      "purl": "pkg:cargo/i_float@1.16.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2637,7 +2637,7 @@
       "type": "library",
       "name": "i_key_sort",
       "version": "0.10.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#i_key_sort@0.10.3",
+      "purl": "pkg:cargo/i_key_sort@0.10.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2656,7 +2656,7 @@
       "type": "library",
       "name": "i_overlay",
       "version": "4.5.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#i_overlay@4.5.2",
+      "purl": "pkg:cargo/i_overlay@4.5.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2675,7 +2675,7 @@
       "type": "library",
       "name": "i_shape",
       "version": "1.18.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#i_shape@1.18.0",
+      "purl": "pkg:cargo/i_shape@1.18.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2694,7 +2694,7 @@
       "type": "library",
       "name": "i_tree",
       "version": "0.18.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#i_tree@0.18.0",
+      "purl": "pkg:cargo/i_tree@0.18.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2713,7 +2713,7 @@
       "type": "library",
       "name": "image",
       "version": "0.25.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#image@0.25.10",
+      "purl": "pkg:cargo/image@0.25.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2732,7 +2732,7 @@
       "type": "library",
       "name": "indexmap",
       "version": "2.14.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#indexmap@2.14.2",
+      "purl": "pkg:cargo/indexmap@2.14.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2751,7 +2751,7 @@
       "type": "library",
       "name": "io-uring",
       "version": "0.7.16",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#io-uring@0.7.16",
+      "purl": "pkg:cargo/io-uring@0.7.16",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2770,7 +2770,7 @@
       "type": "library",
       "name": "itertools",
       "version": "0.14.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#itertools@0.14.0",
+      "purl": "pkg:cargo/itertools@0.14.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2789,7 +2789,7 @@
       "type": "library",
       "name": "itertools",
       "version": "0.15.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#itertools@0.15.0",
+      "purl": "pkg:cargo/itertools@0.15.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2808,7 +2808,7 @@
       "type": "library",
       "name": "itoa",
       "version": "1.0.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.15",
+      "purl": "pkg:cargo/itoa@1.0.15",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2827,7 +2827,7 @@
       "type": "library",
       "name": "jobserver",
       "version": "0.1.35",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#jobserver@0.1.35",
+      "purl": "pkg:cargo/jobserver@0.1.35",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2846,7 +2846,7 @@
       "type": "library",
       "name": "js-sys",
       "version": "0.3.107",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#js-sys@0.3.107",
+      "purl": "pkg:cargo/js-sys@0.3.107",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2865,7 +2865,7 @@
       "type": "library",
       "name": "keccak",
       "version": "0.1.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#keccak@0.1.6",
+      "purl": "pkg:cargo/keccak@0.1.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2884,7 +2884,7 @@
       "type": "library",
       "name": "kurbo",
       "version": "0.13.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#kurbo@0.13.1",
+      "purl": "pkg:cargo/kurbo@0.13.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2903,7 +2903,7 @@
       "type": "library",
       "name": "lalrpop",
       "version": "0.22.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lalrpop@0.22.2",
+      "purl": "pkg:cargo/lalrpop@0.22.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2922,7 +2922,7 @@
       "type": "library",
       "name": "lalrpop-util",
       "version": "0.22.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lalrpop-util@0.22.2",
+      "purl": "pkg:cargo/lalrpop-util@0.22.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2941,7 +2941,7 @@
       "type": "library",
       "name": "lexical",
       "version": "7.0.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical@7.0.5",
+      "purl": "pkg:cargo/lexical@7.0.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2960,7 +2960,7 @@
       "type": "library",
       "name": "lexical-core",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-core@1.0.6",
+      "purl": "pkg:cargo/lexical-core@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2979,7 +2979,7 @@
       "type": "library",
       "name": "lexical-parse-float",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-parse-float@1.0.6",
+      "purl": "pkg:cargo/lexical-parse-float@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -2998,7 +2998,7 @@
       "type": "library",
       "name": "lexical-parse-integer",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-parse-integer@1.0.6",
+      "purl": "pkg:cargo/lexical-parse-integer@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3017,7 +3017,7 @@
       "type": "library",
       "name": "lexical-util",
       "version": "1.0.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-util@1.0.7",
+      "purl": "pkg:cargo/lexical-util@1.0.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3036,7 +3036,7 @@
       "type": "library",
       "name": "lexical-write-float",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-write-float@1.0.6",
+      "purl": "pkg:cargo/lexical-write-float@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3055,7 +3055,7 @@
       "type": "library",
       "name": "lexical-write-integer",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lexical-write-integer@1.0.6",
+      "purl": "pkg:cargo/lexical-write-integer@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3074,7 +3074,7 @@
       "type": "library",
       "name": "libc",
       "version": "0.2.191",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.191",
+      "purl": "pkg:cargo/libc@0.2.191",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3093,7 +3093,7 @@
       "type": "library",
       "name": "libloading",
       "version": "0.8.8",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#libloading@0.8.8",
+      "purl": "pkg:cargo/libloading@0.8.8",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3112,7 +3112,7 @@
       "type": "library",
       "name": "libm",
       "version": "0.2.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#libm@0.2.15",
+      "purl": "pkg:cargo/libm@0.2.15",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3131,7 +3131,7 @@
       "type": "library",
       "name": "linebender_resource_handle",
       "version": "0.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#linebender_resource_handle@0.1.1",
+      "purl": "pkg:cargo/linebender_resource_handle@0.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3150,7 +3150,7 @@
       "type": "library",
       "name": "linux-raw-sys",
       "version": "0.12.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#linux-raw-sys@0.12.1",
+      "purl": "pkg:cargo/linux-raw-sys@0.12.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3169,7 +3169,7 @@
       "type": "library",
       "name": "litrs",
       "version": "0.4.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#litrs@0.4.1",
+      "purl": "pkg:cargo/litrs@0.4.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3188,7 +3188,7 @@
       "type": "library",
       "name": "lock_api",
       "version": "0.4.13",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lock_api@0.4.13",
+      "purl": "pkg:cargo/lock_api@0.4.13",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3207,7 +3207,7 @@
       "type": "library",
       "name": "log",
       "version": "0.4.35",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#log@0.4.35",
+      "purl": "pkg:cargo/log@0.4.35",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3226,7 +3226,7 @@
       "type": "library",
       "name": "logos",
       "version": "0.16.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#logos@0.16.1",
+      "purl": "pkg:cargo/logos@0.16.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3245,7 +3245,7 @@
       "type": "library",
       "name": "logos-codegen",
       "version": "0.16.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#logos-codegen@0.16.1",
+      "purl": "pkg:cargo/logos-codegen@0.16.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3264,7 +3264,7 @@
       "type": "library",
       "name": "logos-derive",
       "version": "0.16.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#logos-derive@0.16.1",
+      "purl": "pkg:cargo/logos-derive@0.16.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3283,7 +3283,7 @@
       "type": "library",
       "name": "lz4",
       "version": "1.28.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lz4@1.28.1",
+      "purl": "pkg:cargo/lz4@1.28.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3302,7 +3302,7 @@
       "type": "library",
       "name": "lz4-sys",
       "version": "1.11.1+lz4-1.10.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#lz4-sys@1.11.1+lz4-1.10.0",
+      "purl": "pkg:cargo/lz4-sys@1.11.1+lz4-1.10.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3321,7 +3321,7 @@
       "type": "library",
       "name": "matchit",
       "version": "0.8.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#matchit@0.8.4",
+      "purl": "pkg:cargo/matchit@0.8.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3340,7 +3340,7 @@
       "type": "library",
       "name": "memchr",
       "version": "2.8.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3",
+      "purl": "pkg:cargo/memchr@2.8.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3359,7 +3359,7 @@
       "type": "library",
       "name": "memmap2",
       "version": "0.9.12",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#memmap2@0.9.12",
+      "purl": "pkg:cargo/memmap2@0.9.12",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3378,7 +3378,7 @@
       "type": "library",
       "name": "memoffset",
       "version": "0.9.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#memoffset@0.9.1",
+      "purl": "pkg:cargo/memoffset@0.9.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3397,7 +3397,7 @@
       "type": "library",
       "name": "mime",
       "version": "0.3.18",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#mime@0.3.18",
+      "purl": "pkg:cargo/mime@0.3.18",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3416,7 +3416,7 @@
       "type": "library",
       "name": "miniz_oxide",
       "version": "0.8.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#miniz_oxide@0.8.9",
+      "purl": "pkg:cargo/miniz_oxide@0.8.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3435,7 +3435,7 @@
       "type": "library",
       "name": "miniz_oxide",
       "version": "0.9.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#miniz_oxide@0.9.1",
+      "purl": "pkg:cargo/miniz_oxide@0.9.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3454,7 +3454,7 @@
       "type": "library",
       "name": "mio",
       "version": "1.2.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#mio@1.2.4",
+      "purl": "pkg:cargo/mio@1.2.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3473,7 +3473,7 @@
       "type": "library",
       "name": "mixtrics",
       "version": "0.2.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#mixtrics@0.2.6",
+      "purl": "pkg:cargo/mixtrics@0.2.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3492,7 +3492,7 @@
       "type": "library",
       "name": "moka",
       "version": "0.12.16",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#moka@0.12.16",
+      "purl": "pkg:cargo/moka@0.12.16",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3511,7 +3511,7 @@
       "type": "library",
       "name": "moxcms",
       "version": "0.8.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#moxcms@0.8.1",
+      "purl": "pkg:cargo/moxcms@0.8.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3530,7 +3530,7 @@
       "type": "library",
       "name": "naga",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#naga@30.0.2",
+      "purl": "pkg:cargo/naga@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3549,7 +3549,7 @@
       "type": "library",
       "name": "naga-types",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#naga-types@30.0.2",
+      "purl": "pkg:cargo/naga-types@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3568,7 +3568,7 @@
       "type": "library",
       "name": "new_debug_unreachable",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#new_debug_unreachable@1.0.6",
+      "purl": "pkg:cargo/new_debug_unreachable@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3587,7 +3587,7 @@
       "type": "library",
       "name": "nix",
       "version": "0.31.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#nix@0.31.3",
+      "purl": "pkg:cargo/nix@0.31.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3606,7 +3606,7 @@
       "type": "library",
       "name": "nom",
       "version": "8.0.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#nom@8.0.0",
+      "purl": "pkg:cargo/nom@8.0.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3625,7 +3625,7 @@
       "type": "library",
       "name": "num-conv",
       "version": "0.2.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#num-conv@0.2.2",
+      "purl": "pkg:cargo/num-conv@0.2.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3644,7 +3644,7 @@
       "type": "library",
       "name": "num-traits",
       "version": "0.2.19",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#num-traits@0.2.19",
+      "purl": "pkg:cargo/num-traits@0.2.19",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3663,7 +3663,7 @@
       "type": "library",
       "name": "num_cpus",
       "version": "1.17.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#num_cpus@1.17.0",
+      "purl": "pkg:cargo/num_cpus@1.17.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3682,7 +3682,7 @@
       "type": "library",
       "name": "objc2",
       "version": "0.6.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2@0.6.5",
+      "purl": "pkg:cargo/objc2@0.6.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3701,7 +3701,7 @@
       "type": "library",
       "name": "objc2-core-foundation",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2-core-foundation@0.3.2",
+      "purl": "pkg:cargo/objc2-core-foundation@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3720,7 +3720,7 @@
       "type": "library",
       "name": "objc2-encode",
       "version": "4.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2-encode@4.1.0",
+      "purl": "pkg:cargo/objc2-encode@4.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3739,7 +3739,7 @@
       "type": "library",
       "name": "objc2-foundation",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2-foundation@0.3.2",
+      "purl": "pkg:cargo/objc2-foundation@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3758,7 +3758,7 @@
       "type": "library",
       "name": "objc2-metal",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2-metal@0.3.2",
+      "purl": "pkg:cargo/objc2-metal@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3777,7 +3777,7 @@
       "type": "library",
       "name": "objc2-quartz-core",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#objc2-quartz-core@0.3.2",
+      "purl": "pkg:cargo/objc2-quartz-core@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3796,7 +3796,7 @@
       "type": "library",
       "name": "once_cell",
       "version": "1.21.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4",
+      "purl": "pkg:cargo/once_cell@1.21.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3815,7 +3815,7 @@
       "type": "library",
       "name": "ordered-channel",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ordered-channel@1.2.0",
+      "purl": "pkg:cargo/ordered-channel@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3834,7 +3834,7 @@
       "type": "library",
       "name": "ordered-float",
       "version": "4.6.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ordered-float@4.6.0",
+      "purl": "pkg:cargo/ordered-float@4.6.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3853,7 +3853,7 @@
       "type": "library",
       "name": "parking_lot",
       "version": "0.12.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#parking_lot@0.12.4",
+      "purl": "pkg:cargo/parking_lot@0.12.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3872,7 +3872,7 @@
       "type": "library",
       "name": "parking_lot_core",
       "version": "0.9.11",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#parking_lot_core@0.9.11",
+      "purl": "pkg:cargo/parking_lot_core@0.9.11",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3891,7 +3891,7 @@
       "type": "library",
       "name": "paste",
       "version": "1.0.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#paste@1.0.15",
+      "purl": "pkg:cargo/paste@1.0.15",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3910,7 +3910,7 @@
       "type": "library",
       "name": "pdqselect",
       "version": "0.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pdqselect@0.1.0",
+      "purl": "pkg:cargo/pdqselect@0.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3929,7 +3929,7 @@
       "type": "library",
       "name": "peniko",
       "version": "0.6.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#peniko@0.6.1",
+      "purl": "pkg:cargo/peniko@0.6.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3948,7 +3948,7 @@
       "type": "library",
       "name": "percent-encoding",
       "version": "2.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#percent-encoding@2.3.2",
+      "purl": "pkg:cargo/percent-encoding@2.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3967,7 +3967,7 @@
       "type": "library",
       "name": "petgraph",
       "version": "0.7.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#petgraph@0.7.1",
+      "purl": "pkg:cargo/petgraph@0.7.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -3986,7 +3986,7 @@
       "type": "library",
       "name": "phf_shared",
       "version": "0.11.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#phf_shared@0.11.3",
+      "purl": "pkg:cargo/phf_shared@0.11.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4005,7 +4005,7 @@
       "type": "library",
       "name": "pin-project",
       "version": "1.1.13",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pin-project@1.1.13",
+      "purl": "pkg:cargo/pin-project@1.1.13",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4024,7 +4024,7 @@
       "type": "library",
       "name": "pin-project-internal",
       "version": "1.1.13",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pin-project-internal@1.1.13",
+      "purl": "pkg:cargo/pin-project-internal@1.1.13",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4043,7 +4043,7 @@
       "type": "library",
       "name": "pin-project-lite",
       "version": "0.2.16",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pin-project-lite@0.2.16",
+      "purl": "pkg:cargo/pin-project-lite@0.2.16",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4062,7 +4062,7 @@
       "type": "library",
       "name": "pkg-config",
       "version": "0.3.34",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pkg-config@0.3.34",
+      "purl": "pkg:cargo/pkg-config@0.3.34",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4081,7 +4081,7 @@
       "type": "library",
       "name": "png",
       "version": "0.18.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#png@0.18.1",
+      "purl": "pkg:cargo/png@0.18.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4100,7 +4100,7 @@
       "type": "library",
       "name": "polycool",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#polycool@0.4.0",
+      "purl": "pkg:cargo/polycool@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4119,7 +4119,7 @@
       "type": "library",
       "name": "portable-atomic",
       "version": "1.15.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#portable-atomic@1.15.0",
+      "purl": "pkg:cargo/portable-atomic@1.15.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4138,7 +4138,7 @@
       "type": "library",
       "name": "portable-atomic-util",
       "version": "0.2.8",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#portable-atomic-util@0.2.8",
+      "purl": "pkg:cargo/portable-atomic-util@0.2.8",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4157,7 +4157,7 @@
       "type": "library",
       "name": "powerfmt",
       "version": "0.2.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#powerfmt@0.2.1",
+      "purl": "pkg:cargo/powerfmt@0.2.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4176,7 +4176,7 @@
       "type": "library",
       "name": "ppv-lite86",
       "version": "0.2.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ppv-lite86@0.2.21",
+      "purl": "pkg:cargo/ppv-lite86@0.2.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4195,7 +4195,7 @@
       "type": "library",
       "name": "precomputed-hash",
       "version": "0.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#precomputed-hash@0.1.1",
+      "purl": "pkg:cargo/precomputed-hash@0.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4214,7 +4214,7 @@
       "type": "library",
       "name": "presser",
       "version": "0.3.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#presser@0.3.1",
+      "purl": "pkg:cargo/presser@0.3.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4233,7 +4233,7 @@
       "type": "library",
       "name": "proc-macro2",
       "version": "1.0.95",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.95",
+      "purl": "pkg:cargo/proc-macro2@1.0.95",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4252,7 +4252,7 @@
       "type": "library",
       "name": "profiling",
       "version": "1.0.16",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#profiling@1.0.16",
+      "purl": "pkg:cargo/profiling@1.0.16",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4271,7 +4271,7 @@
       "type": "library",
       "name": "proj",
       "version": "0.31.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#proj@0.31.0",
+      "purl": "pkg:cargo/proj@0.31.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4290,7 +4290,7 @@
       "type": "library",
       "name": "proj-sys",
       "version": "0.27.0",
-      "purl": "path+file:///D:/Rust/geello/third_party/proj-sys#0.27.0",
+      "purl": "pkg:cargo/proj-sys@0.27.0",
       "hashes": [],
       "licenses": [
         {
@@ -4304,7 +4304,7 @@
       "type": "library",
       "name": "proj4rs",
       "version": "0.3.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#proj4rs@0.3.0",
+      "purl": "pkg:cargo/proj4rs@0.3.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4323,7 +4323,7 @@
       "type": "library",
       "name": "proj4rs-geodesic",
       "version": "0.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#proj4rs-geodesic@0.2.0",
+      "purl": "pkg:cargo/proj4rs-geodesic@0.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4342,7 +4342,7 @@
       "type": "library",
       "name": "proj4wkt",
       "version": "0.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#proj4wkt@0.2.0",
+      "purl": "pkg:cargo/proj4wkt@0.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4361,7 +4361,7 @@
       "type": "library",
       "name": "pxfm",
       "version": "0.1.30",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#pxfm@0.1.30",
+      "purl": "pkg:cargo/pxfm@0.1.30",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4380,7 +4380,7 @@
       "type": "library",
       "name": "quick-error",
       "version": "2.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#quick-error@2.0.1",
+      "purl": "pkg:cargo/quick-error@2.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4399,7 +4399,7 @@
       "type": "library",
       "name": "quick-xml",
       "version": "0.42.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#quick-xml@0.42.0",
+      "purl": "pkg:cargo/quick-xml@0.42.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4418,7 +4418,7 @@
       "type": "library",
       "name": "quote",
       "version": "1.0.40",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.40",
+      "purl": "pkg:cargo/quote@1.0.40",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4437,7 +4437,7 @@
       "type": "library",
       "name": "r-efi",
       "version": "5.3.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#r-efi@5.3.0",
+      "purl": "pkg:cargo/r-efi@5.3.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4456,7 +4456,7 @@
       "type": "library",
       "name": "r-efi",
       "version": "6.0.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#r-efi@6.0.0",
+      "purl": "pkg:cargo/r-efi@6.0.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4475,7 +4475,7 @@
       "type": "library",
       "name": "rand",
       "version": "0.10.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand@0.10.3",
+      "purl": "pkg:cargo/rand@0.10.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4494,7 +4494,7 @@
       "type": "library",
       "name": "rand",
       "version": "0.9.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand@0.9.5",
+      "purl": "pkg:cargo/rand@0.9.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4513,7 +4513,7 @@
       "type": "library",
       "name": "rand_chacha",
       "version": "0.9.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand_chacha@0.9.0",
+      "purl": "pkg:cargo/rand_chacha@0.9.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4532,7 +4532,7 @@
       "type": "library",
       "name": "rand_core",
       "version": "0.10.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand_core@0.10.1",
+      "purl": "pkg:cargo/rand_core@0.10.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4551,7 +4551,7 @@
       "type": "library",
       "name": "rand_core",
       "version": "0.9.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand_core@0.9.5",
+      "purl": "pkg:cargo/rand_core@0.9.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4570,7 +4570,7 @@
       "type": "library",
       "name": "rand_pcg",
       "version": "0.10.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rand_pcg@0.10.2",
+      "purl": "pkg:cargo/rand_pcg@0.10.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4589,7 +4589,7 @@
       "type": "library",
       "name": "range-alloc",
       "version": "0.1.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#range-alloc@0.1.4",
+      "purl": "pkg:cargo/range-alloc@0.1.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4608,7 +4608,7 @@
       "type": "library",
       "name": "rangemap",
       "version": "1.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rangemap@1.8.0",
+      "purl": "pkg:cargo/rangemap@1.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4627,7 +4627,7 @@
       "type": "library",
       "name": "raw-window-handle",
       "version": "0.6.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#raw-window-handle@0.6.2",
+      "purl": "pkg:cargo/raw-window-handle@0.6.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4646,7 +4646,7 @@
       "type": "library",
       "name": "raw-window-metal",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#raw-window-metal@1.1.0",
+      "purl": "pkg:cargo/raw-window-metal@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4665,7 +4665,7 @@
       "type": "library",
       "name": "rayon",
       "version": "1.12.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rayon@1.12.0",
+      "purl": "pkg:cargo/rayon@1.12.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4684,7 +4684,7 @@
       "type": "library",
       "name": "rayon-core",
       "version": "1.13.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rayon-core@1.13.0",
+      "purl": "pkg:cargo/rayon-core@1.13.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4703,7 +4703,7 @@
       "type": "library",
       "name": "read-fonts",
       "version": "0.37.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#read-fonts@0.37.0",
+      "purl": "pkg:cargo/read-fonts@0.37.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4722,7 +4722,7 @@
       "type": "library",
       "name": "read-fonts",
       "version": "0.41.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#read-fonts@0.41.0",
+      "purl": "pkg:cargo/read-fonts@0.41.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4741,7 +4741,7 @@
       "type": "library",
       "name": "read-fonts",
       "version": "0.46.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#read-fonts@0.46.0",
+      "purl": "pkg:cargo/read-fonts@0.46.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4760,7 +4760,7 @@
       "type": "library",
       "name": "redox_syscall",
       "version": "0.5.13",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#redox_syscall@0.5.13",
+      "purl": "pkg:cargo/redox_syscall@0.5.13",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4779,7 +4779,7 @@
       "type": "library",
       "name": "regex",
       "version": "1.11.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#regex@1.11.1",
+      "purl": "pkg:cargo/regex@1.11.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4798,7 +4798,7 @@
       "type": "library",
       "name": "regex-automata",
       "version": "0.4.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#regex-automata@0.4.9",
+      "purl": "pkg:cargo/regex-automata@0.4.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4817,7 +4817,7 @@
       "type": "library",
       "name": "regex-syntax",
       "version": "0.8.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#regex-syntax@0.8.5",
+      "purl": "pkg:cargo/regex-syntax@0.8.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4836,7 +4836,7 @@
       "type": "library",
       "name": "renderdoc-sys",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#renderdoc-sys@1.1.0",
+      "purl": "pkg:cargo/renderdoc-sys@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4855,7 +4855,7 @@
       "type": "library",
       "name": "robust",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#robust@1.2.0",
+      "purl": "pkg:cargo/robust@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4874,7 +4874,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.10.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.10.0",
+      "purl": "pkg:cargo/rstar@0.10.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4893,7 +4893,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.11.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.11.0",
+      "purl": "pkg:cargo/rstar@0.11.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4912,7 +4912,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.12.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.12.2",
+      "purl": "pkg:cargo/rstar@0.12.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4931,7 +4931,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.13.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.13.1",
+      "purl": "pkg:cargo/rstar@0.13.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4950,7 +4950,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.8.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.8.4",
+      "purl": "pkg:cargo/rstar@0.8.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4969,7 +4969,7 @@
       "type": "library",
       "name": "rstar",
       "version": "0.9.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rstar@0.9.3",
+      "purl": "pkg:cargo/rstar@0.9.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -4988,7 +4988,7 @@
       "type": "library",
       "name": "rustc-hash",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rustc-hash@1.1.0",
+      "purl": "pkg:cargo/rustc-hash@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5007,7 +5007,7 @@
       "type": "library",
       "name": "rustc-hash",
       "version": "2.1.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rustc-hash@2.1.3",
+      "purl": "pkg:cargo/rustc-hash@2.1.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5026,7 +5026,7 @@
       "type": "library",
       "name": "rustc_version",
       "version": "0.4.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rustc_version@0.4.1",
+      "purl": "pkg:cargo/rustc_version@0.4.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5045,7 +5045,7 @@
       "type": "library",
       "name": "rustix",
       "version": "1.1.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rustix@1.1.6",
+      "purl": "pkg:cargo/rustix@1.1.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5064,7 +5064,7 @@
       "type": "library",
       "name": "rustversion",
       "version": "1.0.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#rustversion@1.0.21",
+      "purl": "pkg:cargo/rustversion@1.0.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5083,7 +5083,7 @@
       "type": "library",
       "name": "ryu",
       "version": "1.0.23",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ryu@1.0.23",
+      "purl": "pkg:cargo/ryu@1.0.23",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5102,7 +5102,7 @@
       "type": "library",
       "name": "same-file",
       "version": "1.0.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#same-file@1.0.6",
+      "purl": "pkg:cargo/same-file@1.0.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5121,7 +5121,7 @@
       "type": "library",
       "name": "scopeguard",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#scopeguard@1.2.0",
+      "purl": "pkg:cargo/scopeguard@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5140,7 +5140,7 @@
       "type": "library",
       "name": "self_cell",
       "version": "1.3.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#self_cell@1.3.0",
+      "purl": "pkg:cargo/self_cell@1.3.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5159,7 +5159,7 @@
       "type": "library",
       "name": "semver",
       "version": "1.0.28",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28",
+      "purl": "pkg:cargo/semver@1.0.28",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5178,7 +5178,7 @@
       "type": "library",
       "name": "serde",
       "version": "1.0.229",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+      "purl": "pkg:cargo/serde@1.0.229",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5197,7 +5197,7 @@
       "type": "library",
       "name": "serde_core",
       "version": "1.0.229",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_core@1.0.229",
+      "purl": "pkg:cargo/serde_core@1.0.229",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5216,7 +5216,7 @@
       "type": "library",
       "name": "serde_derive",
       "version": "1.0.229",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_derive@1.0.229",
+      "purl": "pkg:cargo/serde_derive@1.0.229",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5235,7 +5235,7 @@
       "type": "library",
       "name": "serde_json",
       "version": "1.0.154",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
+      "purl": "pkg:cargo/serde_json@1.0.154",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5254,7 +5254,7 @@
       "type": "library",
       "name": "serde_path_to_error",
       "version": "0.1.20",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_path_to_error@0.1.20",
+      "purl": "pkg:cargo/serde_path_to_error@0.1.20",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5273,7 +5273,7 @@
       "type": "library",
       "name": "serde_spanned",
       "version": "1.1.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_spanned@1.1.3",
+      "purl": "pkg:cargo/serde_spanned@1.1.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5292,7 +5292,7 @@
       "type": "library",
       "name": "serde_urlencoded",
       "version": "0.7.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#serde_urlencoded@0.7.1",
+      "purl": "pkg:cargo/serde_urlencoded@0.7.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5311,7 +5311,7 @@
       "type": "library",
       "name": "sha1",
       "version": "0.10.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sha1@0.10.7",
+      "purl": "pkg:cargo/sha1@0.10.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5330,7 +5330,7 @@
       "type": "library",
       "name": "sha2",
       "version": "0.10.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sha2@0.10.9",
+      "purl": "pkg:cargo/sha2@0.10.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5349,7 +5349,7 @@
       "type": "library",
       "name": "sha3",
       "version": "0.10.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sha3@0.10.9",
+      "purl": "pkg:cargo/sha3@0.10.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5368,7 +5368,7 @@
       "type": "library",
       "name": "shapefile",
       "version": "0.9.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#shapefile@0.9.0",
+      "purl": "pkg:cargo/shapefile@0.9.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5387,7 +5387,7 @@
       "type": "library",
       "name": "shlex",
       "version": "2.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#shlex@2.0.1",
+      "purl": "pkg:cargo/shlex@2.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5406,7 +5406,7 @@
       "type": "library",
       "name": "sif-itree",
       "version": "0.4.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sif-itree@0.4.1",
+      "purl": "pkg:cargo/sif-itree@0.4.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5425,7 +5425,7 @@
       "type": "library",
       "name": "signal-hook-registry",
       "version": "1.4.8",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#signal-hook-registry@1.4.8",
+      "purl": "pkg:cargo/signal-hook-registry@1.4.8",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5444,7 +5444,7 @@
       "type": "library",
       "name": "simd-adler32",
       "version": "0.3.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#simd-adler32@0.3.10",
+      "purl": "pkg:cargo/simd-adler32@0.3.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5463,7 +5463,7 @@
       "type": "library",
       "name": "siphasher",
       "version": "1.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#siphasher@1.0.1",
+      "purl": "pkg:cargo/siphasher@1.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5482,7 +5482,7 @@
       "type": "library",
       "name": "skrifa",
       "version": "0.40.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#skrifa@0.40.0",
+      "purl": "pkg:cargo/skrifa@0.40.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5501,7 +5501,7 @@
       "type": "library",
       "name": "skrifa",
       "version": "0.44.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#skrifa@0.44.0",
+      "purl": "pkg:cargo/skrifa@0.44.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5520,7 +5520,7 @@
       "type": "library",
       "name": "skrifa",
       "version": "0.49.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#skrifa@0.49.0",
+      "purl": "pkg:cargo/skrifa@0.49.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5539,7 +5539,7 @@
       "type": "library",
       "name": "slab",
       "version": "0.4.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#slab@0.4.10",
+      "purl": "pkg:cargo/slab@0.4.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5558,7 +5558,7 @@
       "type": "library",
       "name": "slotmap",
       "version": "1.1.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#slotmap@1.1.1",
+      "purl": "pkg:cargo/slotmap@1.1.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5577,7 +5577,7 @@
       "type": "library",
       "name": "small_ctor",
       "version": "0.1.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#small_ctor@0.1.2",
+      "purl": "pkg:cargo/small_ctor@0.1.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5596,7 +5596,7 @@
       "type": "library",
       "name": "smallvec",
       "version": "1.15.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#smallvec@1.15.1",
+      "purl": "pkg:cargo/smallvec@1.15.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5615,7 +5615,7 @@
       "type": "library",
       "name": "smol_str",
       "version": "0.3.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#smol_str@0.3.7",
+      "purl": "pkg:cargo/smol_str@0.3.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5634,7 +5634,7 @@
       "type": "library",
       "name": "socket2",
       "version": "0.6.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
+      "purl": "pkg:cargo/socket2@0.6.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5653,7 +5653,7 @@
       "type": "library",
       "name": "spin",
       "version": "0.9.8",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#spin@0.9.8",
+      "purl": "pkg:cargo/spin@0.9.8",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5672,7 +5672,7 @@
       "type": "library",
       "name": "spirv",
       "version": "0.4.0+sdk-1.4.341.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#spirv@0.4.0+sdk-1.4.341.0",
+      "purl": "pkg:cargo/spirv@0.4.0+sdk-1.4.341.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5691,7 +5691,7 @@
       "type": "library",
       "name": "stable_deref_trait",
       "version": "1.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#stable_deref_trait@1.2.0",
+      "purl": "pkg:cargo/stable_deref_trait@1.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5710,7 +5710,7 @@
       "type": "library",
       "name": "static_assertions",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#static_assertions@1.1.0",
+      "purl": "pkg:cargo/static_assertions@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5729,7 +5729,7 @@
       "type": "library",
       "name": "string_cache",
       "version": "0.8.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#string_cache@0.8.9",
+      "purl": "pkg:cargo/string_cache@0.8.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5748,7 +5748,7 @@
       "type": "library",
       "name": "swash",
       "version": "0.2.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#swash@0.2.10",
+      "purl": "pkg:cargo/swash@0.2.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5767,7 +5767,7 @@
       "type": "library",
       "name": "syn",
       "version": "2.0.103",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#syn@2.0.103",
+      "purl": "pkg:cargo/syn@2.0.103",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5786,7 +5786,7 @@
       "type": "library",
       "name": "syn",
       "version": "3.0.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#syn@3.0.10",
+      "purl": "pkg:cargo/syn@3.0.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5805,7 +5805,7 @@
       "type": "library",
       "name": "sync_wrapper",
       "version": "1.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sync_wrapper@1.0.2",
+      "purl": "pkg:cargo/sync_wrapper@1.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5824,7 +5824,7 @@
       "type": "library",
       "name": "synstructure",
       "version": "0.13.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#synstructure@0.13.2",
+      "purl": "pkg:cargo/synstructure@0.13.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5843,7 +5843,7 @@
       "type": "library",
       "name": "sys-locale",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#sys-locale@0.3.2",
+      "purl": "pkg:cargo/sys-locale@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5862,7 +5862,7 @@
       "type": "library",
       "name": "tagptr",
       "version": "0.2.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tagptr@0.2.0",
+      "purl": "pkg:cargo/tagptr@0.2.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5881,7 +5881,7 @@
       "type": "library",
       "name": "tempfile",
       "version": "3.27.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tempfile@3.27.0",
+      "purl": "pkg:cargo/tempfile@3.27.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5900,7 +5900,7 @@
       "type": "library",
       "name": "term",
       "version": "1.2.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#term@1.2.1",
+      "purl": "pkg:cargo/term@1.2.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5919,7 +5919,7 @@
       "type": "library",
       "name": "thiserror",
       "version": "2.0.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
+      "purl": "pkg:cargo/thiserror@2.0.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5938,7 +5938,7 @@
       "type": "library",
       "name": "thiserror-impl",
       "version": "2.0.21",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#thiserror-impl@2.0.21",
+      "purl": "pkg:cargo/thiserror-impl@2.0.21",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5957,7 +5957,7 @@
       "type": "library",
       "name": "thread_local",
       "version": "1.1.10",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#thread_local@1.1.10",
+      "purl": "pkg:cargo/thread_local@1.1.10",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5976,7 +5976,7 @@
       "type": "library",
       "name": "tiff",
       "version": "0.11.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tiff@0.11.3",
+      "purl": "pkg:cargo/tiff@0.11.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -5995,7 +5995,7 @@
       "type": "library",
       "name": "time",
       "version": "0.3.55",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#time@0.3.55",
+      "purl": "pkg:cargo/time@0.3.55",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6014,7 +6014,7 @@
       "type": "library",
       "name": "time-core",
       "version": "0.1.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#time-core@0.1.9",
+      "purl": "pkg:cargo/time-core@0.1.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6033,7 +6033,7 @@
       "type": "library",
       "name": "tinyvec",
       "version": "1.13.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tinyvec@1.13.3",
+      "purl": "pkg:cargo/tinyvec@1.13.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6052,7 +6052,7 @@
       "type": "library",
       "name": "tokio",
       "version": "1.54.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tokio@1.54.1",
+      "purl": "pkg:cargo/tokio@1.54.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6071,7 +6071,7 @@
       "type": "library",
       "name": "tokio-macros",
       "version": "2.7.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tokio-macros@2.7.2",
+      "purl": "pkg:cargo/tokio-macros@2.7.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6090,7 +6090,7 @@
       "type": "library",
       "name": "tokio-tungstenite",
       "version": "0.29.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tokio-tungstenite@0.29.0",
+      "purl": "pkg:cargo/tokio-tungstenite@0.29.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6109,7 +6109,7 @@
       "type": "library",
       "name": "toml",
       "version": "1.2.1+spec-1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#toml@1.2.1+spec-1.1.0",
+      "purl": "pkg:cargo/toml@1.2.1+spec-1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6128,7 +6128,7 @@
       "type": "library",
       "name": "toml_datetime",
       "version": "1.1.3+spec-1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#toml_datetime@1.1.3+spec-1.1.0",
+      "purl": "pkg:cargo/toml_datetime@1.1.3+spec-1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6147,7 +6147,7 @@
       "type": "library",
       "name": "toml_parser",
       "version": "1.1.5+spec-1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#toml_parser@1.1.5+spec-1.1.0",
+      "purl": "pkg:cargo/toml_parser@1.1.5+spec-1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6166,7 +6166,7 @@
       "type": "library",
       "name": "toml_writer",
       "version": "1.2.0+spec-1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#toml_writer@1.2.0+spec-1.1.0",
+      "purl": "pkg:cargo/toml_writer@1.2.0+spec-1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6185,7 +6185,7 @@
       "type": "library",
       "name": "tower",
       "version": "0.5.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tower@0.5.3",
+      "purl": "pkg:cargo/tower@0.5.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6204,7 +6204,7 @@
       "type": "library",
       "name": "tower-layer",
       "version": "0.3.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tower-layer@0.3.3",
+      "purl": "pkg:cargo/tower-layer@0.3.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6223,7 +6223,7 @@
       "type": "library",
       "name": "tower-service",
       "version": "0.3.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tower-service@0.3.3",
+      "purl": "pkg:cargo/tower-service@0.3.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6242,7 +6242,7 @@
       "type": "library",
       "name": "tracing",
       "version": "0.1.44",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
+      "purl": "pkg:cargo/tracing@0.1.44",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6261,7 +6261,7 @@
       "type": "library",
       "name": "tracing-attributes",
       "version": "0.1.31",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tracing-attributes@0.1.31",
+      "purl": "pkg:cargo/tracing-attributes@0.1.31",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6280,7 +6280,7 @@
       "type": "library",
       "name": "tracing-core",
       "version": "0.1.36",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tracing-core@0.1.36",
+      "purl": "pkg:cargo/tracing-core@0.1.36",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6299,7 +6299,7 @@
       "type": "library",
       "name": "ttf-parser",
       "version": "0.25.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#ttf-parser@0.25.1",
+      "purl": "pkg:cargo/ttf-parser@0.25.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6318,7 +6318,7 @@
       "type": "library",
       "name": "tungstenite",
       "version": "0.29.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#tungstenite@0.29.0",
+      "purl": "pkg:cargo/tungstenite@0.29.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6337,7 +6337,7 @@
       "type": "library",
       "name": "twox-hash",
       "version": "2.1.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#twox-hash@2.1.5",
+      "purl": "pkg:cargo/twox-hash@2.1.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6356,7 +6356,7 @@
       "type": "library",
       "name": "typed-path",
       "version": "0.13.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#typed-path@0.13.0",
+      "purl": "pkg:cargo/typed-path@0.13.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6375,7 +6375,7 @@
       "type": "library",
       "name": "typenum",
       "version": "1.18.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#typenum@1.18.0",
+      "purl": "pkg:cargo/typenum@1.18.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6394,7 +6394,7 @@
       "type": "library",
       "name": "unicode-bidi",
       "version": "0.3.18",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-bidi@0.3.18",
+      "purl": "pkg:cargo/unicode-bidi@0.3.18",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6413,7 +6413,7 @@
       "type": "library",
       "name": "unicode-ident",
       "version": "1.0.18",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-ident@1.0.18",
+      "purl": "pkg:cargo/unicode-ident@1.0.18",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6432,7 +6432,7 @@
       "type": "library",
       "name": "unicode-linebreak",
       "version": "0.1.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-linebreak@0.1.5",
+      "purl": "pkg:cargo/unicode-linebreak@0.1.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6451,7 +6451,7 @@
       "type": "library",
       "name": "unicode-script",
       "version": "0.5.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-script@0.5.9",
+      "purl": "pkg:cargo/unicode-script@0.5.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6470,7 +6470,7 @@
       "type": "library",
       "name": "unicode-segmentation",
       "version": "1.13.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-segmentation@1.13.3",
+      "purl": "pkg:cargo/unicode-segmentation@1.13.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6489,7 +6489,7 @@
       "type": "library",
       "name": "unicode-width",
       "version": "0.2.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-width@0.2.3",
+      "purl": "pkg:cargo/unicode-width@0.2.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6508,7 +6508,7 @@
       "type": "library",
       "name": "unicode-xid",
       "version": "0.2.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#unicode-xid@0.2.6",
+      "purl": "pkg:cargo/unicode-xid@0.2.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6527,7 +6527,7 @@
       "type": "library",
       "name": "uuid",
       "version": "1.29.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#uuid@1.29.2",
+      "purl": "pkg:cargo/uuid@1.29.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6546,7 +6546,7 @@
       "type": "library",
       "name": "vello_common",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#vello_common@0.4.0",
+      "purl": "pkg:cargo/vello_common@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6565,7 +6565,7 @@
       "type": "library",
       "name": "vello_cpu",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#vello_cpu@0.4.0",
+      "purl": "pkg:cargo/vello_cpu@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6584,7 +6584,7 @@
       "type": "library",
       "name": "vello_gpu",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#vello_gpu@0.4.0",
+      "purl": "pkg:cargo/vello_gpu@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6603,7 +6603,7 @@
       "type": "library",
       "name": "vello_gpu_shaders",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#vello_gpu_shaders@0.4.0",
+      "purl": "pkg:cargo/vello_gpu_shaders@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6622,7 +6622,7 @@
       "type": "library",
       "name": "version_check",
       "version": "0.9.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#version_check@0.9.5",
+      "purl": "pkg:cargo/version_check@0.9.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6641,7 +6641,7 @@
       "type": "library",
       "name": "walkdir",
       "version": "2.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#walkdir@2.5.0",
+      "purl": "pkg:cargo/walkdir@2.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6660,7 +6660,7 @@
       "type": "library",
       "name": "wasi",
       "version": "0.11.1+wasi-snapshot-preview1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasi@0.11.1+wasi-snapshot-preview1",
+      "purl": "pkg:cargo/wasi@0.11.1+wasi-snapshot-preview1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6679,7 +6679,7 @@
       "type": "library",
       "name": "wasip2",
       "version": "1.0.4+wasi-0.2.12",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasip2@1.0.4+wasi-0.2.12",
+      "purl": "pkg:cargo/wasip2@1.0.4+wasi-0.2.12",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6698,7 +6698,7 @@
       "type": "library",
       "name": "wasm-bindgen",
       "version": "0.2.130",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.130",
+      "purl": "pkg:cargo/wasm-bindgen@0.2.130",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6717,7 +6717,7 @@
       "type": "library",
       "name": "wasm-bindgen-futures",
       "version": "0.4.80",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-futures@0.4.80",
+      "purl": "pkg:cargo/wasm-bindgen-futures@0.4.80",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6736,7 +6736,7 @@
       "type": "library",
       "name": "wasm-bindgen-macro",
       "version": "0.2.130",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-macro@0.2.130",
+      "purl": "pkg:cargo/wasm-bindgen-macro@0.2.130",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6755,7 +6755,7 @@
       "type": "library",
       "name": "wasm-bindgen-macro-support",
       "version": "0.2.130",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-macro-support@0.2.130",
+      "purl": "pkg:cargo/wasm-bindgen-macro-support@0.2.130",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6774,7 +6774,7 @@
       "type": "library",
       "name": "wasm-bindgen-shared",
       "version": "0.2.130",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-shared@0.2.130",
+      "purl": "pkg:cargo/wasm-bindgen-shared@0.2.130",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6793,7 +6793,7 @@
       "type": "library",
       "name": "web-sys",
       "version": "0.3.107",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#web-sys@0.3.107",
+      "purl": "pkg:cargo/web-sys@0.3.107",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6812,7 +6812,7 @@
       "type": "library",
       "name": "web-time",
       "version": "1.1.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#web-time@1.1.0",
+      "purl": "pkg:cargo/web-time@1.1.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6831,7 +6831,7 @@
       "type": "library",
       "name": "weezl",
       "version": "0.1.12",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#weezl@0.1.12",
+      "purl": "pkg:cargo/weezl@0.1.12",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6850,7 +6850,7 @@
       "type": "library",
       "name": "wesl",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wesl@0.4.0",
+      "purl": "pkg:cargo/wesl@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6869,7 +6869,7 @@
       "type": "library",
       "name": "wesl-macros",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wesl-macros@0.4.0",
+      "purl": "pkg:cargo/wesl-macros@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6888,7 +6888,7 @@
       "type": "library",
       "name": "wgpu",
       "version": "30.0.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu@30.0.1",
+      "purl": "pkg:cargo/wgpu@30.0.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6907,7 +6907,7 @@
       "type": "library",
       "name": "wgpu-core",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu-core@30.0.2",
+      "purl": "pkg:cargo/wgpu-core@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6926,7 +6926,7 @@
       "type": "library",
       "name": "wgpu-core-deps-windows-linux-android",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu-core-deps-windows-linux-android@30.0.2",
+      "purl": "pkg:cargo/wgpu-core-deps-windows-linux-android@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6945,7 +6945,7 @@
       "type": "library",
       "name": "wgpu-hal",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu-hal@30.0.2",
+      "purl": "pkg:cargo/wgpu-hal@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6964,7 +6964,7 @@
       "type": "library",
       "name": "wgpu-naga-bridge",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu-naga-bridge@30.0.2",
+      "purl": "pkg:cargo/wgpu-naga-bridge@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -6983,7 +6983,7 @@
       "type": "library",
       "name": "wgpu-types",
       "version": "30.0.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgpu-types@30.0.2",
+      "purl": "pkg:cargo/wgpu-types@30.0.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7002,7 +7002,7 @@
       "type": "library",
       "name": "wgsl-parse",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgsl-parse@0.4.0",
+      "purl": "pkg:cargo/wgsl-parse@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7021,7 +7021,7 @@
       "type": "library",
       "name": "wgsl-types",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wgsl-types@0.4.0",
+      "purl": "pkg:cargo/wgsl-types@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7040,7 +7040,7 @@
       "type": "library",
       "name": "winapi",
       "version": "0.3.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#winapi@0.3.9",
+      "purl": "pkg:cargo/winapi@0.3.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7059,7 +7059,7 @@
       "type": "library",
       "name": "winapi-i686-pc-windows-gnu",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#winapi-i686-pc-windows-gnu@0.4.0",
+      "purl": "pkg:cargo/winapi-i686-pc-windows-gnu@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7078,7 +7078,7 @@
       "type": "library",
       "name": "winapi-util",
       "version": "0.1.9",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#winapi-util@0.1.9",
+      "purl": "pkg:cargo/winapi-util@0.1.9",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7097,7 +7097,7 @@
       "type": "library",
       "name": "winapi-x86_64-pc-windows-gnu",
       "version": "0.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#winapi-x86_64-pc-windows-gnu@0.4.0",
+      "purl": "pkg:cargo/winapi-x86_64-pc-windows-gnu@0.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7116,7 +7116,7 @@
       "type": "library",
       "name": "windows",
       "version": "0.62.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows@0.62.2",
+      "purl": "pkg:cargo/windows@0.62.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7135,7 +7135,7 @@
       "type": "library",
       "name": "windows-collections",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-collections@0.3.2",
+      "purl": "pkg:cargo/windows-collections@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7154,7 +7154,7 @@
       "type": "library",
       "name": "windows-core",
       "version": "0.62.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-core@0.62.2",
+      "purl": "pkg:cargo/windows-core@0.62.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7173,7 +7173,7 @@
       "type": "library",
       "name": "windows-future",
       "version": "0.3.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-future@0.3.2",
+      "purl": "pkg:cargo/windows-future@0.3.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7192,7 +7192,7 @@
       "type": "library",
       "name": "windows-implement",
       "version": "0.60.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-implement@0.60.2",
+      "purl": "pkg:cargo/windows-implement@0.60.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7211,7 +7211,7 @@
       "type": "library",
       "name": "windows-interface",
       "version": "0.59.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-interface@0.59.3",
+      "purl": "pkg:cargo/windows-interface@0.59.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7230,7 +7230,7 @@
       "type": "library",
       "name": "windows-link",
       "version": "0.2.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-link@0.2.1",
+      "purl": "pkg:cargo/windows-link@0.2.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7249,7 +7249,7 @@
       "type": "library",
       "name": "windows-numerics",
       "version": "0.3.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-numerics@0.3.1",
+      "purl": "pkg:cargo/windows-numerics@0.3.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7268,7 +7268,7 @@
       "type": "library",
       "name": "windows-result",
       "version": "0.4.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-result@0.4.1",
+      "purl": "pkg:cargo/windows-result@0.4.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7287,7 +7287,7 @@
       "type": "library",
       "name": "windows-strings",
       "version": "0.5.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-strings@0.5.1",
+      "purl": "pkg:cargo/windows-strings@0.5.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7306,7 +7306,7 @@
       "type": "library",
       "name": "windows-sys",
       "version": "0.59.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.59.0",
+      "purl": "pkg:cargo/windows-sys@0.59.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7325,7 +7325,7 @@
       "type": "library",
       "name": "windows-sys",
       "version": "0.61.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+      "purl": "pkg:cargo/windows-sys@0.61.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7344,7 +7344,7 @@
       "type": "library",
       "name": "windows-targets",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-targets@0.52.6",
+      "purl": "pkg:cargo/windows-targets@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7363,7 +7363,7 @@
       "type": "library",
       "name": "windows-targets",
       "version": "0.53.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-targets@0.53.2",
+      "purl": "pkg:cargo/windows-targets@0.53.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7382,7 +7382,7 @@
       "type": "library",
       "name": "windows-threading",
       "version": "0.2.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows-threading@0.2.1",
+      "purl": "pkg:cargo/windows-threading@0.2.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7401,7 +7401,7 @@
       "type": "library",
       "name": "windows_aarch64_gnullvm",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_aarch64_gnullvm@0.52.6",
+      "purl": "pkg:cargo/windows_aarch64_gnullvm@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7420,7 +7420,7 @@
       "type": "library",
       "name": "windows_aarch64_gnullvm",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_aarch64_gnullvm@0.53.0",
+      "purl": "pkg:cargo/windows_aarch64_gnullvm@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7439,7 +7439,7 @@
       "type": "library",
       "name": "windows_aarch64_msvc",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_aarch64_msvc@0.52.6",
+      "purl": "pkg:cargo/windows_aarch64_msvc@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7458,7 +7458,7 @@
       "type": "library",
       "name": "windows_aarch64_msvc",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_aarch64_msvc@0.53.0",
+      "purl": "pkg:cargo/windows_aarch64_msvc@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7477,7 +7477,7 @@
       "type": "library",
       "name": "windows_i686_gnu",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_gnu@0.52.6",
+      "purl": "pkg:cargo/windows_i686_gnu@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7496,7 +7496,7 @@
       "type": "library",
       "name": "windows_i686_gnu",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_gnu@0.53.0",
+      "purl": "pkg:cargo/windows_i686_gnu@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7515,7 +7515,7 @@
       "type": "library",
       "name": "windows_i686_gnullvm",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_gnullvm@0.52.6",
+      "purl": "pkg:cargo/windows_i686_gnullvm@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7534,7 +7534,7 @@
       "type": "library",
       "name": "windows_i686_gnullvm",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_gnullvm@0.53.0",
+      "purl": "pkg:cargo/windows_i686_gnullvm@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7553,7 +7553,7 @@
       "type": "library",
       "name": "windows_i686_msvc",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_msvc@0.52.6",
+      "purl": "pkg:cargo/windows_i686_msvc@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7572,7 +7572,7 @@
       "type": "library",
       "name": "windows_i686_msvc",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_i686_msvc@0.53.0",
+      "purl": "pkg:cargo/windows_i686_msvc@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7591,7 +7591,7 @@
       "type": "library",
       "name": "windows_x86_64_gnu",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_gnu@0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_gnu@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7610,7 +7610,7 @@
       "type": "library",
       "name": "windows_x86_64_gnu",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_gnu@0.53.0",
+      "purl": "pkg:cargo/windows_x86_64_gnu@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7629,7 +7629,7 @@
       "type": "library",
       "name": "windows_x86_64_gnullvm",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_gnullvm@0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_gnullvm@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7648,7 +7648,7 @@
       "type": "library",
       "name": "windows_x86_64_gnullvm",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_gnullvm@0.53.0",
+      "purl": "pkg:cargo/windows_x86_64_gnullvm@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7667,7 +7667,7 @@
       "type": "library",
       "name": "windows_x86_64_msvc",
       "version": "0.52.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_msvc@0.52.6",
+      "purl": "pkg:cargo/windows_x86_64_msvc@0.52.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7686,7 +7686,7 @@
       "type": "library",
       "name": "windows_x86_64_msvc",
       "version": "0.53.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#windows_x86_64_msvc@0.53.0",
+      "purl": "pkg:cargo/windows_x86_64_msvc@0.53.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7705,7 +7705,7 @@
       "type": "library",
       "name": "winnow",
       "version": "1.0.5",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#winnow@1.0.5",
+      "purl": "pkg:cargo/winnow@1.0.5",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7724,7 +7724,7 @@
       "type": "library",
       "name": "wit-bindgen",
       "version": "0.57.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#wit-bindgen@0.57.1",
+      "purl": "pkg:cargo/wit-bindgen@0.57.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7743,7 +7743,7 @@
       "type": "library",
       "name": "yazi",
       "version": "0.2.2",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#yazi@0.2.2",
+      "purl": "pkg:cargo/yazi@0.2.2",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7762,7 +7762,7 @@
       "type": "library",
       "name": "yoke",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#yoke@0.8.0",
+      "purl": "pkg:cargo/yoke@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7781,7 +7781,7 @@
       "type": "library",
       "name": "yoke-derive",
       "version": "0.8.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#yoke-derive@0.8.0",
+      "purl": "pkg:cargo/yoke-derive@0.8.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7800,7 +7800,7 @@
       "type": "library",
       "name": "zeno",
       "version": "0.3.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zeno@0.3.3",
+      "purl": "pkg:cargo/zeno@0.3.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7819,7 +7819,7 @@
       "type": "library",
       "name": "zerocopy",
       "version": "0.8.63",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zerocopy@0.8.63",
+      "purl": "pkg:cargo/zerocopy@0.8.63",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7838,7 +7838,7 @@
       "type": "library",
       "name": "zerocopy-derive",
       "version": "0.8.63",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zerocopy-derive@0.8.63",
+      "purl": "pkg:cargo/zerocopy-derive@0.8.63",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7857,7 +7857,7 @@
       "type": "library",
       "name": "zerofrom",
       "version": "0.1.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zerofrom@0.1.6",
+      "purl": "pkg:cargo/zerofrom@0.1.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7876,7 +7876,7 @@
       "type": "library",
       "name": "zerofrom-derive",
       "version": "0.1.6",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zerofrom-derive@0.1.6",
+      "purl": "pkg:cargo/zerofrom-derive@0.1.6",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7895,7 +7895,7 @@
       "type": "library",
       "name": "zeroize",
       "version": "1.9.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.1",
+      "purl": "pkg:cargo/zeroize@1.9.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7914,7 +7914,7 @@
       "type": "library",
       "name": "zeroize_derive",
       "version": "1.5.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zeroize_derive@1.5.0",
+      "purl": "pkg:cargo/zeroize_derive@1.5.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7933,7 +7933,7 @@
       "type": "library",
       "name": "zip",
       "version": "9.5.1",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zip@9.5.1",
+      "purl": "pkg:cargo/zip@9.5.1",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7952,7 +7952,7 @@
       "type": "library",
       "name": "zlib-rs",
       "version": "0.6.8",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zlib-rs@0.6.8",
+      "purl": "pkg:cargo/zlib-rs@0.6.8",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7971,7 +7971,7 @@
       "type": "library",
       "name": "zmij",
       "version": "1.0.23",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zmij@1.0.23",
+      "purl": "pkg:cargo/zmij@1.0.23",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -7990,7 +7990,7 @@
       "type": "library",
       "name": "zstd",
       "version": "0.13.4",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.13.4",
+      "purl": "pkg:cargo/zstd@0.13.4",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -8009,7 +8009,7 @@
       "type": "library",
       "name": "zstd-safe",
       "version": "7.4.0",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@7.4.0",
+      "purl": "pkg:cargo/zstd-safe@7.4.0",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -8028,7 +8028,7 @@
       "type": "library",
       "name": "zstd-sys",
       "version": "2.1.2+zstd.1.5.7",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.2+zstd.1.5.7",
+      "purl": "pkg:cargo/zstd-sys@2.1.2+zstd.1.5.7",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -8047,7 +8047,7 @@
       "type": "library",
       "name": "zune-core",
       "version": "0.5.3",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zune-core@0.5.3",
+      "purl": "pkg:cargo/zune-core@0.5.3",
       "hashes": [
         {
           "alg": "SHA-256",
@@ -8066,7 +8066,7 @@
       "type": "library",
       "name": "zune-jpeg",
       "version": "0.5.15",
-      "purl": "registry+https://github.com/rust-lang/crates.io-index#zune-jpeg@0.5.15",
+      "purl": "pkg:cargo/zune-jpeg@0.5.15",
       "hashes": [
         {
           "alg": "SHA-256",

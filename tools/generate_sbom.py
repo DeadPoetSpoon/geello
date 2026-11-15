@@ -9,6 +9,11 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def cargo_purl(package):
+    """Return a checkout-independent Package URL for a Cargo package."""
+    return f"pkg:cargo/{package['name']}@{package['version']}"
+
+
 def main():
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--all-features", "--format-version", "1"], cwd=ROOT, text=True))
     lock = tomllib.loads((ROOT / "Cargo.lock").read_text(encoding="utf-8"))
@@ -16,7 +21,7 @@ def main():
     components = []
     for package in sorted(metadata["packages"], key=lambda p: (p["name"], p["version"])):
         components.append({"type": "library", "name": package["name"], "version": package["version"],
-                           "purl": package["id"], "hashes": ([{"alg": "SHA-256", "content": checksums[(package["name"], package["version"])]}]
+                           "purl": cargo_purl(package), "hashes": ([{"alg": "SHA-256", "content": checksums[(package["name"], package["version"])]}]
                                       if checksums[(package["name"], package["version"])] else []),
                            "licenses": ([{"license": {"id": package["license"]}}] if package.get("license") else [])})
     result = {"bomFormat": "CycloneDX", "specVersion": "1.5", "serialNumber": "urn:uuid:geello-cargo-lock",
