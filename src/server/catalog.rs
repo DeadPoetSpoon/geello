@@ -88,6 +88,10 @@ pub struct ResourceRecord {
     /// Managed immutable directory. External registration never grants ownership.
     pub managed_directory: Option<PathBuf>,
     pub class: Option<String>,
+    /// Effective source coordinate interpretation, retained independently of
+    /// disposable derived files. Older catalog records omit this metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_crs: Option<crate::Crs>,
     /// Immutable parsed-definition input. External source files remain outside
     /// Geello ownership; serving never reopens a mutable definition path.
     pub definition: Option<String>,
@@ -190,6 +194,7 @@ pub struct Catalog {
     state: Mutex<State>,
     _lock: File,
     memory: OperationContext,
+    changes: tokio::sync::watch::Sender<u64>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct CatalogStats {
@@ -321,8 +326,9 @@ impl Catalog {
         let records_bytes = records_memory(&records)?;
         let _validation = memory.reserve(records_bytes)?;
         let validation_ctx = memory.child(profile.context().limits(), None);
-        validate_graph(&records, &validation_ctx)?;
+        validate_graph(&records, profile.store_limits(), &validation_ctx)?;
         recover_deletions(&root, &records, profile.max_registry_bytes, &memory)?;
+        let changes = tokio::sync::watch::channel(generation.number).0;
         Ok(Arc::new(Self {
             root,
             profile,
@@ -336,10 +342,14 @@ impl Catalog {
             }),
             _lock: lock,
             memory,
+            changes,
         }))
     }
     pub fn root(&self) -> &Path {
         &self.root
+    }
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
     }
     pub fn stats(&self) -> CatalogStats {
         let s = self.state.lock().unwrap();
@@ -414,6 +424,64 @@ impl Catalog {
             .find(|r| r.published && r.key.kind == ResourceKind::Dataset && r.source.path == path)
             .map(|r| r.key.clone()))
     }
+    /// Public Maps/Tiles discovery reads only published map records, in one
+    /// generation. Bounded output must never expose source paths or definitions.
+    pub(crate) fn public_maps(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(u64, crate::Accounted<Vec<ResourceRecord>>, bool)> {
+        if limit == 0 || limit > self.profile.max_list_items {
+            return Err(ServerError::invalid("Collection limit exceeds profile"));
+        }
+        let state = self.state.lock().unwrap();
+        let mut maps = state
+            .records
+            .values()
+            .filter(|r| r.published && r.key.kind == ResourceKind::Map)
+            .skip(offset);
+        let mut records = Vec::new();
+        let mut holds = Vec::new();
+        for record in maps.by_ref().take(limit) {
+            holds.push(self.memory.reserve(memory::model_bytes(record)?)?);
+            records.push(record.clone());
+        }
+        Ok((
+            state.generation.number,
+            crate::Accounted::new(records, holds),
+            maps.next().is_some(),
+        ))
+    }
+    pub(crate) fn public_datasets(
+        &self,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(u64, crate::Accounted<Vec<ResourceRecord>>, bool)> {
+        if limit == 0 || limit > self.profile.max_list_items {
+            return Err(ServerError::invalid("Collection limit exceeds profile"));
+        }
+        let state = self.state.lock().unwrap();
+        let mut datasets = state
+            .records
+            .values()
+            .filter(|r| {
+                r.published
+                    && r.key.kind == ResourceKind::Dataset
+                    && r.class.as_deref() == Some("vector")
+            })
+            .skip(offset);
+        let mut records = Vec::new();
+        let mut holds = Vec::new();
+        for record in datasets.by_ref().take(limit) {
+            holds.push(self.memory.reserve(memory::model_bytes(record)?)?);
+            records.push(record.clone());
+        }
+        Ok((
+            state.generation.number,
+            crate::Accounted::new(records, holds),
+            datasets.next().is_some(),
+        ))
+    }
     pub fn list(&self, offset: usize, limit: usize) -> Result<Vec<ResourceRecord>> {
         if limit == 0 || limit > self.profile.max_list_items {
             return Err(ServerError::invalid("List limit exceeds profile"));
@@ -433,10 +501,14 @@ impl Catalog {
         condition.check(self.state.lock().unwrap().records.get(key))
     }
     pub fn pin(self: &Arc<Self>, key: &ResourceKey) -> Result<ResourcePin> {
+        self.pin_many(std::slice::from_ref(key))
+    }
+    /// Pin all roots and their dependencies from one authoritative generation.
+    pub(crate) fn pin_many(self: &Arc<Self>, keys: &[ResourceKey]) -> Result<ResourcePin> {
         let mut s = self.state.lock().unwrap();
         let mut holds = vec![];
         let mut records = BTreeMap::new();
-        let mut todo = vec![key.clone()];
+        let mut todo = keys.to_vec();
         while let Some(k) = todo.pop() {
             if records.contains_key(&k) {
                 continue;
@@ -495,7 +567,7 @@ impl Catalog {
         let mut records = s.records.clone();
         records.insert(record.key.clone(), record.clone());
         let validation_ctx = self.memory.child(self.profile.context().limits(), None);
-        validate_graph(&records, &validation_ctx)?;
+        validate_graph(&records, self.profile.store_limits(), &validation_ctx)?;
         self.commit(&mut s, records, safe_shard(&record.key), None)?;
         Ok(record)
     }
@@ -683,6 +755,7 @@ impl Catalog {
         s.records = records;
         s._memory = holds;
         s.records_bytes = records_bytes;
+        self.changes.send_replace(s.generation.number);
         Ok(())
     }
     fn save_generation(&self, generation: &Generation) -> Result<()> {
@@ -1027,6 +1100,7 @@ fn recover_deletions(
 }
 fn validate_graph(
     records: &BTreeMap<ResourceKey, ResourceRecord>,
+    store_limits: crate::derived::StoreLimits,
     ctx: &OperationContext,
 ) -> Result<()> {
     // Iterative DFS keeps a large resource graph off the process call stack.
@@ -1076,15 +1150,62 @@ fn validate_graph(
         // Revalidate against the graph being committed, including when a style
         // or animation changes beneath an existing map. Preparation-time reads
         // alone cannot prevent a concurrent dependency update from racing us.
+        // Empty catalog-only legacy records carry no parsed definition. HTTP
+        // publication always supplies a validated nonempty resource body.
+        if r.key.kind == ResourceKind::Style
+            && let Some(text) = r
+                .definition
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
+        {
+            let _hold = ctx.reserve(memory::envelope(text.len())?)?;
+            let style = crate::config::parse_style(text)?;
+            for symbol in style.rules.iter().flat_map(|rule| &rule.symbols) {
+                if let crate::config::SymbolDefinition::Label { fonts, .. } = symbol {
+                    let mut expected = None;
+                    for font in fonts {
+                        let key = ResourceKey::new(ResourceKind::Font, &font.resource)?;
+                        let record = records
+                            .get(&key)
+                            .ok_or_else(|| ServerError::conflict("Missing label font"))?;
+                        let path = record
+                            .derived_path
+                            .as_ref()
+                            .ok_or_else(|| ServerError::conflict("Font requires refresh"))?
+                            .join("font.bin");
+                        let bytes = memory::read_file(&path, store_limits.max_block_bytes, ctx)?;
+                        crate::text::validate_font(&crate::FontResource {
+                            identity: record.version.clone(),
+                            bytes: Arc::from(bytes.as_slice()),
+                            face_index: font.face_index,
+                        })?;
+                        let mut db = cosmic_text::fontdb::Database::new();
+                        db.load_font_data(bytes.to_vec());
+                        let face = db
+                            .faces()
+                            .find(|face| face.index == font.face_index)
+                            .ok_or_else(|| ServerError::conflict("Invalid label face"))?;
+                        let actual = (face.weight, face.style, face.stretch);
+                        if expected.is_some_and(|expected| expected != actual) {
+                            return Err(ServerError::conflict("Label stack face styles differ"));
+                        }
+                        expected = Some(actual);
+                    }
+                }
+            }
+        }
         if r.key.kind == ResourceKind::Map
-            && let Some(text) = r.definition.as_deref()
+            && let Some(text) = r
+                .definition
+                .as_deref()
+                .filter(|text| !text.trim().is_empty())
         {
             let _map_hold = ctx.reserve(memory::envelope(text.len())?)?;
             let map = crate::config::parse_map(text)?;
             for item in map
                 .items
                 .iter()
-                .filter(|i| !i.animation_bindings.is_empty())
+                .filter(|i| !i.animation_bindings.is_empty() || !i.geometry_bindings.is_empty())
             {
                 let style_record = records
                     .get(&ResourceKey::new(ResourceKind::Style, &item.style)?)
@@ -1097,27 +1218,55 @@ fn validate_graph(
                 let style = crate::config::parse_style(text)?;
                 let mut animations = BTreeMap::new();
                 let mut holds = vec![];
-                for binding in &item.animation_bindings {
-                    if animations.contains_key(&binding.animation) {
+                for animation_id in item
+                    .animation_bindings
+                    .iter()
+                    .map(|b| &b.animation)
+                    .chain(item.geometry_bindings.iter().map(|b| &b.animation))
+                {
+                    if animations.contains_key(animation_id) {
                         continue;
                     }
                     let record = records
-                        .get(&ResourceKey::new(
-                            ResourceKind::Animation,
-                            &binding.animation,
-                        )?)
+                        .get(&ResourceKey::new(ResourceKind::Animation, animation_id)?)
                         .ok_or_else(|| ServerError::conflict("Missing animation"))?;
                     let text = record
                         .definition
                         .as_deref()
                         .ok_or_else(|| ServerError::conflict("Missing animation definition"))?;
                     holds.push(ctx.reserve(memory::envelope(text.len())?)?);
-                    animations.insert(
-                        binding.animation.clone(),
-                        crate::config::parse_animation(text)?,
-                    );
+                    animations.insert(animation_id.clone(), crate::config::parse_animation(text)?);
                 }
                 crate::config::prepare_style_animations(&style, item, &animations, ctx)?;
+                if !item.geometry_bindings.is_empty() {
+                    let dataset = records
+                        .get(&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?)
+                        .ok_or_else(|| ServerError::conflict("Missing geometry dataset"))?;
+                    if dataset.class.as_deref() != Some("vector") {
+                        return Err(ServerError::conflict(
+                            "Geometry animation requires a vector dataset",
+                        ));
+                    }
+                    // New records keep interpretation in the authoritative
+                    // catalog so missing derived files remain lazily repairable.
+                    // Existing M3 records can acquire geometry bindings without
+                    // replacing their immutable data generation.
+                    let legacy_store;
+                    let crs = if let Some(crs) = &dataset.effective_crs {
+                        crs
+                    } else {
+                        let path = dataset.derived_path.as_ref().ok_or_else(|| {
+                            ServerError::conflict("Geometry animation requires prepared data")
+                        })?;
+                        legacy_store = crate::derived::DerivedVector::open_with_context(
+                            path,
+                            store_limits,
+                            ctx,
+                        )?;
+                        legacy_store.crs()
+                    };
+                    crate::config::prepare_geometry_animations(item, &animations, crs, ctx)?;
+                }
             }
         }
     }
@@ -1244,7 +1393,8 @@ mod tests {
             derived_path: None,
             managed_directory: Some(directory),
             class: Some("vector".into()),
-            definition: Some("immutable definition".into()),
+            effective_crs: None,
+            definition: Some("schema_version=1\nid='crash:style'\nrules=[]\n".into()),
             type_bindings: vec![],
         };
         (catalog, record)
@@ -1267,7 +1417,8 @@ mod tests {
             } else {
                 let mut replacement = record;
                 replacement.version = "v2".into();
-                replacement.definition = Some("replacement definition".into());
+                replacement.definition =
+                    Some("schema_version=1\nid='crash:style'\nrules=[]\n# replacement\n".into());
                 catalog
                     .publish(replacement, &Precondition::Version("v1".into()))
                     .unwrap();

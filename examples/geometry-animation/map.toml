@@ -1,0 +1,18 @@
+schema_version = 1
+id = "demo:motion-map"
+output_crs = ["OGC:CRS84", "EPSG:3857"]
+
+[[items]]
+id = "moving-points"
+dataset = "demo:motion-points"
+style = "demo:motion-style"
+
+[[items.geometry_bindings]]
+id = "motion"
+animation = "demo:motion"
+track = "position"
+feature_ids = ["moving"]
+max_features = 1
+start = 0.0
+speed = 1.0
+repeat = "once"

@@ -94,11 +94,6 @@ pub struct VectorBatch {
 
 /// Conservative clone envelope, including nested containers and empty geometry
 /// components. Allocator bookkeeping/RSS is distinct from operation accounting.
-#[cfg(any(
-    feature = "config-toml",
-    feature = "rust-proj",
-    feature = "derived-store"
-))]
 pub(crate) fn feature_clone_bytes(feature: &Feature) -> Result<usize, GeelloError> {
     use geo::CoordsIter;
     fn add(a: usize, b: usize) -> Result<usize, GeelloError> {

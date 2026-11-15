@@ -192,7 +192,7 @@ Research found pkg-config under the local MSYS2 installation but no discoverable
 | FontTools | **4.68.0**, no extras | [FontTools 4.68.0](https://pypi.org/project/fonttools/4.68.0/) |
 | Python | >=3.11 for regeneration | [Python](https://www.python.org/) |
 
-Font sources are SIL OFL 1.1. Choose actual static source files and record face/name/source SHA-256, source license and retained notices. Rename modified subsets with `Geello Test ...` family/style names as required for the chosen assets, retain shaping GSUB/GPOS closures, and commit compact subsets plus a reproducible maintenance recipe. Do not use an archived convenience repository as a different version source. Exact asset hashes are pending selection/download, not fabricated here.
+Font sources are SIL OFL 1.1. Choose actual static source files and record face/name/source SHA-256, source license and retained notices. Rename modified subsets with `Geello Test ...` family/style names as required for the chosen assets, retain shaping GSUB/GPOS closures, and commit compact subsets plus a reproducible maintenance recipe. Do not use an archived convenience repository as a different version source. Exact source/fixture/license hashes are now recorded in the [committed manifest](../../tests/fixtures/fonts/manifest.json), with the reproducible generation recipe in `tools/generate_test_fonts.py`.
 
 FontTools is maintenance-only, with its actual release license/source recorded when tooling is installed. Ordinary runtime and tests must not require FontTools, Python font generation, network access or system fonts. Test fixtures do not grant approval to redistribute arbitrary application fonts or the old reference font.
 
@@ -251,3 +251,14 @@ and resolved features already present in the owner-approved FlatGeobuf closure;
 no package, version or third-party feature was added. Geello uses the generated
 FGB tables and packed R-tree from FlatGeobuf 6.0.1 with admitted in-memory
 encoding, replacing the upstream disk-spooling writer.
+
+## M4 gate update — 2026-11-15
+
+The owner authorized completing all M4 work and handling confirmations using
+recommended choices. G-04 text/fixture and G-06 frozen protocol functional exit
+evidence is recorded in [document 12](12-m4-completion-and-evidence.md). The
+[M4 dependency record](m4-dependency-closure.json) captures the exact current
+lockfile, 421 third-party packages and 45 package/feature deltas, including
+cosmic-text/quick-xml and Axum WebSocket support. This extends the historical M3
+closure under the current authorization and does not authorize future upgrades.
+Platform, native PROJ and measured production profile gates remain M5.

@@ -126,6 +126,12 @@ pub(crate) struct Reservation {
     context: OperationContext,
     bytes: u64,
 }
+impl Reservation {
+    #[cfg(feature = "text")]
+    pub(crate) fn bytes(&self) -> u64 {
+        self.bytes
+    }
+}
 impl Drop for Reservation {
     fn drop(&mut self) {
         self.context

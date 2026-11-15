@@ -35,13 +35,15 @@ flatbuffers = { version = "=24.12.23", default-features = false, features = ["st
 blake3 = { version = "=1.8.7", default-features = false, features = ["std", "pure"], optional = true }
 tempfile = { version = "=3.27.0", optional = true }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"], optional = true }
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "tracing"], optional = true }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "tracing", "ws"], optional = true }
 tokio = { version = "=1.54.1", default-features = false, features = ["rt-multi-thread", "net", "sync", "time", "signal", "macros"], optional = true }
 tower = { version = "=0.5.3", default-features = false, features = ["util"], optional = true }
 moka = { version = "=0.12.16", default-features = false, features = ["sync"], optional = true }
 foyer = { version = "=0.22.6", default-features = false, features = ["runtime-tokio"], optional = true }
 futures-util = { version = "=0.3.34", default-features = false, features = ["std", "async-await"], optional = true }
 zip = { version = "=9.5.1", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
+quick-xml = { version = "=0.42.0", default-features = false, optional = true }
+cosmic-text = { version = "=0.19.0", default-features = false, features = ["std"], optional = true }
 
 [features]
 default = ["render-cpu", "render-gpu"]
@@ -54,8 +56,9 @@ rust-proj = ["dep:proj4rs", "dep:proj4wkt", "dep:crs-definitions"]
 render-gpu = ["dep:vello_gpu", "dep:vello_common", "dep:wgpu"]
 derived-store = ["dep:flatgeobuf", "dep:flatbuffers", "dep:blake3", "dep:tempfile"]
 encode-images = ["dep:image"]
-server = ["config-toml", "rust-proj", "derived-store", "encode-images", "dep:axum", "dep:tokio", "dep:tower", "dep:moka", "dep:foyer", "dep:futures-util", "dep:zip"]
+server = ["config-toml", "rust-proj", "derived-store", "encode-images", "text", "dep:axum", "dep:tokio", "dep:tower", "dep:moka", "dep:foyer", "dep:futures-util", "dep:zip", "dep:quick-xml"]
 server-full = ["server", "read-geojson", "read-shapefile", "read-geotiff", "render-cpu", "render-gpu"]
+text = ["dep:cosmic-text"]
 
 [lib]
 path = "src/lib.rs"

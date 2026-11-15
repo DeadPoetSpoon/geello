@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"beijing","properties":{"name":"北京 Beijing"},"geometry":{"type":"Point","coordinates":[116.4,39.9]}},{"type":"Feature","id":"shanghai","properties":{"name":"上海 Shanghai"},"geometry":{"type":"Point","coordinates":[121.5,31.2]}}]}

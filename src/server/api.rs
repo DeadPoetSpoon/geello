@@ -1,11 +1,12 @@
 //! Basic HTTP and protected administration adapters. Deployment must isolate
 //! /admin/v1 behind its reverse proxy; no in-process user system is implied.
+use super::http_extract::{CheckedPath as Path, CheckedQuery as Query};
 use super::*;
 use crate::{AspectPolicy, Bounds, View};
 use axum::{
     Json, Router,
     body::{Body, to_bytes},
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, put},
@@ -17,6 +18,8 @@ pub fn router(state: Arc<ServerState>) -> Router {
     let admission_state = state.clone();
     Router::new()
         .route("/health/ready", get(ready))
+        .route("/api", get(super::http_docs::openapi))
+        .route("/api.html", get(super::http_docs::html))
         .route("/admin/v1/resources", get(list))
         .route(
             "/admin/v1/resources/{kind}/{id}",
@@ -30,12 +33,46 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .route("/admin/v1/operations/{id}", get(operation))
         .route("/maps/{id}/image", get(image))
         .route("/tiles/{id}/{z}/{x}/{y}", get(tile))
+        .merge(super::ogc::routes())
+        .merge(super::legacy::routes())
+        .merge(super::features::routes())
+        .merge(super::websocket::routes())
+        .fallback(|| async { ServerError::new(404, "route-not-found", "Route not found") })
+        .method_not_allowed_fallback(|| async {
+            ServerError::new(405, "method-not-allowed", "Method not allowed")
+        })
         .layer(DefaultBodyLimit::disable())
         .layer(axum::middleware::from_fn_with_state(
             admission_state,
             admit_request,
         ))
+        .layer(axum::middleware::from_fn(request_id))
         .with_state(state)
+}
+
+async fn request_id(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    // Multiple field values are ambiguous, even if each value is valid alone.
+    let mut supplied = request.headers().get_all("x-request-id").iter();
+    let id = supplied
+        .next()
+        .filter(|_| supplied.next().is_none())
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| valid_request_id(value))
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("req-{}", super::catalog::operation_id()));
+    let mut response = next.run(request).await;
+    if let Ok(value) = axum::http::HeaderValue::from_str(&id) {
+        response.headers_mut().insert("x-request-id", value);
+    }
+    response
+}
+
+fn valid_request_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .all(|character| character.is_ascii_graphic() && character != '"' && character != ',')
 }
 async fn admit_request(
     State(s): State<Arc<ServerState>>,
@@ -382,7 +419,7 @@ async fn delete_content(
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ImageQuery {
+pub(super) struct ImageQuery {
     bbox: String,
     crs: String,
     width: u32,
@@ -427,8 +464,8 @@ async fn image(
 }
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-struct TileQuery {
-    geello_time: Option<f64>,
+pub(super) struct TileQuery {
+    pub(super) geello_time: Option<f64>,
 }
 async fn tile(
     State(s): State<Arc<ServerState>>,
@@ -455,7 +492,7 @@ fn accounted_body(bytes: crate::Accounted<Vec<u8>>) -> Body {
         },
     ))
 }
-fn json_response(s: &ServerState, value: &impl serde::Serialize) -> Result<Response> {
+pub(super) fn json_response(s: &ServerState, value: &impl serde::Serialize) -> Result<Response> {
     let bytes = crate::derived::bounded_json(
         value,
         s.config.profile.max_registry_bytes,
@@ -467,7 +504,23 @@ fn json_response(s: &ServerState, value: &impl serde::Serialize) -> Result<Respo
     )
         .into_response())
 }
-fn response(s: &ServerState, image: &EncodedResponse, headers: &HeaderMap) -> Result<Response> {
+pub(super) fn bytes_response(
+    s: &ServerState,
+    bytes: Vec<u8>,
+    content_type: &'static str,
+) -> Result<Response> {
+    let hold = s.scheduler.memory_context().reserve(bytes.len())?;
+    Ok((
+        [(header::CONTENT_TYPE, content_type)],
+        accounted_body(crate::Accounted::new(bytes, vec![hold])),
+    )
+        .into_response())
+}
+pub(super) fn response(
+    s: &ServerState,
+    image: &EncodedResponse,
+    headers: &HeaderMap,
+) -> Result<Response> {
     let not_modified = headers
         .get(header::IF_NONE_MATCH)
         .and_then(|v| v.to_str().ok())

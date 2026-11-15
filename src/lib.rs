@@ -34,6 +34,8 @@ mod scene;
 #[cfg(feature = "server")]
 pub mod server;
 mod style;
+#[cfg(feature = "text")]
+pub mod text;
 
 pub use core::*;
 pub use operation::*;

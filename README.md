@@ -34,15 +34,25 @@ typed raster validity/calibration/resampling, and strict TOML resource/style
 validation. M3 adds immutable vector/raster derived stores, a protected
 `/admin/v1` resource lifecycle API, sharded atomic catalog generations,
 bounded scheduling/caches and basic Axum map/tile PNG responses. M4 now adds
-stateless style/raster animation at `geello_time`. See the
-[M3 service guide and evidence](docs/refactor/09-m3-service-and-evidence.md)
-for actual interfaces and evidence. OGC services, WebSocket animation, text,
-and geometry trajectories remain M4. The old mutable
+stateless style/raster and stable-ID source-plane geometry animation,
+explicit isolated Unicode font shaping, global/curved labels, fixed-snapshot
+Features queries, namespace-aware WFS KVP/XML GeoJSON queries, WMS multi-map
+PNG/JPEG and WMTS fixed grids, plus bounded WebSocket playback/update/refresh
+and paired images. See the [M4 exit evidence](docs/refactor/12-m4-completion-and-evidence.md)
+and [independent protocol demonstration](examples/m4-protocols/README.md).
+The public contract is served at `/api` (OpenAPI JSON) and `/api.html` (offline
+HTML). OGC conformance responses remain explicitly non-certifying; full WFS/GML
+and official certification are outside the agreed query subset. The old mutable
 `RenderedGeometry`/`RenderOption` and Rocket prototype were removed during the
 refactor.
 
+See the [HTTP contract checkpoint](docs/refactor/11-m4-http-contract-and-evidence.md)
+for schema regeneration, sanitized errors and client migration notes.
+
 The [M4 animation checkpoint](docs/refactor/10-m4-animation-and-evidence.md)
 includes uploadable style/map/animation bodies and image/tile time examples.
+The [geometry demonstration](examples/geometry-animation/README.md) includes
+independent resource files and requests for moving an offscreen point into view.
 
 ## M1 library example
 

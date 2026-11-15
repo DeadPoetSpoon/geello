@@ -180,6 +180,15 @@ Dependency acceptance and platform/formal validation remain separate statuses.
 
 ### M4 — Text, complete protocol subset, animation and WebSocket
 
+Current status: see [M4 exit evidence](12-m4-completion-and-evidence.md) for
+implemented text/font, fixed-snapshot Features, WFS XML, WMS composition and
+WebSocket lifecycle. The paragraphs below preserve the milestone plan and earlier
+increment history; the final record supersedes its pending-work statements.
+M4 functional exit is complete on Windows: 146 ordinary tests and three
+explicit real-DX12 tests pass, with the frozen application subset and font
+fixture gates recorded there. M5 platform/deployment/performance work remains.
+
+
 **Prerequisites:** M3 stable resource/scheduler contracts; G-04 text/font proof; G-06 exact protocol contract and advertised classes; approved helper dependencies if needed.
 
 The first M4 increment is implemented: `src/animation.rs` provides stateless
@@ -188,10 +197,16 @@ linear-light premultiplied color interpolation, typed symbol overrides and
 raster-opacity-only evaluation. TOML animation bindings are validated at
 publication, included in render/cache identity through `geello_time`, and
 exercised by library, vector HTTP, tile HTTP and raster HTTP tests. Geometry
-trajectory, text layout, font shaping, WebSocket and OGC work remain in this
-milestone.
+trajectory and ordered source-plane transforms are now implemented as a second
+increment, with stable-ID selection, refresh CRS validation and an independent
+[demonstration](../../examples/geometry-animation/README.md). Text layout,
+font shaping, WebSocket and OGC work remain in this milestone. The current
+administration/readiness/image/tile routes now have generated OpenAPI 3.0.3 and
+static HTML contracts at `/api` and `/api.html`; the documented OGC, legacy
+and WebSocket paths expose only their tested subsets and return RFC 9457
+problems for unsupported operations.
 
-**Deliverables:** explicit isolated font stacks and approved test subsets; Unicode shaping/bidi/wrap and global collision layout; curved text/metatiles; stateless geometry/style animation; full agreed WMS/WMTS and OGC API Features/Maps/Tiles surfaces; honest WFS query subset with metadata/schema; complete WS state machine and paired image writer; JSON OpenAPI and static HTML API docs; independent demonstrations/request examples without server viewer hosting.
+**Deliverables:** explicit isolated font stacks and approved test subsets; Unicode shaping/bidi/wrap and global collision layout; curved text/metatiles; stateless geometry/style animation; full agreed WMS/WMTS and OGC API Features/Maps/Tiles surfaces; honest WFS query subset with metadata/schema; complete WS state machine and paired image writer; independent protocol demonstrations/request examples without server viewer hosting. The implemented administration/basic-render HTTP subset already has generated JSON OpenAPI and static HTML documentation; the remaining protocol documentation must describe only verified routes.
 
 **Protocol contract work:** freeze exact tagged fields, variant selector, vendor time parameter, parameter duplicate/case rules, namespace/ID/schema encoding, RFC3339 parsing, error/status/close-code mapping, conformance URIs and bounded message behavior. The accepted behavior is the constraint; introducing new capabilities or dependencies requires owner approval.
 

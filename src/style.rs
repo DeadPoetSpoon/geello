@@ -100,6 +100,8 @@ pub struct VectorItem {
 pub enum DrawItem {
     Vector(VectorItem),
     Image(ImagePlacement),
+    #[cfg(feature = "text")]
+    Label(crate::text::LabelItem),
 }
 #[derive(Debug, Clone, Default)]
 pub struct MapComposition {

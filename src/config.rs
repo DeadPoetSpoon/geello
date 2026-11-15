@@ -1,6 +1,8 @@
 //! Strict resource schemas and preparation-time property evaluation.
 use crate::query::{Filter, property};
 use crate::*;
+mod geometry;
+pub use geometry::*;
 use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashSet},
@@ -156,6 +158,24 @@ pub struct StrokeDefinition {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SymbolDefinition {
+    #[cfg(feature = "text")]
+    Label {
+        id: String,
+        field: Option<String>,
+        text: Option<String>,
+        fonts: Vec<FontDefinition>,
+        size: NumericExpression,
+        color: Option<String>,
+        language: Option<String>,
+        placement: String,
+        #[serde(default)]
+        priority: f64,
+        #[serde(default)]
+        allow_overlap: bool,
+        wrap_width: Option<f64>,
+        #[serde(default = "label_repeat")]
+        repeat_distance: f64,
+    },
     Point {
         id: String,
         shape: Option<String>,
@@ -208,6 +228,18 @@ pub enum RangeDefinition {
     DatasetMinmax,
     Explicit { min: f64, max: f64 },
 }
+#[cfg(feature = "text")]
+fn label_repeat() -> f64 {
+    300.
+}
+#[cfg(feature = "text")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FontDefinition {
+    pub resource: String,
+    #[serde(default)]
+    pub face_index: u32,
+}
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResamplingDefinition {
@@ -217,6 +249,8 @@ pub struct ResamplingDefinition {
 impl SymbolDefinition {
     pub fn id(&self) -> &str {
         match self {
+            #[cfg(feature = "text")]
+            Self::Label { id, .. } => id,
             Self::Point { id, .. }
             | Self::Line { id, .. }
             | Self::Area { id, .. }
@@ -345,6 +379,10 @@ impl SymbolDefinition {
             Self::Raster { .. } => {
                 return Err(config_error("raster symbol requires raster preparation"));
             }
+            #[cfg(feature = "text")]
+            Self::Label { .. } => {
+                return Err(config_error("label requires explicit font resolution"));
+            }
         })
     }
 }
@@ -413,6 +451,8 @@ pub struct MapItem {
     pub style: String,
     #[serde(default)]
     pub animation_bindings: Vec<AnimationBinding>,
+    #[serde(default)]
+    pub geometry_bindings: Vec<GeometryBindingDefinition>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -437,7 +477,10 @@ pub struct AnimationDefinition {
     pub schema_version: u32,
     pub id: String,
     pub duration: f64,
+    #[serde(default)]
     pub tracks: Vec<AnimationTrack>,
+    #[serde(default)]
+    pub geometry_tracks: Vec<GeometryTrackDefinition>,
 }
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -597,6 +640,8 @@ pub fn prepare_style_animations(
             return Err(config_error("animation and base length units must agree"));
         }
         let valid = match (track.parameter(), symbol) {
+            #[cfg(feature = "text")]
+            (_, SymbolDefinition::Label { .. }) => false,
             (SymbolParameter::Opacity, _) => true,
             (SymbolParameter::Size | SymbolParameter::Angle, SymbolDefinition::Point { .. }) => {
                 true
@@ -646,8 +691,37 @@ pub fn parse_dataset(text: &str, file: impl AsRef<Path>) -> Result<DatasetDefini
         ));
     }
     unique(d.queryables.iter().map(|q| q.name.as_str()))?;
-    for q in &d.queryables {
+    for q in &mut d.queryables {
+        // Queryables identify top-level source property names. Accept explicit
+        // one-token pointers as an adapter spelling, then retain the raw name
+        // used by reader-wide type validation.
+        if q.field.starts_with('/') {
+            let tokens = crate::query::pointer_tokens(&q.field)?;
+            if tokens.len() != 1 {
+                return Err(config_error("queryable must select a top-level property"));
+            }
+            q.field = tokens[0].clone();
+        }
         if q.field.is_empty()
+            || [
+                "bbox",
+                "limit",
+                "offset",
+                "cursor",
+                "datetime",
+                "ids",
+                "resultType",
+                "service",
+                "version",
+                "request",
+                "typenames",
+                "outputformat",
+                "count",
+                "startindex",
+                "resourceid",
+            ]
+            .iter()
+            .any(|name| q.name.eq_ignore_ascii_case(name))
             || !matches!(q.kind.as_str(), "string" | "boolean" | "integer" | "number")
         {
             return Err(config_error("invalid scalar queryable"));
@@ -697,6 +771,56 @@ fn validate_symbol(symbol: &SymbolDefinition) -> Result<(), GeelloError> {
         Ok(())
     };
     match symbol {
+        #[cfg(feature = "text")]
+        SymbolDefinition::Label {
+            field,
+            text,
+            fonts,
+            size,
+            color,
+            language,
+            placement,
+            priority,
+            wrap_width,
+            repeat_distance,
+            ..
+        } => {
+            if field.is_some() == text.is_some() {
+                return Err(config_error("label needs exactly one text or field"));
+            }
+            if let Some(field) = field {
+                crate::query::pointer_tokens(field)?;
+            }
+            if fonts.is_empty()
+                || fonts.iter().any(|f| !valid_resource_id(&f.resource))
+                || !matches!(placement.as_str(), "point" | "polygon" | "line" | "curved")
+                || !priority.is_finite()
+                || !repeat_distance.is_finite()
+                || *repeat_distance <= 0.
+                || wrap_width.is_some_and(|w| !w.is_finite() || w <= 0.)
+                || (placement == "curved" && wrap_width.is_some())
+                || size.value.is_some() == size.field.is_some()
+                || size.unit.is_none()
+                || size.value.is_some_and(|v| !v.is_finite() || v <= 0.)
+            {
+                return Err(config_error("invalid label configuration"));
+            }
+            if let Some(field) = &size.field {
+                crate::query::pointer_tokens(field)?;
+            }
+            if let Some(color) = color {
+                parse_color(color)?;
+            }
+            if language.as_ref().is_some_and(|l| {
+                l.is_empty()
+                    || l.len() > 128
+                    || l.split('-').any(|p| {
+                        p.is_empty() || p.len() > 8 || !p.bytes().all(|b| b.is_ascii_alphanumeric())
+                    })
+            }) {
+                return Err(config_error("invalid label language"));
+            }
+        }
         SymbolDefinition::Point {
             shape,
             size,
@@ -836,6 +960,7 @@ pub fn parse_map(text: &str) -> Result<MapDefinition, GeelloError> {
     check_header(m.schema_version, &m.id)?;
     unique(m.items.iter().map(|i| i.id.as_str()))?;
     for item in &m.items {
+        validate_geometry_bindings(item)?;
         if !valid_resource_id(&item.dataset) || !valid_resource_id(&item.style) {
             return Err(config_error(
                 "map item references must be namespace:local IDs",
@@ -863,6 +988,24 @@ pub fn parse_map(text: &str) -> Result<MapDefinition, GeelloError> {
     if m.output_crs.is_empty() {
         return Err(config_error("map CRS allowlist required"));
     }
+    if let Some(tiles) = &m.tiles {
+        unique(tiles.matrix_sets.iter().map(String::as_str))?;
+        if tiles.matrix_sets.is_empty() || tiles.min_zoom > tiles.max_zoom || tiles.max_zoom > 30 {
+            return Err(config_error(
+                "tile publication requires nonempty grids and ordered zooms within 0..30",
+            ));
+        }
+        for grid in &tiles.matrix_sets {
+            let crs = match grid.as_str() {
+                "WebMercatorQuad" => "EPSG:3857",
+                "WorldCRS84Quad" => "OGC:CRS84",
+                _ => return Err(config_error("unsupported tile matrix set")),
+            };
+            if !m.output_crs.iter().any(|c| c == crs) {
+                return Err(config_error("tile matrix CRS is not published by map"));
+            }
+        }
+    }
     if let Some(c) = &m.background {
         parse_color(c)?;
     }
@@ -874,7 +1017,15 @@ pub fn parse_animation(text: &str) -> Result<AnimationDefinition, GeelloError> {
     if !a.duration.is_finite() || a.duration <= 0. {
         return Err(config_error("positive finite animation duration required"));
     }
-    unique(a.tracks.iter().map(|t| t.id.as_str()))?;
+    unique(
+        a.tracks
+            .iter()
+            .map(|t| t.id.as_str())
+            .chain(a.geometry_tracks.iter().map(|t| t.id.as_str())),
+    )?;
+    for track in &a.geometry_tracks {
+        validate_geometry_track(track, a.duration)?;
+    }
     for t in &a.tracks {
         if !matches!(t.interpolation.as_str(), "step" | "linear") || t.keyframes.is_empty() {
             return Err(config_error("invalid animation interpolation/keyframes"));
@@ -987,6 +1138,18 @@ pub fn resolve_vector_style_at(
     time: f64,
     context: &OperationContext,
 ) -> Result<Accounted<MapComposition>, GeelloError> {
+    resolve_vector_style_with_fonts(style, batches, bindings, time, &BTreeMap::new(), context)
+}
+/// Resolve labels using only explicit font resources from the pinned graph.
+/// Font keys combine resource ID and selected face index.
+pub fn resolve_vector_style_with_fonts(
+    style: &StyleDefinition,
+    batches: &[Arc<VectorBatch>],
+    bindings: &[PreparedStyleBinding],
+    time: f64,
+    _fonts: &BTreeMap<(String, u32), Arc<FontResource>>,
+    context: &OperationContext,
+) -> Result<Accounted<MapComposition>, GeelloError> {
     crate::animation::validate_time(time)?;
     let mut items = vec![];
     let mut reservations = vec![];
@@ -1006,6 +1169,90 @@ pub fn resolve_vector_style_at(
                         .transpose()?
                         .is_some_and(|v| !v.matches())
                     {
+                        continue;
+                    }
+                    #[cfg(feature = "text")]
+                    if let SymbolDefinition::Label {
+                        field,
+                        text: literal,
+                        fonts,
+                        size,
+                        color,
+                        language,
+                        placement,
+                        priority,
+                        allow_overlap,
+                        wrap_width,
+                        repeat_distance,
+                        ..
+                    } = symbol
+                    {
+                        let text = if let Some(text) = literal {
+                            text
+                        } else {
+                            let Some(PropertyValue::String(text)) =
+                                property(&feature.properties, field.as_deref().unwrap())?
+                            else {
+                                continue;
+                            };
+                            text
+                        };
+                        let Some(geometry) = &feature.geometry else {
+                            continue;
+                        };
+                        let fonts = fonts
+                            .iter()
+                            .map(|f| {
+                                _fonts
+                                    .get(&(f.resource.clone(), f.face_index))
+                                    .cloned()
+                                    .ok_or_else(|| config_error("missing explicit label font"))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        reservations.push(
+                            context.reserve(
+                                crate::core::feature_clone_bytes(feature)?
+                                    .checked_mul(2)
+                                    .and_then(|n| n.checked_add(512))
+                                    .ok_or(GeelloError::SizeOverflow)?,
+                            )?,
+                        );
+                        items.push(DrawItem::Label(crate::text::LabelItem {
+                            crs: batch.crs.clone(),
+                            geometry: geometry.clone(),
+                            text: text.clone(),
+                            style: TextStyle {
+                                fonts,
+                                size: size.length(&feature.properties)?,
+                                color: parse_color(color.as_deref().unwrap_or("#000000"))?,
+                                language: language.clone().unwrap_or_else(|| "und".into()),
+                            },
+                            placement: match placement.as_str() {
+                                "point" => crate::text::LabelPlacement::Point,
+                                "polygon" => crate::text::LabelPlacement::Polygon,
+                                "line" => crate::text::LabelPlacement::Line,
+                                _ => crate::text::LabelPlacement::Curved,
+                            },
+                            priority: *priority,
+                            allow_overlap: *allow_overlap,
+                            wrap_width: *wrap_width,
+                            repeat_distance: *repeat_distance,
+                            marker_source: items.iter().enumerate().rev().find_map(
+                                |(index, item)| {
+                                    if let DrawItem::Vector(v) = item
+                                        && v.symbols.iter().any(|s| matches!(s, Symbol::Point(_)))
+                                        && v.batches.iter().flat_map(|b| &b.features).any(|f| {
+                                            f.source_ordinal == feature.source_ordinal
+                                                && f.geometry == feature.geometry
+                                        })
+                                    {
+                                        Some((index, feature.source_ordinal))
+                                    } else {
+                                        None
+                                    }
+                                },
+                            ),
+                        }));
                         continue;
                     }
                     let mut resolved = symbol.resolve(&feature.properties)?;
@@ -1081,6 +1328,18 @@ impl ResourceGraph {
                     .get(&item.style)
                     .ok_or_else(|| config_error("map references missing style"))?;
                 let raster = self.datasets[&item.dataset].source.kind == "geotiff";
+                validate_geometry_bindings(item)?;
+                for binding in &item.geometry_bindings {
+                    if raster
+                        || !self.animations.get(&binding.animation).is_some_and(|a| {
+                            a.geometry_tracks.iter().any(|t| t.id == binding.track)
+                        })
+                    {
+                        return Err(config_error(
+                            "missing or incompatible geometry animation track",
+                        ));
+                    }
+                }
                 if style
                     .rules
                     .iter()

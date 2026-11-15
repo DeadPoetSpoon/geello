@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wfs:GetFeature xmlns:wfs="http://www.opengis.net/wfs/2.0"
+                xmlns:fes="http://www.opengis.net/fes/2.0"
+                xmlns:gml="http://www.opengis.net/gml/3.2"
+                service="WFS" version="2.0.0" outputFormat="application/json">
+  <wfs:Query typeNames="demo:cities" srsName="OGC:CRS84">
+    <fes:Filter>
+      <fes:BBOX>
+        <fes:ValueReference>geometry</fes:ValueReference>
+        <gml:Envelope srsName="OGC:CRS84">
+          <gml:lowerCorner>110 30</gml:lowerCorner>
+          <gml:upperCorner>125 45</gml:upperCorner>
+        </gml:Envelope>
+      </fes:BBOX>
+    </fes:Filter>
+  </wfs:Query>
+</wfs:GetFeature>

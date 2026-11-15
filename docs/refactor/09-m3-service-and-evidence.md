@@ -74,6 +74,8 @@ signature only; typography and full font validation remain M4/G-04.
 | `DELETE /admin/v1/resources/{kind}/{id}` | Remove record, retain managed/external original content; `204` |
 | `DELETE /admin/v1/resources/{kind}/{id}/content` | Managed content and record deletion with recovery journal; external ownership returns `409`; success `204` |
 | `GET /admin/v1/operations/{operationId}` | Persistent preparation status/result/diagnostic |
+| `GET /api` | OpenAPI 3.0.3 for the implemented HTTP subset, configured external base URL and binary/profile capabilities |
+| `GET /api.html` | Offline static API documentation generated from the same contract |
 | `GET /maps/{id}/image?bbox=-1,-1,1,1&crs=OGC:CRS84&width=256&height=256` | Basic XY bbox image, PNG, stretch aspect policy, published output CRS only |
 | `GET /tiles/{id}/{z}/{x}/{y}` | Basic WebMercatorQuad PNG, 256 pixels, buffered metatile; z in 0..30 |
 
@@ -82,8 +84,12 @@ All writes require exactly one strong `If-Match: "resource-version"`, or
 and reference/ownership conflicts return `409`. Conflict bodies include bounded
 reference keys when available. Validation failures use `400`/`422`; unsupported
 media `415`; capacity and preparing errors `503`; oversized uploads `413`.
-Errors produced by application handlers use RFC 9457 JSON. Axum extractor and
-routing rejections are not yet normalized to that schema.
+Application, extractor and routing errors now use sanitized RFC 9457 JSON
+problems (`application/problem+json`); 405 responses retain `Allow`. The M3
+route contract is served at `/api` and `/api.html`. Subsequent M4 work adds
+separately tested OGC Maps/Tiles/Features, WMS/WMTS/WFS subsets and a bounded
+WebSocket map route; their current boundaries and non-certifying status are
+recorded in the [M4 HTTP checkpoint](11-m4-http-contract-and-evidence.md).
 
 Upload media: GeoJSON `application/geo+json`, GeoTIFF `image/tiff`, Shapefile
 `application/zip`, definition `application/toml`, fonts `font/ttf`, `font/otf` or

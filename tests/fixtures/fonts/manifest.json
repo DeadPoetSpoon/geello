@@ -1,0 +1,61 @@
+{
+  "tool": "FontTools 4.68.0 (MIT; maintenance only)",
+  "fonts": [
+    {
+      "fixture": "latin.ttf",
+      "family": "Geello Test Sans",
+      "version": "2.015",
+      "source": "https://github.com/notofonts/latin-greek-cyrillic/releases/download/NotoSans-v2.015/NotoSans-v2.015.zip",
+      "archive_member": "NotoSans/unhinted/ttf/NotoSans-Regular.ttf",
+      "archive_sha256": "0c34df072a3fa7efbb7cbf34950e1f971a4447cffe365d3a359e2d4089b958f5",
+      "source_sha256": "f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8",
+      "fixture_sha256": "a6c332e52b38ede02e42e6c8d139e04e9ebe826b9e75b37a05d4bfa3806353aa",
+      "license": "latin-OFL.txt",
+      "license_sha256": "cee9892f9f0cc8fe882c9e9537ee6a89621d86ee7ceaf70b02e2b2b1c25c061a",
+      "text": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~éèöÅáñ́",
+      "face_index": 0
+    },
+    {
+      "fixture": "arabic.ttf",
+      "family": "Geello Test Arabic",
+      "version": "2.021",
+      "source": "https://github.com/notofonts/arabic/releases/download/NotoNaskhArabic-v2.021/NotoNaskhArabic-v2.021.zip",
+      "archive_member": "NotoNaskhArabic/unhinted/ttf/NotoNaskhArabic-Regular.ttf",
+      "archive_sha256": "6c050ab9bd087d69b733c505a7576e60c528c2f33cd7b91005a5bd7da4514032",
+      "source_sha256": "c34fdbd98af4dbc45ca192a23d2eeb77032add83086f5fe32957d23b3f36b221",
+      "fixture_sha256": "f30d0dd2f1f643a91c22a50780638b0aaa20b796652a50d4572497ffcc908875",
+      "license": "arabic-OFL.txt",
+      "license_sha256": "a7a5a25eb188bf1cd96982030d53e23c33485c69b1044a562254226857ee13af",
+      "text": "؀؁؂؃؄؅؆؇؈؉؊؋،؍؎؏ؘؙؚؐؑؒؓؔؕؖؗ؛؜؝؞؟ؠءآأؤإئابةتثجحخدذرزسشصضطظعغػؼؽؾؿـفقكلمنهوىيًٌٍَُِّْٕٖٜٟٓٔٗ٘ٙٚٛٝٞ٠١٢٣٤٥٦٧٨٩٪٫٬٭ٮٯٰٱٲٳٴٵٶٷٸٹٺٻټٽپٿڀځڂڃڄڅچڇڈډڊڋڌڍڎڏڐڑڒړڔڕږڗژڙښڛڜڝڞڟڠڡڢڣڤڥڦڧڨکڪګڬڭڮگڰڱڲڳڴڵڶڷڸڹںڻڼڽھڿۀہۂۃۄۅۆۇۈۉۊۋیۍێۏېۑےۓ۔ەۖۗۘۙۚۛۜ۝۞ۣ۟۠ۡۢۤۥۦۧۨ۩۪ۭ۫۬ۮۯ۰۱۲۳۴۵۶۷۸۹ۺۻۼ۽۾ۿ ",
+      "face_index": 0
+    },
+    {
+      "fixture": "indic.ttf",
+      "family": "Geello Test Devanagari",
+      "version": "2.007",
+      "source": "https://github.com/notofonts/devanagari/releases/download/NotoSansDevanagari-v2.007/NotoSansDevanagari-v2.007.zip",
+      "archive_member": "NotoSansDevanagari/unhinted/ttf/NotoSansDevanagari-Regular.ttf",
+      "archive_sha256": "820c7da45b1e63562cb41c0a8cac5d9a4202312043a3a040ed1325857ef469b1",
+      "source_sha256": "9c7d935139ea6a1e6ad9dbac4f6d27ece1e04bca8123c8888d00a0f9df4724cd",
+      "fixture_sha256": "b50516333a1e78bd7f54a0488fb4d35071dbda9fe3f47b3dcf6057889943c8ce",
+      "license": "indic-OFL.txt",
+      "license_sha256": "a216f6f8d85c7228093e0ee5e258d9d377e6671f68acb4db1930b29583d0f331",
+      "text": "ऀँंःऄअआइईउऊऋऌऍऎएऐऑऒओऔकखगघङचछजझञटठडढणतथदधनऩपफबभमयरऱलळऴवशषसहऺऻ़ऽािीुूृॄॅॆेैॉॊोौ्ॎॏॐ॒॑॓॔ॕॖॗक़ख़ग़ज़ड़ढ़फ़य़ॠॡॢॣ।॥०१२३४५६७८९॰ॱॲॳॴॵॶॷॸॹॺॻॼॽॾॿ ",
+      "face_index": 0
+    },
+    {
+      "fixture": "cjk.otf",
+      "family": "Geello Test CJK",
+      "version": "2.004",
+      "source": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+      "archive_member": null,
+      "archive_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+      "fixture_sha256": "c00b6030ef7fab9316724bca18a734efb9d4711cf265beb6e28a8f04fcd9d0cc",
+      "license": "cjk-OFL.txt",
+      "license_sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "text": "中国地图北京上海你好世界测试字体标签中文 ",
+      "face_index": 0
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 //! Stateless, memory-only keyframe evaluation. Times are finite seconds; colors
 //! use linear-light premultiplied interpolation, independently of symbol opacity.
 use crate::{Accounted, Color, GeelloError, Length, OperationContext, Symbol};
+mod geometry;
+pub use geometry::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Interpolation {
@@ -19,11 +21,14 @@ pub enum ValueKind {
     Nonnegative,
     Opacity,
     Color,
+    Vector,
+    NonnegativeVector,
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Value {
     Number(f64),
     Color(Color),
+    Vector([f64; 2]),
 }
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Keyframe {
@@ -35,6 +40,7 @@ pub struct Keyframe {
 #[derive(Debug)]
 pub struct Track {
     duration: f64,
+    kind: ValueKind,
     interpolation: Interpolation,
     frames: Vec<Keyframe>,
 }
@@ -74,6 +80,10 @@ impl Track {
             }
             match (kind, frame.value) {
                 (ValueKind::Color, Value::Color(_)) => {}
+                (ValueKind::Vector | ValueKind::NonnegativeVector, Value::Vector(v))
+                    if v.iter().all(|n| {
+                        n.is_finite() && (kind != ValueKind::NonnegativeVector || *n >= 0.)
+                    }) => {}
                 (
                     ValueKind::Number | ValueKind::Nonnegative | ValueKind::Opacity,
                     Value::Number(n),
@@ -87,6 +97,7 @@ impl Track {
         Ok(Accounted::new(
             Self {
                 duration,
+                kind,
                 interpolation,
                 frames: frames.to_vec(),
             },
@@ -329,6 +340,13 @@ fn interpolate(a: Value, b: Value, t: f64) -> Result<Value, GeelloError> {
                 return Err(invalid("interpolated number is not finite"));
             }
             Ok(Value::Number(n))
+        }
+        (Value::Vector(a), Value::Vector(b)) => {
+            let out = [a[0] * (1. - t) + b[0] * t, a[1] * (1. - t) + b[1] * t];
+            if out.iter().any(|n| !n.is_finite()) {
+                return Err(invalid("interpolated vector is not finite"));
+            }
+            Ok(Value::Vector(out))
         }
         (Value::Color(Color(a)), Value::Color(Color(b))) => {
             let aa = a[3] as f64 / 255.;

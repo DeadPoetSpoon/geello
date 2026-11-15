@@ -189,6 +189,81 @@ fn real_gpu_contract() {
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_SRC,
         );
+        #[cfg(all(feature = "text", feature = "render-cpu"))]
+        {
+            let fonts = [
+                (
+                    "latin",
+                    include_bytes!("fixtures/fonts/latin.ttf").as_slice(),
+                ),
+                (
+                    "arabic",
+                    include_bytes!("fixtures/fonts/arabic.ttf").as_slice(),
+                ),
+                (
+                    "indic",
+                    include_bytes!("fixtures/fonts/indic.ttf").as_slice(),
+                ),
+                ("cjk", include_bytes!("fixtures/fonts/cjk.otf").as_slice()),
+            ]
+            .into_iter()
+            .map(|(identity, bytes)| {
+                Arc::new(FontResource {
+                    identity: identity.into(),
+                    bytes: Arc::from(bytes),
+                    face_index: 0,
+                })
+            })
+            .collect();
+            let text_scene = prepare_scene(
+                &MapComposition {
+                    items: vec![DrawItem::Label(text::LabelItem {
+                        crs: crs(),
+                        geometry: Point::new(4., 16.).into(),
+                        text: "office العربية हिन्दी 中国地图".into(),
+                        style: TextStyle {
+                            fonts,
+                            size: Length::Pixels(18.),
+                            color: Color::BLACK,
+                            language: "und".into(),
+                        },
+                        placement: text::LabelPlacement::Point,
+                        priority: 0.,
+                        allow_overlap: false,
+                        wrap_width: None,
+                        repeat_distance: 300.,
+                        marker_source: None,
+                    })],
+                    background: None,
+                },
+                &View {
+                    crs: crs(),
+                    bounds: Bounds {
+                        min_x: 0.,
+                        min_y: 0.,
+                        max_x: 512.,
+                        max_y: 64.,
+                    },
+                    width: 512,
+                    height: 64,
+                    aspect: AspectPolicy::Stretch,
+                },
+                &ctx(),
+            )
+            .unwrap();
+            let cpu = CpuRenderer::new(1).render(&text_scene, &ctx()).unwrap();
+            let gpu = r.render_pixels(&text_scene, &ctx()).await.unwrap();
+            assert!(cpu.pixels().chunks_exact(4).filter(|p| p[3] > 0).count() > 100);
+            let sum: u64 = cpu
+                .pixels()
+                .iter()
+                .zip(gpu.pixels())
+                .map(|(a, b)| u64::from(a.abs_diff(*b)))
+                .sum();
+            let mean = sum as f64 / gpu.pixels().len() as f64;
+            println!("M4 multilingual outline CPU/GPU mean channel delta={mean}");
+            assert!(mean < 3.0);
+        }
         r.render_to_target(&s, &ExternalTarget { texture: &valid }, &ctx())
             .await
             .unwrap();

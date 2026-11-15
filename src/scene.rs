@@ -40,6 +40,44 @@ pub(crate) struct SceneData {
     pub _reservations: Vec<crate::operation::Reservation>,
 }
 impl PreparedScene {
+    #[cfg(feature = "server")]
+    pub(crate) fn add_missing_geometry_targets(
+        &mut self,
+        count: usize,
+        ctx: &OperationContext,
+    ) -> Result<(), GeelloError> {
+        let data = Arc::get_mut(&mut self.inner).expect("new scene is not shared");
+        let summary = &mut data.summary;
+        let retained = count.min(
+            ctx.limits()
+                .max_diagnostics
+                .saturating_sub(summary.diagnostics.len()),
+        );
+        let bytes = retained
+            .checked_mul(std::mem::size_of::<Diagnostic>())
+            .ok_or(GeelloError::SizeOverflow)?;
+        data._reservations.push(ctx.reserve(bytes)?);
+        summary.estimated_accounted_bytes = summary
+            .estimated_accounted_bytes
+            .checked_add(bytes)
+            .ok_or(GeelloError::SizeOverflow)?;
+        summary.incompatible_components = summary
+            .incompatible_components
+            .checked_add(count)
+            .ok_or(GeelloError::SizeOverflow)?;
+        summary.omitted_diagnostics = summary
+            .omitted_diagnostics
+            .checked_add(count - retained)
+            .ok_or(GeelloError::SizeOverflow)?;
+        for _ in 0..retained {
+            summary.diagnostics.push(Diagnostic {
+                item: usize::MAX,
+                source_ordinal: u64::MAX,
+                message: "geometry animation stable target is missing; skipped",
+            });
+        }
+        Ok(())
+    }
     pub fn summary(&self) -> &SceneSummary {
         &self.inner.summary
     }
@@ -83,6 +121,10 @@ struct Builder<'a> {
     commands: Vec<Command>,
     reservations: Vec<crate::operation::Reservation>,
     summary: SceneSummary,
+    #[cfg(feature = "text")]
+    obstacles: Vec<crate::text::MarkerObstacle>,
+    #[cfg(feature = "text")]
+    current_feature: Option<(usize, u64)>,
 }
 impl Builder<'_> {
     fn reserve(&mut self, n: usize) -> Result<(), GeelloError> {
@@ -267,6 +309,26 @@ impl Builder<'_> {
             return Ok(());
         }
         let r = size / 2.0;
+        #[cfg(feature = "text")]
+        if s.opacity > 0. && (s.fill.is_some() || s.stroke.is_some()) {
+            let stroke = s
+                .stroke
+                .as_ref()
+                .map(|stroke| self.stroke(stroke).map(|s| s.width / 2.))
+                .transpose()?
+                .unwrap_or(0.);
+            let extent = r * 2.0f64.sqrt() + stroke;
+            self.reserve(std::mem::size_of::<crate::text::MarkerObstacle>())?;
+            self.obstacles.push(crate::text::MarkerObstacle {
+                bounds: [
+                    center[0] - extent,
+                    center[1] - extent,
+                    center[0] + extent,
+                    center[1] + extent,
+                ],
+                source: self.current_feature,
+            });
+        }
         let angle = s.angle_degrees.to_radians();
         let (sin, cos) = angle.sin_cos();
         let tx = |x: f64, y: f64| [center[0] + x * cos - y * sin, center[1] + x * sin + y * cos];
@@ -398,6 +460,10 @@ pub fn prepare_scene(
         ctx: context,
         commands: vec![],
         reservations: vec![],
+        #[cfg(feature = "text")]
+        obstacles: vec![],
+        #[cfg(feature = "text")]
+        current_feature: None,
         summary: SceneSummary {
             width: view.width,
             height: view.height,
@@ -440,6 +506,10 @@ pub fn prepare_scene(
                         for feature in &batch.features {
                             context.checkpoint(1)?;
                             if let Some(g) = &feature.geometry {
+                                #[cfg(feature = "text")]
+                                {
+                                    b.current_feature = Some((item_index, feature.source_ordinal));
+                                }
                                 b.geometry(g, symbol, item_index, feature.source_ordinal, 0)?
                             }
                         }
@@ -469,7 +539,26 @@ pub fn prepare_scene(
                     opacity: i.opacity,
                 })?
             }
+            #[cfg(feature = "text")]
+            DrawItem::Label(_) => {}
         }
+    }
+    #[cfg(feature = "text")]
+    for label in crate::text::layout(composition, view, &b.obstacles, context)? {
+        for hold in label.holds {
+            b.summary.estimated_accounted_bytes = b
+                .summary
+                .estimated_accounted_bytes
+                .checked_add(hold.bytes() as usize)
+                .ok_or(GeelloError::SizeOverflow)?;
+            b.reservations.push(hold);
+        }
+        b.command(Command::Path {
+            path: label.path,
+            color: label.color,
+            opacity: 1.,
+            stroke: None,
+        })?;
     }
     b.summary.command_count = b.commands.len();
     context.check()?;

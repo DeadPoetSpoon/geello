@@ -4,7 +4,7 @@ Design baseline date: **2026-11-12**. Implementation branch: **`refactor`**. Ref
 
 Resource administration, indexed catalog storage and container-variant revision: **2026-11-13**. These additions supersede the earlier no-upload target boundary; existing implementation facts remain dated to the original assessment.
 
-This package consolidates the first-stage redesign discussed with the project owner. M0 is the documentation baseline; M1 memory execution, M2 input/configuration and the M3 basic service closed loop now have implementation evidence on `refactor`. M3 Windows functional exit conditions are satisfied; Linux durability, formal performance, public OGC/WebSocket protocols and deployment remain later gates. Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
+This package consolidates the first-stage redesign discussed with the project owner. M0 is the documentation baseline; M1 memory execution, M2 input/configuration and the M3 basic service closed loop now have implementation evidence on `refactor`. M3 Windows functional exit conditions are satisfied; Linux durability, formal performance and deployment remain M5 gates. M4 text, animation and the frozen public protocol subset have [functional exit evidence](12-m4-completion-and-evidence.md). Earlier experimental code and the reference branch inform the assessment; neither dictates the new architecture.
 
 The [2026-11-15 M3 exit review](09-m3-service-and-evidence.md#m3-exit-review--2026-11-15)
 records reproduced defects and fixes, additional recovery/retention tests and a
@@ -29,11 +29,13 @@ performance gates remain explicit.
 | 7 | [M2 dependency closure evidence](07-m2-dependency-closure.md) | Historical M2 packages; superseded by the owner-approved M3 closure. |
 | 8 | [M3 dependency closure evidence](08-m3-dependency-closure.md) | Owner-approved package closure, features, checksums, licenses, native inputs and dependency edges. |
 | 9 | [M3 service and evidence](09-m3-service-and-evidence.md) | Runnable experimental startup, actual administration/map/tile contracts, storage lifecycle, validation and gaps. |
-| 10 | [M4 animation and evidence](10-m4-animation-and-evidence.md) | Implemented memory/TOML style tracks, HTTP time selection, cache identity and remaining M4 scope. |
+| 10 | [M4 animation and evidence](10-m4-animation-and-evidence.md) | Implemented memory/TOML style/geometry tracks, stable-ID refresh, HTTP time selection, cache identity and remaining M4 scope. |
+| 11 | [M4 HTTP contract and evidence](11-m4-http-contract-and-evidence.md) | Historical HTTP checkpoint and maintenance workflow. |
+| 12 | [M4 completion and evidence](12-m4-completion-and-evidence.md) | Current text/font, protocol, snapshot and WebSocket contracts, independent examples and final verification. |
 
-The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Administration and derived storage have M3 implementation evidence; container images and OGC/WebSocket services remain pending.
+The design also covers the protected [resource lifecycle](04-public-apis-and-configuration.md#resource-administration-api), managed versus external sources, [resource index](03-architecture-and-data-flow.md#resource-files-catalog-generations-and-administration), and [container variants](04-public-apis-and-configuration.md#container-variants). The ordinary image tag is the target GPU Alpine variant; the `-cpu` tag is a CPU Alpine variant requiring independent verification. Administration and derived storage have M3 implementation evidence; container images remain M5; the agreed OGC/WebSocket subset is implemented.
 
-Read the requirements before the target examples. Documents 01–06 preserve the accepted design; documents 09–10 identify runnable M3/M4 subsets and the experimental profile. Target protocol examples must not be mistaken for implemented OGC/WebSocket routes.
+Read the requirements before the target examples. Documents 01–06 preserve the accepted design; documents 09–12 identify runnable M3/M4 contracts and the experimental profile. Target protocol examples must not be mistaken for implemented OGC/WebSocket routes.
 
 ## Status vocabulary
 

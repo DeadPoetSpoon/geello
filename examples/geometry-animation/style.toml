@@ -1,0 +1,11 @@
+schema_version = 1
+id = "demo:motion-style"
+
+[[rules]]
+id = "base"
+
+[[rules.symbols]]
+id = "marker"
+kind = "point"
+size = { value = 12.0, unit = "px" }
+fill = "#3388FF"

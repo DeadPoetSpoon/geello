@@ -1,0 +1,19 @@
+schema_version = 1
+id = "demo:labels"
+[[rules]]
+id = "base"
+[[rules.symbols]]
+id = "marker"
+kind = "point"
+size = {value = 6.0, unit = "px"}
+fill = "#3388ff"
+[[rules.symbols]]
+id = "label"
+kind = "label"
+field = "/name"
+fonts = [{resource = "demo:latin", face_index = 0}, {resource = "demo:cjk", face_index = 0}]
+size = {value = 18.0, unit = "px"}
+color = "#17212b"
+language = "und"
+placement = "point"
+priority = 1.0

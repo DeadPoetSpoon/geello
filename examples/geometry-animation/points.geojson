@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"moving","properties":{"name":"Moving point"},"geometry":{"type":"Point","coordinates":[10,0]}}]}

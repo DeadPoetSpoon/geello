@@ -38,6 +38,9 @@ fn profile() -> ServerProfile {
         active_background: 2,
         queued_per_class: 8,
         operation_timeout_ms: 60000,
+        max_feature_cursors: 128,
+        feature_cursor_ttl_ms: 60000,
+        max_animation_fps: 60,
         max_list_items: 100,
         metatile_size: 2,
         metatile_buffer: 16,
@@ -119,6 +122,263 @@ async fn upload(
 const DATA: &str = r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"a","properties":{"size":10},"geometry":{"type":"Point","coordinates":[0,0]}}]}"#;
 const STYLE: &str = "schema_version=1\nid='test:style'\n[[rules]]\nid='base'\n[[rules.symbols]]\nid='point'\nkind='point'\nfill='#ff0000'\nsize={value=12,unit='px'}\n";
 const MAP: &str = "schema_version=1\nid='test:map'\noutput_crs=['OGC:CRS84','EPSG:3857']\n[[items]]\nid='points'\ndataset='test:dataset'\nstyle='test:style'\n";
+
+#[tokio::test]
+async fn geometry_animation_moves_offscreen_ids_before_projection_and_rebinds_on_refresh() {
+    use geello::derived::DerivedVector;
+    use geello::readers::VectorQuery;
+    use geello::{OperationContext, OperationLimits};
+    let root = tempfile::tempdir().unwrap();
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    let outside = DATA.replace("[0,0]", "[10,0]");
+    let animation = "schema_version=1\nid='test:move'\nduration=2.0\n[[geometry_tracks]]\nid='position'\nsource_crs={definition='OGC:CRS84',space='GeographicXy'}\ninterpolation='linear'\ntrajectory={anchor=[10.0,0.0],points=[[10.0,0.0],[0.0,0.0]],timing='distance'}";
+    let map = format!(
+        "{MAP}\n[[items.geometry_bindings]]\nid='motion'\nanimation='test:move'\ntrack='position'\nfeature_ids=['a']\nmax_features=1\nstart=0.0\nspeed=1.0\nrepeat='once'"
+    );
+    for (kind, id, media, body) in [
+        (
+            "dataset",
+            "test:dataset",
+            "application/geo+json",
+            outside.as_str(),
+        ),
+        ("style", "test:style", "application/toml", STYLE),
+        ("animation", "test:move", "application/toml", animation),
+        ("map", "test:map", "application/toml", map.as_str()),
+    ] {
+        let op = upload(&s, &app, kind, id, media, body.to_owned()).await;
+        assert_eq!(op.status, OperationStatus::Ready, "{op:?}");
+    }
+    let dataset_key = ResourceKey::new(ResourceKind::Dataset, "test:dataset").unwrap();
+    let original = s.catalog.get(&dataset_key).unwrap();
+    let original_bytes = std::fs::read(&original.source.path).unwrap();
+    let uri = "/maps/test:map/image?bbox=-1,-1,1,1&crs=OGC:CRS84&width=32&height=32";
+    let mut first = None;
+    for (time, visible) in [(2., true), (0., false), (2., true)] {
+        let response = request(
+            &app,
+            "GET",
+            &format!("{uri}&geello_time={time}"),
+            None,
+            None,
+            Body::empty(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["x-geello-incomplete"], "false");
+        let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        let pixels = image::load_from_memory(&bytes).unwrap().into_rgba8();
+        assert_eq!(pixels.get_pixel(16, 16).0[3] > 200, visible);
+        if visible {
+            if let Some(first) = &first {
+                assert_eq!(first, &bytes);
+            } else {
+                first = Some(bytes);
+            }
+        }
+    }
+    let response = request(&app,"GET","/maps/test:map/image?bbox=-111319,-111325,111319,111325&crs=EPSG:3857&width=32&height=32&geello_time=2",None,None,Body::empty()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let pixels = image::load_from_memory(&to_bytes(response.into_body(), 1 << 20).await.unwrap())
+        .unwrap()
+        .into_rgba8();
+    assert!(pixels.get_pixel(16, 16).0[3] > 200);
+    // Source bytes and derived feature queries retain the original coordinates.
+    assert_eq!(
+        std::fs::read(&original.source.path).unwrap(),
+        original_bytes
+    );
+    let ctx = OperationContext::new(
+        OperationLimits {
+            max_live_bytes: 64 << 20,
+            max_work: 1_000_000,
+            max_commands: 1000,
+            max_diagnostics: 8,
+        },
+        None,
+    );
+    let store = DerivedVector::open_with_context(
+        original.derived_path.as_ref().unwrap(),
+        profile().store_limits(),
+        &ctx,
+    )
+    .unwrap();
+    let mut cursor = store.query(VectorQuery::default(), &ctx).unwrap();
+    let batch = cursor.next_batch(32, 1 << 20, &ctx).unwrap().unwrap();
+    assert!(
+        matches!(&batch.features[0].geometry,Some(geo_types::Geometry::Point(p)) if p.x()==10. && p.y()==0.)
+    );
+    drop(batch);
+    drop(cursor);
+    drop(store);
+    // A replacement animation with a different coordinate interpretation fails
+    // against the map in the generation being committed.
+    let key = ResourceKey::new(ResourceKind::Animation, "test:move").unwrap();
+    let old_animation = s.catalog.get(&key).unwrap();
+    let response = request(
+        &app,
+        "PUT",
+        "/admin/v1/resources/animation/test:move/content",
+        Some(&old_animation.etag()),
+        Some("application/toml"),
+        animation
+            .replace("OGC:CRS84", "EPSG:3857")
+            .replace("GeographicXy", "Planar"),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        wait(&s, json(response).await).await.status,
+        OperationStatus::Failed
+    );
+    assert_eq!(s.catalog.get(&key).unwrap().etag(), old_animation.etag());
+    // The same map time is reevaluated from the new geometry, with no accumulated
+    // motion or clock reset. Missing IDs produce an incomplete response.
+    for (body, incomplete, expected_x) in [
+        (outside.replace("[10,0]", "[10.5,0]"), false, 24),
+        (outside.replace("\"a\"", "\"b\""), true, 16),
+        (outside.clone(), false, 16),
+    ] {
+        let old = s.catalog.get(&dataset_key).unwrap();
+        let response = request(
+            &app,
+            "PUT",
+            "/admin/v1/resources/dataset/test:dataset/content",
+            Some(&old.etag()),
+            Some("application/geo+json"),
+            body,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let operation = wait(&s, json(response).await).await;
+        assert_eq!(operation.status, OperationStatus::Ready, "{operation:?}");
+        let response = request(
+            &app,
+            "GET",
+            &format!("{uri}&geello_time=2"),
+            None,
+            None,
+            Body::empty(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()["x-geello-incomplete"],
+            if incomplete { "true" } else { "false" }
+        );
+        let pixels =
+            image::load_from_memory(&to_bytes(response.into_body(), 1 << 20).await.unwrap())
+                .unwrap()
+                .into_rgba8();
+        assert_eq!(pixels.get_pixel(expected_x, 16).0[3] > 200, !incomplete);
+    }
+    // Dataset refresh with a new CRS also rolls back, retaining the live render.
+    let old = s.catalog.get(&dataset_key).unwrap();
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/admin/v1/resources/dataset/test:dataset/content")
+        .header("if-match", old.etag())
+        .header("content-type", "application/geo+json")
+        .header("x-geello-crs", "EPSG:3857")
+        .body(Body::from(outside))
+        .unwrap();
+    let response = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        wait(&s, json(response).await).await.status,
+        OperationStatus::Failed
+    );
+    assert_eq!(s.catalog.get(&dataset_key).unwrap().etag(), old.etag());
+    // Retain a legacy record without effective_crs, as written by M3. The
+    // binding can validate through its existing derived manifest.
+    let mut legacy = old.clone();
+    legacy.effective_crs = None;
+    legacy.version = "legacy-geometry-metadata".into();
+    s.catalog
+        .publish(legacy, &Precondition::Version(old.version.clone()))
+        .unwrap();
+    let legacy = s.catalog.get(&dataset_key).unwrap();
+    let mut current = legacy.clone();
+    current.effective_crs = old.effective_crs.clone();
+    current.version = "retained-geometry-metadata".into();
+    s.catalog
+        .publish(current, &Precondition::Version(legacy.version))
+        .unwrap();
+    let current = s.catalog.get(&dataset_key).unwrap();
+    let derived = current.derived_path.clone().unwrap();
+    let config = s.config.clone();
+    s.shutdown().await.unwrap();
+    drop(app);
+    drop(s);
+    // Quarantine only this disposable derived directory; authoritative source
+    // coordinates suffice to restart and schedule bounded lazy reconstruction.
+    let quarantine = root.path().join("geometry-derived-quarantine");
+    assert!(
+        derived.starts_with(root.path().canonicalize().unwrap())
+            && quarantine.starts_with(root.path())
+    );
+    std::fs::rename(&derived, &quarantine).unwrap();
+    let s = ServerState::open(config).await.unwrap();
+    let app = router(s.clone());
+    let response = request(
+        &app,
+        "GET",
+        &format!("{uri}&geello_time=2.5"),
+        None,
+        None,
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let problem = json(response).await;
+    let op_id = problem["title"]
+        .as_str()
+        .unwrap()
+        .split("operation ")
+        .nth(1)
+        .unwrap();
+    let operation = wait(&s, serde_json::json!({"operation_id":op_id})).await;
+    assert_eq!(operation.status, OperationStatus::Ready, "{operation:?}");
+    let rebuilt = s.catalog.get(&dataset_key).unwrap();
+    assert_eq!(rebuilt.data_version, current.data_version);
+    assert_eq!(rebuilt.effective_crs, current.effective_crs);
+    let response = request(
+        &app,
+        "GET",
+        &format!("{uri}&geello_time=2.5"),
+        None,
+        None,
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    assert!(
+        image::load_from_memory(&bytes)
+            .unwrap()
+            .into_rgba8()
+            .get_pixel(16, 16)
+            .0[3]
+            > 200
+    );
+    let mut tiles = vec![];
+    for time in [0, 2] {
+        let response = request(
+            &app,
+            "GET",
+            &format!("/tiles/test:map/0/0/0?geello_time={time}"),
+            None,
+            None,
+            Body::empty(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        tiles.push(to_bytes(response.into_body(), 1 << 20).await.unwrap());
+    }
+    assert_ne!(tiles[0], tiles[1]);
+    s.shutdown().await.unwrap();
+}
 #[tokio::test]
 async fn stateless_style_animation_keys_time_and_rejects_broken_dependency_updates() {
     let root = tempfile::tempdir().unwrap();
@@ -1193,6 +1453,7 @@ fn record(id: &str) -> ResourceRecord {
         derived_path: None,
         managed_directory: None,
         class: Some("vector".into()),
+        effective_crs: None,
         definition: Some(String::new()),
         type_bindings: vec![],
     }
@@ -1206,7 +1467,11 @@ fn catalog_aggregate_budget_preserves_the_last_complete_generation() {
     let mut accepted = 0;
     for index in 0..32 {
         let mut resource = record(&format!("budget:style-{index}"));
-        resource.definition = Some("x".repeat(8192));
+        resource.definition = Some(format!(
+            "schema_version=1\nid='{}'\nrules=[]\n#{}",
+            resource.key.id,
+            "x".repeat(8192)
+        ));
         let generation = catalog.stats().generation;
         let pointer = std::fs::read(root.path().join("registry/catalog.toml")).ok();
         match catalog.publish(resource, &Precondition::Absent) {

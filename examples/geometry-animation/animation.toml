@@ -1,0 +1,25 @@
+schema_version = 1
+id = "demo:motion"
+duration = 2.0
+
+[[geometry_tracks]]
+id = "position"
+source_crs = { definition = "OGC:CRS84", space = "GeographicXy" }
+interpolation = "linear"
+trajectory = { anchor = [10.0, 0.0], points = [[10.0, 0.0], [0.0, 0.0]], timing = "distance" }
+
+# Operations execute in this order after trajectory positioning. Their anchors
+# follow the trajectory and every preceding transform.
+[[geometry_tracks.transforms]]
+kind = "rotate"
+anchor = [10.0, 0.0]
+keyframes = [{ time = 0.0, value = 350.0 }, { time = 2.0, value = 370.0 }]
+
+[[geometry_tracks.transforms]]
+kind = "scale"
+anchor = [10.0, 0.0]
+keyframes = [{ time = 0.0, value = [1.0, 1.0] }, { time = 2.0, value = [2.0, 2.0] }]
+
+[[geometry_tracks.transforms]]
+kind = "translate"
+keyframes = [{ time = 0.0, value = [0.0, 0.0] }, { time = 2.0, value = [0.0, 0.25] }]

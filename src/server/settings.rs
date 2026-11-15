@@ -60,6 +60,9 @@ pub struct ServerProfile {
     pub active_background: usize,
     pub queued_per_class: usize,
     pub operation_timeout_ms: u64,
+    pub max_feature_cursors: usize,
+    pub feature_cursor_ttl_ms: u64,
+    pub max_animation_fps: u32,
     pub max_list_items: usize,
     pub metatile_size: u32,
     pub metatile_buffer: u32,
@@ -128,6 +131,7 @@ impl ServerProfile {
             self.max_registry_bytes,
             self.max_resources,
             self.max_operations,
+            self.max_feature_cursors,
             self.max_source_bytes,
             self.max_record_bytes,
             self.max_features,
@@ -153,6 +157,12 @@ impl ServerProfile {
             || self.max_dimension > u16::MAX as u32
             || self.max_compression_ratio == 0
             || self.operation_timeout_ms == 0
+            || self.feature_cursor_ttl_ms == 0
+            || self.max_animation_fps == 0
+            || self.max_animation_fps > 1000
+            || Instant::now()
+                .checked_add(Duration::from_millis(self.feature_cursor_ttl_ms))
+                .is_none()
             || self.metatile_size == 0
         {
             return Err(ServerError::invalid(

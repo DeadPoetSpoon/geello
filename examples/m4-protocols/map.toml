@@ -1,0 +1,9 @@
+schema_version = 1
+id = "demo:labels"
+output_crs = ["OGC:CRS84", "EPSG:3857"]
+language = "und"
+tiles = {matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"], min_zoom = 0, max_zoom = 22}
+[[items]]
+id = "cities"
+dataset = "demo:cities"
+style = "demo:labels"

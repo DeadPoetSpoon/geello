@@ -58,6 +58,11 @@ enum Backend {
     Gpu(Arc<tokio::sync::Mutex<GpuRenderer>>),
 }
 type Flight = watch::Sender<Option<Result<Arc<EncodedResponse>>>>;
+#[derive(Clone, Copy)]
+enum RenderDelivery {
+    Http,
+    Animation,
+}
 /// Area caches retain the preparation outcome alongside pixels so a different
 /// tile encode cannot lose the scene's incomplete-result summary.
 struct RenderedArea {
@@ -120,6 +125,7 @@ pub struct ServerState {
     pub(crate) uploads: Arc<tokio::sync::Semaphore>,
     pub(crate) requests: Arc<tokio::sync::Semaphore>,
     pub(crate) activities: Arc<super::activity::Activities>,
+    pub(crate) feature_cursors: Arc<super::features::CursorStore>,
     shutdown_lock: tokio::sync::Mutex<bool>,
 }
 impl ServerState {
@@ -287,6 +293,9 @@ impl ServerState {
         let requests = Arc::new(tokio::sync::Semaphore::new(
             p.active_http + p.queued_per_class,
         ));
+        let activities = super::activity::Activities::new();
+        let feature_cursors =
+            super::features::CursorStore::new(&config.profile, memory.clone(), activities.clone());
         Ok(Arc::new(Self {
             config,
             catalog,
@@ -309,7 +318,8 @@ impl ServerState {
             native_decodes: std::sync::atomic::AtomicU64::new(0),
             uploads,
             requests,
-            activities: super::activity::Activities::new(),
+            activities,
+            feature_cursors,
             shutdown_lock: tokio::sync::Mutex::new(false),
         }))
     }
@@ -669,6 +679,7 @@ impl ServerState {
         let mut derived_version = None;
         let mut derived_path = None;
         let mut class = None;
+        let mut effective_crs = None;
         let mut definition = dataset_body;
         let mut type_bindings = vec![];
         let mut definition_holds = vec![];
@@ -752,6 +763,7 @@ impl ServerState {
                             ctx,
                         )?;
                         let m = snap.metadata();
+                        effective_crs = Some(m.grid.crs.clone());
                         let store = DerivedRaster::build_base(
                             &parent,
                             &data_version,
@@ -843,6 +855,7 @@ impl ServerState {
                             }
                         };
                         let store = DerivedVector::build(&parent, &snapshot, store_limits, ctx)?;
+                        effective_crs = Some(snapshot.metadata().crs.clone());
                         derived_path = Some(parent.join(store.derived_version()));
                         derived_version = Some(store.derived_version().into());
                     }
@@ -860,6 +873,33 @@ impl ServerState {
                 let id = match key.kind {
                     ResourceKind::Style => {
                         let s = parse_style(&text)?;
+                        for symbol in s.rules.iter().flat_map(|r| &r.symbols) {
+                            if let SymbolDefinition::Label { fonts, .. } = symbol {
+                                for font in fonts {
+                                    let key = ResourceKey::new(ResourceKind::Font, &font.resource)?;
+                                    let record = self.catalog.get_accounted(&key)?;
+                                    let bytes = memory::read_file(
+                                        &record
+                                            .derived_path
+                                            .as_ref()
+                                            .ok_or_else(|| {
+                                                ServerError::invalid(
+                                                    "Font requires refresh before use",
+                                                )
+                                            })?
+                                            .join("font.bin"),
+                                        p.max_upload_bytes,
+                                        ctx,
+                                    )?;
+                                    crate::text::validate_font(&FontResource {
+                                        identity: record.version.clone(),
+                                        bytes: Arc::from(bytes.as_slice()),
+                                        face_index: font.face_index,
+                                    })?;
+                                    dependencies.push(key);
+                                }
+                            }
+                        }
                         let raster_count = s
                             .rules
                             .iter()
@@ -899,6 +939,10 @@ impl ServerState {
                                 dependencies
                                     .push(ResourceKey::new(ResourceKind::Animation, &a.animation)?);
                             }
+                            for a in &i.geometry_bindings {
+                                dependencies
+                                    .push(ResourceKey::new(ResourceKind::Animation, &a.animation)?);
+                            }
                         }
                         for item in &m.items {
                             let d = self.catalog.get_accounted(&ResourceKey::new(
@@ -929,6 +973,30 @@ impl ServerState {
                 if bytes.len() < 12 || !matches!(&bytes[..4], b"\0\x01\0\0" | b"OTTO" | b"ttcf") {
                     return Err(ServerError::invalid("Unsupported font container"));
                 }
+                crate::text::validate_font(&FontResource {
+                    identity: data_version.clone(),
+                    bytes: Arc::from(bytes.as_slice()),
+                    face_index: 0,
+                })?;
+                let parent = self.catalog.root().join("derived");
+                let path = parent.join(format!("font-{data_version}"));
+                fs::create_dir_all(&path).map_err(ServerError::io)?;
+                if directory_bytes(&parent, ctx)?.saturating_add(bytes.len() as u64)
+                    > p.max_derived_bytes
+                {
+                    return Err(ServerError::new(
+                        503,
+                        "derived-budget",
+                        "Font snapshot exceeds derived disk profile",
+                    ));
+                }
+                super::catalog::atomic_write(&path.join("font.bin"), &bytes)?;
+                super::catalog::atomic_write(
+                    &path.join("manifest.json"),
+                    b"{\"kind\":\"font\",\"schema\":1}",
+                )?;
+                derived_version = Some(format!("font-{data_version}"));
+                derived_path = Some(path);
             }
         }
         if fingerprint(&source, p.max_source_bytes, ctx)? != source_fingerprint {
@@ -952,6 +1020,7 @@ impl ServerState {
             derived_path,
             managed_directory: None,
             class,
+            effective_crs,
             definition,
             type_bindings,
         })
@@ -1189,7 +1258,51 @@ impl ServerState {
         view: View,
         time: f64,
     ) -> Result<Arc<EncodedResponse>> {
-        self.render_request(id, view, None, time).await
+        self.render_request(
+            id,
+            view,
+            None,
+            time,
+            None,
+            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
+        )
+        .await
+    }
+    /// Intermediate animation frames use animation admission and never enter
+    /// the HTTP response or rendered-area caches/singleflight tables.
+    #[cfg(test)]
+    pub(crate) async fn render_animation_at(
+        self: &Arc<Self>,
+        id: &str,
+        view: View,
+        time: f64,
+    ) -> Result<Arc<EncodedResponse>> {
+        self.render_request(
+            id,
+            view,
+            None,
+            time,
+            None,
+            (RenderDelivery::Animation, crate::encoding::ImageFormat::Png),
+        )
+        .await
+    }
+    pub(crate) async fn render_animation_format(
+        self: &Arc<Self>,
+        id: &str,
+        view: View,
+        time: f64,
+        format: crate::encoding::ImageFormat,
+    ) -> Result<Arc<EncodedResponse>> {
+        self.render_request(
+            id,
+            view,
+            None,
+            time,
+            None,
+            (RenderDelivery::Animation, format),
+        )
+        .await
     }
     pub async fn render_tile(
         self: &Arc<Self>,
@@ -1200,6 +1313,94 @@ impl ServerState {
     ) -> Result<Arc<EncodedResponse>> {
         self.render_tile_at(id, z, x, y, 0.).await
     }
+    /// Legacy multi-map requests share one pinned generation, canvas, global
+    /// label pass and final encoding. Request background applies exactly once.
+    pub(crate) async fn render_protocol_maps(
+        self: &Arc<Self>,
+        ids: Vec<String>,
+        view: View,
+        time: f64,
+        background: Option<Color>,
+        format: crate::encoding::ImageFormat,
+    ) -> Result<Arc<EncodedResponse>> {
+        let _activity = self.activities.enter()?;
+        crate::animation::validate_time(time)?;
+        view.validate()?;
+        if ids.is_empty()
+            || ids.len() > self.config.profile.max_list_items
+            || view.width > self.config.profile.max_dimension
+            || view.height > self.config.profile.max_dimension
+        {
+            return Err(ServerError::invalid("Map request exceeds profile"));
+        }
+        let keys = ids
+            .iter()
+            .map(|id| ResourceKey::new(ResourceKind::Map, id))
+            .collect::<Result<Vec<_>>>()?;
+        let pin = self.catalog.pin_many(&keys)?;
+        let ctx = self.scheduler.context();
+        let identities = pin
+            .records
+            .values()
+            .map(|r| (&r.key, &r.version))
+            .collect::<Vec<_>>();
+        let bytes = crate::derived::bounded_json(
+            &identities,
+            self.config.profile.max_registry_bytes,
+            &ctx,
+        )?;
+        let revision = super::catalog::identity(&[&bytes]);
+        let worker = self.clone();
+        let scene = self
+            .scheduler
+            .blocking(WorkClass::Http, ctx.clone(), move |c| {
+                let mut maps = Vec::new();
+                let mut holds = Vec::new();
+                for key in keys {
+                    let definition = pin.records[&key]
+                        .definition
+                        .as_deref()
+                        .ok_or_else(|| ServerError::io("missing map"))?;
+                    holds.push(c.reserve(memory::envelope(definition.len())?)?);
+                    maps.push(parse_map(definition)?);
+                }
+                worker.prepare_maps(&maps, &pin, &view, time, background, &c)
+            })
+            .await?;
+        let incomplete = scene.summary().incompatible_components > 0;
+        let pixels = self.execute_pixels(scene, &ctx, WorkClass::Http).await?;
+        self.encodes
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let max = self.config.profile.max_image_bytes;
+        let encoded = self
+            .scheduler
+            .blocking(WorkClass::Http, ctx, move |c| {
+                Ok(crate::encoding::encode(&pixels, format, max, &c)?)
+            })
+            .await?;
+        let etag = format!("\"{}\"", blake3::hash(&encoded).to_hex());
+        let (bytes, encoding_holds) = encoded.into_parts();
+        let hold = self.scheduler.memory_context().reserve(
+            bytes
+                .capacity()
+                .checked_add(RESPONSE_HEADER_MAX)
+                .ok_or(GeelloError::SizeOverflow)?,
+        )?;
+        drop(encoding_holds);
+        Ok(Arc::new(EncodedResponse {
+            bytes,
+            etag,
+            content_type: match format {
+                crate::encoding::ImageFormat::Png => "image/png",
+                _ => "image/jpeg",
+            }
+            .into(),
+            render_revision: revision,
+            backend: self.backend_name.clone(),
+            incomplete,
+            _memory: vec![hold],
+        }))
+    }
     pub async fn render_tile_at(
         self: &Arc<Self>,
         id: &str,
@@ -1208,41 +1409,36 @@ impl ServerState {
         y: u32,
         time: f64,
     ) -> Result<Arc<EncodedResponse>> {
-        crate::animation::validate_time(time)
-            .map_err(|_| ServerError::invalid("Invalid animation time"))?;
-        if z > 30 || x >= 1u32 << z || y >= 1u32 << z {
-            return Err(ServerError::invalid("Tile is outside WebMercatorQuad"));
-        }
-        let p = &self.config.profile;
-        let count = 1u32 << z;
-        let group = p.metatile_size.min(count);
-        let gx = x / group * group;
-        let gy = y / group * group;
-        let size = 40075016.68557849 / count as f64;
-        let origin = 20037508.342789244;
-        let buffer = p.metatile_buffer as f64 / 256. * size;
-        let view = View {
-            crs: parse_crs("EPSG:3857")?,
-            bounds: Bounds {
-                min_x: -origin + gx as f64 * size - buffer,
-                max_x: -origin + (gx + group) as f64 * size + buffer,
-                max_y: origin - gy as f64 * size + buffer,
-                min_y: origin - (gy + group) as f64 * size - buffer,
-            },
-            width: group * 256 + p.metatile_buffer * 2,
-            height: group * 256 + p.metatile_buffer * 2,
-            aspect: AspectPolicy::Stretch,
-        };
+        let grid = super::tile_grid::TileGrid::WebMercatorQuad;
+        let (view, crop) = grid.layout(z, x, y, &self.config.profile)?;
         self.render_request(
             id,
             view,
-            Some([
-                (x - gx) * 256 + p.metatile_buffer,
-                (y - gy) * 256 + p.metatile_buffer,
-                256,
-                256,
-            ]),
+            Some(crop),
             time,
+            None,
+            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
+        )
+        .await
+    }
+    /// Protocol tile request: publication and grid are checked against the same
+    /// resource pin used for rendering/cache identity, including warm responses.
+    pub(crate) async fn render_protocol_tile_at(
+        self: &Arc<Self>,
+        id: &str,
+        grid: super::tile_grid::TileGrid,
+        coordinates: [u32; 3],
+        time: f64,
+    ) -> Result<Arc<EncodedResponse>> {
+        let [z, x, y] = coordinates;
+        let (view, crop) = grid.layout(z, x, y, &self.config.profile)?;
+        self.render_request(
+            id,
+            view,
+            Some(crop),
+            time,
+            Some((grid, z)),
+            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
         )
         .await
     }
@@ -1252,7 +1448,10 @@ impl ServerState {
         view: View,
         crop: Option<[u32; 4]>,
         time: f64,
+        protocol_tile: Option<(super::tile_grid::TileGrid, u32)>,
+        output: (RenderDelivery, crate::encoding::ImageFormat),
     ) -> Result<Arc<EncodedResponse>> {
+        let (delivery, image_format) = output;
         let _activity = self.activities.enter()?;
         crate::animation::validate_time(time)
             .map_err(|_| ServerError::invalid("Invalid animation time"))?;
@@ -1268,6 +1467,18 @@ impl ServerState {
             .pin(&ResourceKey::new(ResourceKind::Map, id)?)?;
         let map_key = ResourceKey::new(ResourceKind::Map, id)?;
         let record = &pin.records[&map_key];
+        if let Some((grid, z)) = protocol_tile {
+            let text = record
+                .definition
+                .as_deref()
+                .ok_or_else(|| ServerError::io("missing map definition"))?;
+            let _hold = self
+                .scheduler
+                .memory_context()
+                .reserve(memory::envelope(text.len())?)?;
+            let map = parse_map(text).map_err(ServerError::from)?;
+            super::tile_grid::validate_publication(&map, grid, z)?;
+        }
         for resource in pin.records.values() {
             if resource.key.kind == ResourceKind::Dataset
                 && resource
@@ -1294,13 +1505,66 @@ impl ServerState {
         let version_bytes =
             crate::derived::bounded_json(&versions, self.config.profile.max_registry_bytes, &ctx)?;
         let revision = super::catalog::identity(&[&version_bytes]);
+        if matches!(delivery, RenderDelivery::Animation) {
+            drop(version_bytes);
+            let definition_hold = ctx.reserve(memory::envelope(
+                record.definition.as_ref().map_or(0, String::len),
+            )?)?;
+            let definition = record
+                .definition
+                .clone()
+                .ok_or_else(|| ServerError::io("missing immutable map definition"))?;
+            let definition = Accounted::new(definition, vec![definition_hold]);
+            let worker = self.clone();
+            let scene = self
+                .scheduler
+                .blocking(WorkClass::Animation, ctx.clone(), move |c| {
+                    worker.prepare_definition(&definition, &pin, &view, time, &c)
+                })
+                .await?;
+            let incomplete = scene.summary().incompatible_components > 0;
+            let pixels = self
+                .execute_pixels(scene, &ctx, WorkClass::Animation)
+                .await?;
+            self.encodes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let max = self.config.profile.max_image_bytes;
+            let encoded = self
+                .scheduler
+                .blocking(WorkClass::Animation, ctx.clone(), move |c| {
+                    Ok(crate::encoding::encode(&pixels, image_format, max, &c)?)
+                })
+                .await?;
+            let etag = format!("\"{}\"", blake3::hash(&encoded).to_hex());
+            let (bytes, encoding_holds) = encoded.into_parts();
+            let hold = self.scheduler.memory_context().reserve(
+                bytes
+                    .capacity()
+                    .checked_add(RESPONSE_HEADER_MAX)
+                    .ok_or(GeelloError::SizeOverflow)?,
+            )?;
+            drop(encoding_holds);
+            return Ok(Arc::new(EncodedResponse {
+                bytes,
+                etag,
+                content_type: match image_format {
+                    crate::encoding::ImageFormat::Png => "image/png",
+                    crate::encoding::ImageFormat::Jpeg { .. } => "image/jpeg",
+                }
+                .into(),
+                render_revision: revision,
+                backend: self.backend_name.clone(),
+                incomplete,
+                _memory: vec![hold],
+            }));
+        }
         let view_bytes =
             crate::derived::bounded_json(&view, self.config.profile.max_registry_bytes, &ctx)?;
         let crop_bytes =
             crate::derived::bounded_json(&crop, self.config.profile.max_registry_bytes, &ctx)?;
         let area_key = super::catalog::identity(&[
             // Bump when scene/response semantics change across binary upgrades.
-            b"geello-timed-render-v3",
+            b"geello-text-render-v5",
             revision.as_bytes(),
             self.backend_name.as_bytes(),
             &view_bytes,
@@ -1490,28 +1754,12 @@ impl ServerState {
                         let scene = state
                             .scheduler
                             .blocking(WorkClass::Http, ctx.clone(), move |c| {
-                                let _map_memory = c.reserve(memory::envelope(definition.len())?)?;
-                                let map = parse_map(&definition)?;
-                                if !map.output_crs.contains(&view.crs.definition().to_owned()) {
-                                    return Err(ServerError::invalid(
-                                        "Output CRS is not published by map",
-                                    ));
-                                }
-                                if map
-                                    .projection_backend
-                                    .as_deref()
-                                    .is_some_and(|p| p != "rust")
-                                {
-                                    return Err(ServerError::invalid(
-                                        "Projection backend is not available",
-                                    ));
-                                }
-                                worker.prepare_map(&map, &pin, &view, time, &c)
+                                worker.prepare_definition(&definition, &pin, &view, time, &c)
                             })
                             .await?;
                         let incomplete = scene.summary().incompatible_components > 0;
                         Ok(RenderedArea {
-                            image: state.execute_pixels(scene, &ctx).await?,
+                            image: state.execute_pixels(scene, &ctx, WorkClass::Http).await?,
                             incomplete,
                         })
                     };
@@ -1540,6 +1788,28 @@ impl ServerState {
                 .map_err(|_| ServerError::new(503, "worker", "Area worker stopped"))?;
         }
     }
+    fn prepare_definition(
+        &self,
+        definition: &str,
+        pin: &ResourcePin,
+        view: &View,
+        time: f64,
+        ctx: &OperationContext,
+    ) -> Result<PreparedScene> {
+        let _map_memory = ctx.reserve(memory::envelope(definition.len())?)?;
+        let map = parse_map(definition)?;
+        if !map.output_crs.contains(&view.crs.definition().to_owned()) {
+            return Err(ServerError::invalid("Output CRS is not published by map"));
+        }
+        if map
+            .projection_backend
+            .as_deref()
+            .is_some_and(|p| p != "rust")
+        {
+            return Err(ServerError::invalid("Projection backend is not available"));
+        }
+        self.prepare_map(&map, pin, view, time, ctx)
+    }
     fn prepare_map(
         &self,
         map: &MapDefinition,
@@ -1548,10 +1818,23 @@ impl ServerState {
         time: f64,
         ctx: &OperationContext,
     ) -> Result<PreparedScene> {
+        let background = map.background.as_deref().map(parse_color).transpose()?;
+        self.prepare_maps(std::slice::from_ref(map), pin, view, time, background, ctx)
+    }
+    fn prepare_maps(
+        &self,
+        maps: &[MapDefinition],
+        pin: &ResourcePin,
+        view: &View,
+        time: f64,
+        background: Option<Color>,
+        ctx: &OperationContext,
+    ) -> Result<PreparedScene> {
         let mut composition = MapComposition {
             items: vec![],
-            background: map.background.as_deref().map(parse_color).transpose()?,
+            background,
         };
+        let mut missing_geometry_targets = 0usize;
         let mut holds = vec![];
         let mut animations = BTreeMap::new();
         for record in pin
@@ -1566,170 +1849,282 @@ impl ServerState {
             holds.push(ctx.reserve(memory::envelope(text.len())?)?);
             animations.insert(record.key.id.clone(), parse_animation(text)?);
         }
-        for item in &map.items {
-            let dataset = &pin.records[&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?];
-            let style_record = &pin.records[&ResourceKey::new(ResourceKind::Style, &item.style)?];
-            let _style_memory = ctx.reserve(memory::envelope(
-                style_record.definition.as_ref().map_or(0, String::len),
-            )?)?;
-            let style = parse_style(
-                style_record
-                    .definition
+        for map in maps {
+            if !map.output_crs.contains(&view.crs.definition().to_owned())
+                || map
+                    .projection_backend
                     .as_deref()
-                    .ok_or_else(|| ServerError::io("missing immutable style definition"))?,
-            )?;
-            let bindings = prepare_style_animations(&style, item, &animations, ctx)?;
-            let path = dataset.derived_path.as_ref().ok_or_else(|| {
-                ServerError::new(503, "preparing", "Dataset has no complete derived version")
-            })?;
-            if dataset.class.as_deref() == Some("raster") {
-                let raster = DerivedRaster::open_with_context(
-                    path,
-                    self.config.profile.store_limits(),
-                    ctx,
+                    .is_some_and(|p| p != "rust")
+            {
+                return Err(ServerError::invalid(
+                    "Map output CRS/backend is not published",
+                ));
+            }
+            for item in &map.items {
+                let dataset =
+                    &pin.records[&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?];
+                let style_record =
+                    &pin.records[&ResourceKey::new(ResourceKind::Style, &item.style)?];
+                let _style_memory = ctx.reserve(memory::envelope(
+                    style_record.definition.as_ref().map_or(0, String::len),
+                )?)?;
+                let style = parse_style(
+                    style_record
+                        .definition
+                        .as_deref()
+                        .ok_or_else(|| ServerError::io("missing immutable style definition"))?,
                 )?;
-                for rule in &style.rules {
-                    for symbol in &rule.symbols {
-                        let ranges = raster.ranges();
-                        let mut colors = symbol.raster_options(&ranges)?;
-                        for binding in bindings.iter() {
-                            ctx.checkpoint(1)?;
-                            if binding.rule == rule.id && binding.symbol == symbol.id() {
-                                colors.opacity =
-                                    binding.track.raster_opacity(colors.opacity, time, ctx)?;
+                let bindings = prepare_style_animations(&style, item, &animations, ctx)?;
+                let path = dataset.derived_path.as_ref().ok_or_else(|| {
+                    ServerError::new(503, "preparing", "Dataset has no complete derived version")
+                })?;
+                if dataset.class.as_deref() == Some("raster") {
+                    let raster = DerivedRaster::open_with_context(
+                        path,
+                        self.config.profile.store_limits(),
+                        ctx,
+                    )?;
+                    for rule in &style.rules {
+                        for symbol in &rule.symbols {
+                            let ranges = raster.ranges();
+                            let mut colors = symbol.raster_options(&ranges)?;
+                            for binding in bindings.iter() {
+                                ctx.checkpoint(1)?;
+                                if binding.rule == rule.id && binding.symbol == symbol.id() {
+                                    colors.opacity =
+                                        binding.track.raster_opacity(colors.opacity, time, ctx)?;
+                                }
                             }
-                        }
-                        let kind = if dataset.source.sample_kind.as_deref() == Some("categorical") {
-                            crate::raster_processing::RasterKind::Categorical
-                        } else if dataset.source.sample_kind.as_deref() == Some("continuous") {
-                            crate::raster_processing::RasterKind::Continuous
-                        } else {
-                            return Err(ServerError::invalid(
-                                "Raster sample_kind must be explicitly continuous or categorical",
-                            ));
-                        };
-                        let SymbolDefinition::Raster { resampling, .. } = symbol else {
-                            return Err(ServerError::invalid("Raster style required"));
-                        };
-                        let parse_method =
-                            |s: &str| -> Result<crate::raster_processing::Resampling> {
-                                use crate::raster_processing::Resampling::*;
-                                match s {
-                                    "nearest" => Ok(Nearest),
-                                    "bilinear" => Ok(Bilinear),
-                                    "area" | "area-average" => Ok(AreaAverage),
-                                    _ => Err(ServerError::invalid("Unknown resampling method")),
+                            let kind = if dataset.source.sample_kind.as_deref()
+                                == Some("categorical")
+                            {
+                                crate::raster_processing::RasterKind::Categorical
+                            } else if dataset.source.sample_kind.as_deref() == Some("continuous") {
+                                crate::raster_processing::RasterKind::Continuous
+                            } else {
+                                return Err(ServerError::invalid(
+                                    "Raster sample_kind must be explicitly continuous or categorical",
+                                ));
+                            };
+                            let SymbolDefinition::Raster { resampling, .. } = symbol else {
+                                return Err(ServerError::invalid("Raster style required"));
+                            };
+                            let parse_method =
+                                |s: &str| -> Result<crate::raster_processing::Resampling> {
+                                    use crate::raster_processing::Resampling::*;
+                                    match s {
+                                        "nearest" => Ok(Nearest),
+                                        "bilinear" => Ok(Bilinear),
+                                        "area" | "area-average" => Ok(AreaAverage),
+                                        _ => Err(ServerError::invalid("Unknown resampling method")),
+                                    }
+                                };
+                            let enlarge = parse_method(&resampling.enlarge)?;
+                            let reduce = parse_method(&resampling.reduce)?;
+                            let compatible_overview = match kind {
+                                crate::raster_processing::RasterKind::Categorical => true,
+                                crate::raster_processing::RasterKind::Continuous => {
+                                    reduce == crate::raster_processing::Resampling::AreaAverage
                                 }
                             };
-                        let enlarge = parse_method(&resampling.enlarge)?;
-                        let reduce = parse_method(&resampling.reduce)?;
-                        let compatible_overview = match kind {
-                            crate::raster_processing::RasterKind::Categorical => true,
-                            crate::raster_processing::RasterKind::Continuous => {
-                                reduce == crate::raster_processing::Resampling::AreaAverage
-                            }
-                        };
-                        let level = raster_level(&raster, view, compatible_overview);
-                        let source_grid = raster.grid();
-                        let inverse = if source_grid.crs != view.crs {
-                            Some(crate::projection::RustProjection::new(
-                                view.crs.clone(),
-                                source_grid.crs.clone(),
-                            )?)
-                        } else {
-                            None
-                        };
-                        let [a, b, c, d, e, f] = source_grid.affine;
-                        let _ = (a, d);
-                        let factor = raster.level_dimensions(level).unwrap().2 as f64;
-                        let pixel = ((b * b + e * e).sqrt()).min((c * c + f * f).sqrt()) * factor;
-                        let scale = ((view.bounds.max_x - view.bounds.min_x) / view.width as f64)
-                            .max((view.bounds.max_y - view.bounds.min_y) / view.height as f64);
-                        let method = if inverse.is_some() || scale > pixel {
-                            reduce
-                        } else {
-                            enlarge
-                        };
-                        let Some(sampled) = raster.resample_view_cached(
-                            level,
-                            view.width,
-                            view.height,
-                            RasterGrid {
-                                crs: view.crs.clone(),
-                                affine: [
-                                    view.bounds.min_x,
-                                    (view.bounds.max_x - view.bounds.min_x) / view.width as f64,
-                                    0.,
-                                    view.bounds.max_y,
-                                    0.,
-                                    -(view.bounds.max_y - view.bounds.min_y) / view.height as f64,
-                                ],
-                                interpretation: PixelInterpretation::Area,
-                            },
-                            kind,
-                            method,
-                            |p| inverse.as_ref().map_or(Ok(p), |op| op.transform_xy(p)),
-                            ctx,
-                            Some(self),
-                        )?
-                        else {
-                            continue;
-                        };
-                        let image = crate::raster_processing::colorize(&sampled, &colors, ctx)?;
-                        holds.push(ctx.reserve(image.image().pixels().len())?);
-                        composition.items.push(DrawItem::Image(ImagePlacement {
-                            image: Arc::new(image.image().clone()),
-                            crs: view.crs.clone(),
-                            bounds: view.bounds,
-                            opacity: 1.,
-                        }));
-                    }
-                }
-            } else {
-                let store = DerivedVector::open_with_context(
-                    path,
-                    self.config.profile.store_limits(),
-                    ctx,
-                )?;
-                let mut cursor = store.query(VectorQuery::default(), ctx)?;
-                let mut batches = vec![];
-                while let Some(batch) = cursor.next_batch(
-                    self.config.profile.shard_features,
-                    self.config.profile.max_live_bytes.min(usize::MAX as u64) as usize / 4,
-                    ctx,
-                )? {
-                    let (batch, reservations) = batch.into_parts();
-                    holds.extend(reservations);
-                    batches.push(Arc::new(batch));
-                }
-                let resolved = resolve_vector_style_at(&style, &batches, &bindings, time, ctx)?;
-                let (mut resolved, reservations) = resolved.into_parts();
-                holds.extend(reservations);
-                for draw in &mut resolved.items {
-                    if let DrawItem::Vector(v) = draw {
-                        for batch in &mut v.batches {
-                            if batch.crs != view.crs {
-                                let projection = crate::projection::RustProjection::new(
-                                    batch.crs.clone(),
+                            let level = raster_level(&raster, view, compatible_overview);
+                            let source_grid = raster.grid();
+                            let inverse = if source_grid.crs != view.crs {
+                                Some(crate::projection::RustProjection::new(
                                     view.crs.clone(),
+                                    source_grid.crs.clone(),
+                                )?)
+                            } else {
+                                None
+                            };
+                            let [a, b, c, d, e, f] = source_grid.affine;
+                            let _ = (a, d);
+                            let factor = raster.level_dimensions(level).unwrap().2 as f64;
+                            let pixel =
+                                ((b * b + e * e).sqrt()).min((c * c + f * f).sqrt()) * factor;
+                            let scale = ((view.bounds.max_x - view.bounds.min_x)
+                                / view.width as f64)
+                                .max((view.bounds.max_y - view.bounds.min_y) / view.height as f64);
+                            let method = if inverse.is_some() || scale > pixel {
+                                reduce
+                            } else {
+                                enlarge
+                            };
+                            let Some(sampled) = raster.resample_view_cached(
+                                level,
+                                view.width,
+                                view.height,
+                                RasterGrid {
+                                    crs: view.crs.clone(),
+                                    affine: [
+                                        view.bounds.min_x,
+                                        (view.bounds.max_x - view.bounds.min_x) / view.width as f64,
+                                        0.,
+                                        view.bounds.max_y,
+                                        0.,
+                                        -(view.bounds.max_y - view.bounds.min_y)
+                                            / view.height as f64,
+                                    ],
+                                    interpretation: PixelInterpretation::Area,
+                                },
+                                kind,
+                                method,
+                                |p| inverse.as_ref().map_or(Ok(p), |op| op.transform_xy(p)),
+                                ctx,
+                                Some(self),
+                            )?
+                            else {
+                                continue;
+                            };
+                            let image = crate::raster_processing::colorize(&sampled, &colors, ctx)?;
+                            holds.push(ctx.reserve(image.image().pixels().len())?);
+                            composition.items.push(DrawItem::Image(ImagePlacement {
+                                image: Arc::new(image.image().clone()),
+                                crs: view.crs.clone(),
+                                bounds: view.bounds,
+                                opacity: 1.,
+                            }));
+                        }
+                    }
+                } else {
+                    let store = DerivedVector::open_with_context(
+                        path,
+                        self.config.profile.store_limits(),
+                        ctx,
+                    )?;
+                    let geometry =
+                        prepare_geometry_animations(item, &animations, store.crs(), ctx)?;
+                    let target_count = geometry.iter().try_fold(0usize, |n, b| {
+                        n.checked_add(b.ids().len())
+                            .ok_or(GeelloError::SizeOverflow)
+                    })?;
+                    let _target_hold = ctx.reserve(
+                        target_count
+                            .checked_mul(128)
+                            .ok_or(GeelloError::SizeOverflow)?,
+                    )?;
+                    let mut found = std::collections::HashSet::new();
+                    let mut cursor = store.query(VectorQuery::default(), ctx)?;
+                    let mut batches = vec![];
+                    while let Some(batch) = cursor.next_batch(
+                        self.config.profile.shard_features,
+                        self.config.profile.max_live_bytes.min(usize::MAX as u64) as usize / 4,
+                        ctx,
+                    )? {
+                        for feature in &batch.features {
+                            for binding in geometry.iter() {
+                                ctx.checkpoint(binding.ids().len() as u64)?;
+                                if let Some(id) = &feature.id
+                                    && let Some(target) =
+                                        binding.ids().iter().find(|target| *target == id)
+                                {
+                                    found.insert(target);
+                                }
+                            }
+                        }
+                        let mut batch = batch;
+                        for binding in geometry.iter() {
+                            batch = binding.evaluate_batch(&batch, time, ctx)?;
+                        }
+                        let (batch, reservations) = batch.into_parts();
+                        holds.extend(reservations);
+                        batches.push(Arc::new(batch));
+                    }
+                    missing_geometry_targets = missing_geometry_targets
+                        .checked_add(target_count - found.len())
+                        .ok_or(GeelloError::SizeOverflow)?;
+                    let mut fonts = BTreeMap::new();
+                    for symbol in style.rules.iter().flat_map(|r| &r.symbols) {
+                        if let SymbolDefinition::Label {
+                            fonts: definitions, ..
+                        } = symbol
+                        {
+                            for definition in definitions {
+                                let key = (definition.resource.clone(), definition.face_index);
+                                if fonts.contains_key(&key) {
+                                    continue;
+                                }
+                                let record = &pin.records
+                                    [&ResourceKey::new(ResourceKind::Font, &definition.resource)?];
+                                let bytes = memory::read_file(
+                                    &record
+                                        .derived_path
+                                        .as_ref()
+                                        .ok_or_else(|| {
+                                            ServerError::invalid("Font requires refresh before use")
+                                        })?
+                                        .join("font.bin"),
+                                    self.config.profile.max_upload_bytes,
+                                    ctx,
                                 )?;
-                                let projected = projection.project_batch(batch, ctx)?;
-                                let (projected, reservations) = projected.into_parts();
-                                holds.extend(reservations);
-                                *batch = Arc::new(projected);
+                                holds.push(ctx.reserve(bytes.len())?);
+                                fonts.insert(
+                                    key,
+                                    Arc::new(FontResource {
+                                        identity: record.version.clone(),
+                                        bytes: Arc::from(bytes.as_slice()),
+                                        face_index: definition.face_index,
+                                    }),
+                                );
                             }
                         }
                     }
+                    let resolved = resolve_vector_style_with_fonts(
+                        &style, &batches, &bindings, time, &fonts, ctx,
+                    )?;
+                    let (mut resolved, reservations) = resolved.into_parts();
+                    holds.extend(reservations);
+                    for draw in &mut resolved.items {
+                        if let DrawItem::Label(label) = draw {
+                            if let Some((index, _)) = &mut label.marker_source {
+                                *index += composition.items.len();
+                            }
+                            if label.style.language == "und" {
+                                label.style.language =
+                                    map.language.clone().unwrap_or_else(|| "und".into());
+                            }
+                            if label.crs != view.crs {
+                                use geo::MapCoords;
+                                let projection = crate::projection::RustProjection::new(
+                                    label.crs.clone(),
+                                    view.crs.clone(),
+                                )?;
+                                label.geometry = label.geometry.try_map_coords(|c| {
+                                    ctx.checkpoint(1)?;
+                                    let p = projection.transform_xy([c.x, c.y])?;
+                                    Ok::<_, GeelloError>(geo_types::Coord { x: p[0], y: p[1] })
+                                })?;
+                                label.crs = view.crs.clone();
+                            }
+                        }
+                        if let DrawItem::Vector(v) = draw {
+                            for batch in &mut v.batches {
+                                if batch.crs != view.crs {
+                                    let projection = crate::projection::RustProjection::new(
+                                        batch.crs.clone(),
+                                        view.crs.clone(),
+                                    )?;
+                                    let projected = projection.project_batch(batch, ctx)?;
+                                    let (projected, reservations) = projected.into_parts();
+                                    holds.extend(reservations);
+                                    *batch = Arc::new(projected);
+                                }
+                            }
+                        }
+                    }
+                    composition.items.extend(resolved.items);
                 }
-                composition.items.extend(resolved.items);
             }
         }
-        Ok(crate::prepare_scene(&composition, view, ctx)?)
+        let mut scene = crate::prepare_scene(&composition, view, ctx)?;
+        scene.add_missing_geometry_targets(missing_geometry_targets, ctx)?;
+        Ok(scene)
     }
     async fn execute_pixels(
         &self,
         scene: PreparedScene,
         ctx: &OperationContext,
+        class: WorkClass,
     ) -> Result<Accounted<RgbaImage>> {
         self.renders
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1737,7 +2132,7 @@ impl ServerState {
             #[cfg(feature = "render-cpu")]
             Backend::Cpu => {
                 self.scheduler
-                    .blocking(WorkClass::Http, ctx.clone(), move |c| {
+                    .blocking(class, ctx.clone(), move |c| {
                         Ok(CpuRenderer::new(1).render(&scene, &c)?)
                     })
                     .await?
@@ -1747,7 +2142,7 @@ impl ServerState {
                 let renderer = renderer.clone();
                 let render_context = ctx.clone();
                 self.scheduler
-                    .asynchronous(WorkClass::Http, ctx.clone(), async move {
+                    .asynchronous(class, ctx.clone(), async move {
                         Ok(renderer
                             .lock()
                             .await
@@ -2056,6 +2451,104 @@ fn directory_bytes(root: &Path, ctx: &OperationContext) -> Result<u64> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn animation_uses_its_own_queue_and_does_not_reuse_or_populate_http_caches() {
+        let root = tempfile::tempdir().unwrap();
+        let mut config =
+            ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.data_directory = root.path().into();
+        config.backend = BackendSelection::Cpu;
+        config.profile.active_http = 1;
+        let state = ServerState::open(config).await.unwrap();
+        let key = ResourceKey::new(ResourceKind::Map, "test:animation").unwrap();
+        state.catalog.publish(ResourceRecord {
+            key: key.clone(), ownership: Ownership::External, version: "v1".into(), published: true,
+            source: SourceSpec { path: root.path().join("map.toml"), format: "toml".into(), encoding: None, crs: None, sample_kind: None },
+            dependencies: vec![], data_version: "d1".into(), derived_version: None,
+            derived_path: None, managed_directory: None, class: None, effective_crs: None,
+            definition: Some("schema_version=1\nid='test:animation'\noutput_crs=['OGC:CRS84']\nitems=[]\n".into()),
+            type_bindings: vec![],
+        }, &Precondition::Absent).unwrap();
+        let view = View {
+            crs: Crs::new("OGC:CRS84", CoordinateSpace::GeographicXy).unwrap(),
+            bounds: Bounds {
+                min_x: 0.,
+                min_y: 0.,
+                max_x: 1.,
+                max_y: 1.,
+            },
+            width: 16,
+            height: 16,
+            aspect: AspectPolicy::Stretch,
+        };
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let scheduler = state.scheduler.clone();
+        let occupied = tokio::spawn(async move {
+            scheduler
+                .asynchronous(WorkClass::Http, scheduler.context(), async move {
+                    started.send(()).unwrap();
+                    released.await.unwrap();
+                    Ok(())
+                })
+                .await
+        });
+        ready.await.unwrap();
+        let baseline = state.scheduler.live_bytes();
+        let animation = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            state.render_animation_at(&key.id, view.clone(), 2.),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(state.execution_counts(), (1, 1));
+        assert_eq!(&animation.bytes[..8], b"\x89PNG\r\n\x1a\n");
+        drop(animation);
+        assert_eq!(state.catalog.stats().pinned_versions, 0);
+        assert_eq!(state.scheduler.live_bytes(), baseline);
+        release.send(()).unwrap();
+        occupied.await.unwrap().unwrap();
+
+        // An identical HTTP request still has to render and encode; the
+        // animation frame populated neither the pixel nor encoded response cache.
+        let http = state
+            .render_map_at(&key.id, view.clone(), 2.)
+            .await
+            .unwrap();
+        assert_eq!(state.execution_counts(), (2, 2));
+        let warm = state
+            .render_map_at(&key.id, view.clone(), 2.)
+            .await
+            .unwrap();
+        assert_eq!(http.bytes, warm.bytes);
+        assert_eq!(state.execution_counts(), (2, 2));
+        let animation = state
+            .render_animation_at(&key.id, view.clone(), 2.)
+            .await
+            .unwrap();
+        assert_eq!(animation.bytes, http.bytes);
+        assert_eq!(animation.render_revision, http.render_revision);
+        assert_eq!(state.execution_counts(), (3, 3));
+        drop((http, warm, animation));
+        let config = state.config.clone();
+        state.shutdown().await.unwrap();
+        drop(state);
+
+        // Recovery finds the HTTP disk entry, while animation still renders.
+        let state = ServerState::open(config).await.unwrap();
+        drop(
+            state
+                .render_map_at(&key.id, view.clone(), 2.)
+                .await
+                .unwrap(),
+        );
+        assert_eq!(state.execution_counts(), (0, 0));
+        drop(state.render_animation_at(&key.id, view, 2.).await.unwrap());
+        assert_eq!(state.execution_counts(), (1, 1));
+        state.shutdown().await.unwrap();
+    }
+
     #[cfg(feature = "render-gpu")]
     #[tokio::test]
     #[ignore = "Requires a real GPU; explicitly destroys the test device"]
@@ -2089,14 +2582,19 @@ mod tests {
             &ctx,
         )
         .unwrap();
-        assert!(state.execute_pixels(scene.clone(), &ctx).await.is_ok());
+        assert!(
+            state
+                .execute_pixels(scene.clone(), &ctx, WorkClass::Http)
+                .await
+                .is_ok()
+        );
         let Backend::Gpu(renderer) = &state.backend else {
             panic!("Expected real GPU");
         };
         renderer.lock().await.device().destroy();
         for _ in 0..2 {
             let error = state
-                .execute_pixels(scene.clone(), &ctx)
+                .execute_pixels(scene.clone(), &ctx, WorkClass::Http)
                 .await
                 .err()
                 .unwrap();
