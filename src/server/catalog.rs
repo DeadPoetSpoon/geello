@@ -1202,6 +1202,7 @@ fn validate_graph(
         {
             let _map_hold = ctx.reserve(memory::envelope(text.len())?)?;
             let map = crate::config::parse_map(text)?;
+            crate::projection::validate_backend(map.projection_backend.as_deref())?;
             for item in map
                 .items
                 .iter()

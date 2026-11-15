@@ -13,6 +13,8 @@ mod core;
 pub mod derived;
 #[cfg(feature = "encode-images")]
 pub mod encoding;
+#[cfg(feature = "native-proj")]
+pub mod native_projection;
 mod operation;
 #[cfg(feature = "rust-proj")]
 pub mod projection;

@@ -1,0 +1,55 @@
+name: Acceptance
+on:
+  push:
+    branches: [refactor, main]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  contracts:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo test --locked --no-default-features
+      - run: cargo test --locked --no-default-features --features server,render-cpu,read-geojson,read-shapefile,read-geotiff
+      - run: cargo check --locked --no-default-features --features server-full
+      - run: cargo clippy --locked --no-default-features --features server-full --all-targets -- -D warnings
+      - run: python tools/generate_http_docs.py --check
+      - run: python tools/verify_native_gate.py
+      - run: python tools/build_native_proj.py
+      - name: Native contracts
+        shell: pwsh
+        run: |
+          $env:GEELLO_NATIVE_ROOT = Join-Path $pwd 'target/m5-native/install'
+          $env:PATH = (Join-Path $env:GEELLO_NATIVE_ROOT 'bin') + [IO.Path]::PathSeparator + $env:PATH
+          $env:LD_LIBRARY_PATH = Join-Path $env:GEELLO_NATIVE_ROOT 'lib'
+          $env:PROJ_NETWORK = 'OFF'
+          cargo test --locked --no-default-features --features server-full,native-proj
+  cpu-container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f Dockerfile.cpu -t geello:acceptance-cpu .
+      - run: python tools/verify_container.py --image geello:acceptance-cpu --cpu-only
+      - run: docker build -t geello:acceptance .
+      - run: python tools/verify_container.py --image geello:acceptance
+  # Real GPU evidence is deliberately a separate, explicitly dispatched job.
+  hardware:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        include:
+          - runner: '["self-hosted", "Windows", "X64", "dx12"]'
+          - runner: '["self-hosted", "Linux", "X64", "vulkan"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --locked --features server-full --test gpu_contracts -- --ignored --nocapture

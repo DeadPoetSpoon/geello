@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "target": "x86_64-unknown-linux-gnu",
+  "versions": {
+    "proj": "9.6.2",
+    "sqlite": "3.54.1",
+    "tiff": "4.7.2",
+    "zlib": "1.4"
+  },
+  "sources": {
+    "proj": {
+      "version": "9.6.2",
+      "url": "https://download.osgeo.org/proj/proj-9.6.2.tar.gz",
+      "sha256": "53d0cafaee3bb2390264a38668ed31d90787de05e71378ad7a8f35bb34c575d1",
+      "directory": "proj-9.6.2",
+      "license": "COPYING"
+    },
+    "sqlite": {
+      "version": "3.54.1",
+      "url": "https://www.sqlite.org/2026/sqlite-autoconf-3540100.tar.gz",
+      "sha256": "926ef8d3eab93fbf6e06011901273eec076b25594a4e1cdadd50c987f4f6d64e",
+      "directory": "sqlite-autoconf-3540100",
+      "license": "sqlite3.c"
+    },
+    "tiff": {
+      "version": "4.7.2",
+      "url": "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+      "sha256": "672bd7d10aee4606171afb864f3570b83340f6a33e2c186dc0512f7145ffdf6a",
+      "directory": "tiff-4.7.2",
+      "license": "LICENSE.md"
+    },
+    "zlib": {
+      "version": "1.4",
+      "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+      "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+      "directory": "zlib-1.4",
+      "license": "LICENSE"
+    }
+  },
+  "network": false,
+  "grids": [],
+  "files": {
+    "bin/cct": "b2f4486a863cbc75b8586ed34173fd33878d5e1a97fce09d49c203ca8361c40e",
+    "bin/cs2cs": "3e4d3d6c5dec0655ca6b6fd233480f40a0021d5c2a3c901253da3a34397122ed",
+    "bin/geod": "06c8d8e1c60e2f0e87277744aa06b16bedc37e834e5bdcc3d37644926980e4fb",
+    "bin/gie": "77a3068382de267778153c9d57e8f58d6aa3849a3437d10e049efbba28275aec",
+    "bin/invgeod": "06c8d8e1c60e2f0e87277744aa06b16bedc37e834e5bdcc3d37644926980e4fb",
+    "bin/invproj": "aff97d433fef1b672fec5a1bf77d1d61bb831151439f3cb473925c109efa1bfe",
+    "bin/proj": "aff97d433fef1b672fec5a1bf77d1d61bb831151439f3cb473925c109efa1bfe",
+    "bin/projinfo": "48f5fd3e83a8a8f0dfc98a52139315548c078379836111b64da5db449738ba95",
+    "bin/sqlite3": "e9551eb6ea6524aab6abd0b55b49a45b3a3d0049f21fa2e0d23b748a14afece0",
+    "lib/libproj.so": "dcebab9f8a483894ee448ce42e8a7d73cb8f7f96820df5e8d50f1244edbc727b",
+    "lib/libproj.so.25": "dcebab9f8a483894ee448ce42e8a7d73cb8f7f96820df5e8d50f1244edbc727b",
+    "lib/libproj.so.25.9.6.2": "dcebab9f8a483894ee448ce42e8a7d73cb8f7f96820df5e8d50f1244edbc727b",
+    "lib/libsqlite3.so": "61005ab0094b43a43b204974cea4326ab5b580918bd88edc99241572817e1633",
+    "lib/libtiff.so": "58fc8f1092da321639f5aa53ac5254c3f1b8018e49248eba8e51850667c3a1e7",
+    "lib/libtiff.so.6": "58fc8f1092da321639f5aa53ac5254c3f1b8018e49248eba8e51850667c3a1e7",
+    "lib/libtiff.so.6.3.0": "58fc8f1092da321639f5aa53ac5254c3f1b8018e49248eba8e51850667c3a1e7",
+    "lib/libtiffxx.so": "6ab95af03beb6bce4002e148893d878935edc58ee3decaf3cd3f068f63beed4d",
+    "lib/libtiffxx.so.6": "6ab95af03beb6bce4002e148893d878935edc58ee3decaf3cd3f068f63beed4d",
+    "lib/libtiffxx.so.6.3.0": "6ab95af03beb6bce4002e148893d878935edc58ee3decaf3cd3f068f63beed4d",
+    "lib/libz.a": "71873f2c40628d2831b05015953c355496aa650e1b097a8b3f14dd2052f6ca5f",
+    "lib/libz.so": "38eae90f267c498b52744a1c04aaa691e242c83475c0803375204085a7268e00",
+    "lib/libz.so.1": "38eae90f267c498b52744a1c04aaa691e242c83475c0803375204085a7268e00",
+    "lib/libz.so.1.4": "38eae90f267c498b52744a1c04aaa691e242c83475c0803375204085a7268e00",
+    "lib/pkgconfig/libtiff-4.pc": "76b8797c9842c8b2191d1825cb6e18dcc43191af430fc19e8d74c830e36167cc",
+    "lib/pkgconfig/proj.pc": "b3a9688a82452e45405da2ff9c6195aba627704d85c2e92cd75595a2933c96da",
+    "lib/pkgconfig/zlib.pc": "85b6c8903e85f401a0733e501757708235c31cefece11f759f2d7a398e3a1357",
+    "licenses/proj.txt": "6a8f30793e877d32e3f88b972f0970a051a3b5a26cd057d3993cb51e21c43319",
+    "licenses/sqlite.txt": "0c657666d819f261cc4007526ad57e1669de9949df7a8ea847aa284a2bf0ee52",
+    "licenses/tiff.txt": "0e27c2382d7b8147972bbb746e04059a1152c8d0fda9d03ef1399d1a433c4ade",
+    "licenses/zlib.txt": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
+    "share/proj/CH": "6c53ea40a2c60325ba6c6b9a2b9c143bd165671c38820ecd8f23caab4a264ab5",
+    "share/proj/GL27": "85375e6315d6f644e4577dadf3c5f157528ad15b715c99b287bddab23d44193d",
+    "share/proj/ITRF2000": "5225c3b3367a37021e639cfd5bd1521d2bd5d00cbc474cd6b3b3827615a4fe72",
+    "share/proj/ITRF2008": "dc6985d5721e2e1d18fac996dee5dec90244ef3e20c38f72205e32d8842af2e2",
+    "share/proj/ITRF2014": "5fa17d6b66928ee6cb01ae4174ff8bf32458468bf817089df119779dfd382efa",
+    "share/proj/ITRF2020": "fb2fd52951adb9b32334757ed412fe5cdb9c8533af28421fa191dba7b4d73dcb",
+    "share/proj/deformation_model.schema.json": "ba0c5911117207a936fc738c1e31da001b45b51193773ce0c6742143f372b99d",
+    "share/proj/nad.lst": "1a28ed872fd1550f5bf7b5a5e5bfc5e7500b5f94c9745b84a1d156b32039928c",
+    "share/proj/nad27": "0bc231922461ac758922c6a7251e96d7e53e656608b1b4f06b7848fa8fc25520",
+    "share/proj/nad83": "9a6260c8680abe5216ca8fe985998fababc121b0032879a821d75cae3411dc96",
+    "share/proj/other.extra": "c1ef74c0a9b3e1f42a576c15bc43666c135b7e9361db5727a353204da279ccbb",
+    "share/proj/proj.db": "9799d3fa7f24db41e351cd212538e50734aaba7d01dc0aeb0a056666f7a14be2",
+    "share/proj/proj.ini": "b95ebf0d007339244483d65d571cd887a51806e2bd2c1ab7f47b897d25320d65",
+    "share/proj/projjson.schema.json": "67f090556bae996522edad482597c0f9e1b919ca4c9288ac9f8f7cd4180f49b6",
+    "share/proj/triangulation.schema.json": "b1528266667d4f3e87072c74e370b27135101515a9012a25287fcf312cea179a",
+    "share/proj/world": "f271cd3e56c7759d2fcfbbbd39870264eb81064155713c04fc92eadd30adeb48"
+  },
+  "link_name": "proj"
+}

@@ -123,6 +123,40 @@ const DATA: &str = r#"{"type":"FeatureCollection","features":[{"type":"Feature",
 const STYLE: &str = "schema_version=1\nid='test:style'\n[[rules]]\nid='base'\n[[rules.symbols]]\nid='point'\nkind='point'\nfill='#ff0000'\nsize={value=12,unit='px'}\n";
 const MAP: &str = "schema_version=1\nid='test:map'\noutput_crs=['OGC:CRS84','EPSG:3857']\n[[items]]\nid='points'\ndataset='test:dataset'\nstyle='test:style'\n";
 
+#[cfg(feature = "native-proj")]
+#[tokio::test]
+async fn explicitly_native_map_renders_projected_xy_and_reuses_its_own_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    let map = MAP.replacen(
+        "schema_version=1",
+        "schema_version=1\nprojection_backend='native'",
+        1,
+    );
+    for (kind, id, media, body) in [
+        ("dataset", "test:dataset", "application/geo+json", DATA),
+        ("style", "test:style", "application/toml", STYLE),
+        ("map", "test:map", "application/toml", map.as_str()),
+    ] {
+        let operation = upload(&s, &app, kind, id, media, body.to_owned()).await;
+        assert_eq!(operation.status, OperationStatus::Ready, "{operation:?}");
+    }
+    let route =
+        "/maps/test:map/image?bbox=-111319,-111325,111319,111325&crs=EPSG:3857&width=32&height=32";
+    let first = request(&app, "GET", route, None, None, Body::empty()).await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let revision = first.headers()["x-geello-render-revision"].clone();
+    let bytes = to_bytes(first.into_body(), 1 << 20).await.unwrap();
+    let pixels = image::load_from_memory(&bytes).unwrap().into_rgba8();
+    assert!(pixels.get_pixel(16, 16).0[0] > 200 && pixels.get_pixel(16, 16).0[3] > 200);
+    let second = request(&app, "GET", route, None, None, Body::empty()).await;
+    assert_eq!(second.status(), StatusCode::OK);
+    assert_eq!(second.headers()["x-geello-render-revision"], revision);
+    assert_eq!(to_bytes(second.into_body(), 1 << 20).await.unwrap(), bytes);
+    assert_eq!(s.execution_counts().0, 1);
+}
+
 #[tokio::test]
 async fn geometry_animation_moves_offscreen_ids_before_projection_and_rebinds_on_refresh() {
     use geello::derived::DerivedVector;

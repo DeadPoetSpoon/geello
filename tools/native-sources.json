@@ -1,0 +1,30 @@
+{
+  "proj": {
+    "version": "9.6.2",
+    "url": "https://download.osgeo.org/proj/proj-9.6.2.tar.gz",
+    "sha256": "53d0cafaee3bb2390264a38668ed31d90787de05e71378ad7a8f35bb34c575d1",
+    "directory": "proj-9.6.2",
+    "license": "COPYING"
+  },
+  "sqlite": {
+    "version": "3.54.1",
+    "url": "https://www.sqlite.org/2026/sqlite-autoconf-3540100.tar.gz",
+    "sha256": "926ef8d3eab93fbf6e06011901273eec076b25594a4e1cdadd50c987f4f6d64e",
+    "directory": "sqlite-autoconf-3540100",
+    "license": "sqlite3.c"
+  },
+  "tiff": {
+    "version": "4.7.2",
+    "url": "https://download.osgeo.org/libtiff/tiff-4.7.2.tar.gz",
+    "sha256": "672bd7d10aee4606171afb864f3570b83340f6a33e2c186dc0512f7145ffdf6a",
+    "directory": "tiff-4.7.2",
+    "license": "LICENSE.md"
+  },
+  "zlib": {
+    "version": "1.4",
+    "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+    "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+    "directory": "zlib-1.4",
+    "license": "LICENSE"
+  }
+}

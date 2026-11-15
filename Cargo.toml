@@ -44,6 +44,9 @@ futures-util = { version = "=0.3.34", default-features = false, features = ["std
 zip = { version = "=9.5.1", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 quick-xml = { version = "=0.42.0", default-features = false, optional = true }
 cosmic-text = { version = "=0.19.0", default-features = false, features = ["std"], optional = true }
+proj = { version = "=0.31.0", default-features = false, optional = true }
+proj-sys = { version = "=0.27.0", default-features = false, optional = true }
+sha2 = { version = "=0.10.9", optional = true }
 
 [features]
 default = ["render-cpu", "render-gpu"]
@@ -53,6 +56,7 @@ read-shapefile = ["dep:shapefile"]
 read-geotiff = ["dep:tiff"]
 config-toml = ["dep:toml"]
 rust-proj = ["dep:proj4rs", "dep:proj4wkt", "dep:crs-definitions"]
+native-proj = ["rust-proj", "dep:proj", "dep:proj-sys", "dep:blake3", "dep:sha2"]
 render-gpu = ["dep:vello_gpu", "dep:vello_common", "dep:wgpu"]
 derived-store = ["dep:flatgeobuf", "dep:flatbuffers", "dep:blake3", "dep:tempfile"]
 encode-images = ["dep:image"]
@@ -67,3 +71,10 @@ path = "src/lib.rs"
 name = "geello"
 path = "src/main.rs"
 required-features = ["server"]
+
+[patch.crates-io]
+proj-sys = { path = "third_party/proj-sys" }
+
+[[example]]
+name = "m5_benchmark"
+required-features = ["server", "render-cpu", "render-gpu", "read-geojson"]

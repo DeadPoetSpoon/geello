@@ -147,12 +147,18 @@ fn real_gpu_contract() {
     run(async {
         let selected = match std::env::var("GEELLO_TEST_BACKEND").as_deref() {
             Ok("vulkan") => wgpu::Backends::VULKAN,
-            _ => wgpu::Backends::DX12,
+            _ if cfg!(target_os = "windows") => wgpu::Backends::DX12,
+            _ => wgpu::Backends::VULKAN,
         };
         let (mut r, info) = GpuRenderer::new(selected, &ctx())
             .await
             .expect("real GPU required");
         println!("GPU evidence: {info:?}");
+        assert_ne!(
+            info.device_type,
+            wgpu::DeviceType::Cpu,
+            "software Vulkan is not real GPU evidence"
+        );
         let s = fixture();
         let a = r.render_pixels(&s, &ctx()).await.unwrap();
         assert_eq!(a, r.render_pixels(&s, &ctx()).await.unwrap());

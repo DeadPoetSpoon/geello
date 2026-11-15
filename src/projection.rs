@@ -12,6 +12,80 @@ pub struct RustProjection {
     from: Proj,
     to: Proj,
 }
+
+/// Explicit operation choice for server preparation. Selection never falls back.
+pub enum Projection {
+    Rust(Box<RustProjection>),
+    #[cfg(feature = "native-proj")]
+    Native(crate::native_projection::NativeProjection),
+}
+impl Projection {
+    pub fn new(backend: Option<&str>, source: Crs, target: Crs) -> Result<Self, GeelloError> {
+        match backend.unwrap_or("rust") {
+            "rust" => Ok(Self::Rust(Box::new(RustProjection::new(source, target)?))),
+            #[cfg(feature = "native-proj")]
+            "native" => Ok(Self::Native(
+                crate::native_projection::NativeProjection::new(source, target)?,
+            )),
+            _ => Err(GeelloError::Unsupported(
+                "projection backend is not compiled".into(),
+            )),
+        }
+    }
+    pub fn source(&self) -> &Crs {
+        match self {
+            Self::Rust(p) => p.source(),
+            #[cfg(feature = "native-proj")]
+            Self::Native(p) => p.source(),
+        }
+    }
+    pub fn target(&self) -> &Crs {
+        match self {
+            Self::Rust(p) => p.target(),
+            #[cfg(feature = "native-proj")]
+            Self::Native(p) => p.target(),
+        }
+    }
+    pub fn transform_xy(&self, xy: [f64; 2]) -> Result<[f64; 2], GeelloError> {
+        match self {
+            Self::Rust(p) => p.transform_xy(xy),
+            #[cfg(feature = "native-proj")]
+            Self::Native(p) => p.transform_xy(xy),
+        }
+    }
+    pub fn project_batch(
+        &self,
+        batch: &VectorBatch,
+        context: &OperationContext,
+    ) -> Result<Accounted<VectorBatch>, GeelloError> {
+        project_batch(batch, self.source(), self.target(), context, |xy| {
+            self.transform_xy(xy)
+        })
+    }
+}
+
+pub fn validate_backend(backend: Option<&str>) -> Result<(), GeelloError> {
+    match backend.unwrap_or("rust") {
+        "rust" => Ok(()),
+        #[cfg(feature = "native-proj")]
+        "native" => crate::native_projection::distribution_identity().map(|_| ()),
+        _ => Err(GeelloError::Unsupported(
+            "projection backend is not compiled".into(),
+        )),
+    }
+}
+
+/// A process fixes one native distribution; its identity partitions render caches.
+pub fn runtime_identity() -> Result<&'static str, GeelloError> {
+    #[cfg(feature = "native-proj")]
+    {
+        crate::native_projection::distribution_identity()
+    }
+    #[cfg(not(feature = "native-proj"))]
+    {
+        Ok("rust-proj-0.3.0")
+    }
+}
 fn resolve(crs: &Crs) -> Result<Proj, GeelloError> {
     let input = crs.definition();
     let definition = if input == "OGC:CRS84" {
@@ -103,41 +177,52 @@ impl RustProjection {
         batch: &VectorBatch,
         context: &OperationContext,
     ) -> Result<Accounted<VectorBatch>, GeelloError> {
-        if batch.crs != self.source {
-            return Err(GeelloError::Projection(
-                "operation source differs from batch CRS".into(),
-            ));
-        }
-        let bytes = batch.features.iter().try_fold(256usize, |n, f| {
-            n.checked_add(crate::core::feature_clone_bytes(f)?)
-                .ok_or(GeelloError::SizeOverflow)
-        })?;
-        // Transformation temporarily holds the cloned and newly mapped geometry.
-        let reservation =
-            context.reserve(bytes.checked_mul(2).ok_or(GeelloError::SizeOverflow)?)?;
-        let mut features = Vec::with_capacity(batch.features.len());
-        for feature in &batch.features {
-            context.checkpoint(1)?;
-            let mut output = feature.clone();
-            output.geometry = feature
-                .geometry
-                .as_ref()
-                .map(|g| {
-                    g.try_map_coords(|c: Coord<f64>| {
-                        context.checkpoint(1)?;
-                        let [x, y] = self.transform_xy([c.x, c.y])?;
-                        Ok::<_, GeelloError>(Coord { x, y })
-                    })
-                })
-                .transpose()?;
-            features.push(output);
-        }
-        Ok(Accounted::new(
-            VectorBatch {
-                crs: self.target.clone(),
-                features,
-            },
-            vec![reservation],
-        ))
+        project_batch(batch, self.source(), self.target(), context, |xy| {
+            self.transform_xy(xy)
+        })
     }
+}
+
+fn project_batch(
+    batch: &VectorBatch,
+    source: &Crs,
+    target: &Crs,
+    context: &OperationContext,
+    transform: impl Fn([f64; 2]) -> Result<[f64; 2], GeelloError>,
+) -> Result<Accounted<VectorBatch>, GeelloError> {
+    if &batch.crs != source {
+        return Err(GeelloError::Projection(
+            "operation source differs from batch CRS".into(),
+        ));
+    }
+    let bytes = batch.features.iter().try_fold(256usize, |n, f| {
+        n.checked_add(crate::core::feature_clone_bytes(f)?)
+            .ok_or(GeelloError::SizeOverflow)
+    })?;
+    // Transformation temporarily holds the cloned and newly mapped geometry.
+    let reservation = context.reserve(bytes.checked_mul(2).ok_or(GeelloError::SizeOverflow)?)?;
+    let mut features = Vec::with_capacity(batch.features.len());
+    for feature in &batch.features {
+        context.checkpoint(1)?;
+        let mut output = feature.clone();
+        output.geometry = feature
+            .geometry
+            .as_ref()
+            .map(|g| {
+                g.try_map_coords(|c: Coord<f64>| {
+                    context.checkpoint(1)?;
+                    let [x, y] = transform([c.x, c.y])?;
+                    Ok::<_, GeelloError>(Coord { x, y })
+                })
+            })
+            .transpose()?;
+        features.push(output);
+    }
+    Ok(Accounted::new(
+        VectorBatch {
+            crs: target.clone(),
+            features,
+        },
+        vec![reservation],
+    ))
 }

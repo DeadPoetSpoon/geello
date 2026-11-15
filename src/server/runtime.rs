@@ -155,6 +155,9 @@ impl ServerState {
         Fut: std::future::Future<Output = Result<Backend>>,
     {
         config.validate()?;
+        // Native distribution IO belongs to startup, before per-request deadlines.
+        // This also fails early if the build-time data/library inventory changed.
+        crate::projection::runtime_identity()?;
         let scheduler = Arc::new(Scheduler::new(config.profile.clone()));
         let memory = scheduler.memory_context();
         let catalog = Catalog::open_with_context(
@@ -1349,7 +1352,8 @@ impl ServerState {
             self.config.profile.max_registry_bytes,
             &ctx,
         )?;
-        let revision = super::catalog::identity(&[&bytes]);
+        let revision =
+            super::catalog::identity(&[&bytes, crate::projection::runtime_identity()?.as_bytes()]);
         let worker = self.clone();
         let scene = self
             .scheduler
@@ -1504,7 +1508,10 @@ impl ServerState {
             .collect::<Vec<_>>();
         let version_bytes =
             crate::derived::bounded_json(&versions, self.config.profile.max_registry_bytes, &ctx)?;
-        let revision = super::catalog::identity(&[&version_bytes]);
+        let revision = super::catalog::identity(&[
+            &version_bytes,
+            crate::projection::runtime_identity()?.as_bytes(),
+        ]);
         if matches!(delivery, RenderDelivery::Animation) {
             drop(version_bytes);
             let definition_hold = ctx.reserve(memory::envelope(
@@ -1801,13 +1808,7 @@ impl ServerState {
         if !map.output_crs.contains(&view.crs.definition().to_owned()) {
             return Err(ServerError::invalid("Output CRS is not published by map"));
         }
-        if map
-            .projection_backend
-            .as_deref()
-            .is_some_and(|p| p != "rust")
-        {
-            return Err(ServerError::invalid("Projection backend is not available"));
-        }
+        crate::projection::validate_backend(map.projection_backend.as_deref())?;
         self.prepare_map(&map, pin, view, time, ctx)
     }
     fn prepare_map(
@@ -1850,12 +1851,8 @@ impl ServerState {
             animations.insert(record.key.id.clone(), parse_animation(text)?);
         }
         for map in maps {
-            if !map.output_crs.contains(&view.crs.definition().to_owned())
-                || map
-                    .projection_backend
-                    .as_deref()
-                    .is_some_and(|p| p != "rust")
-            {
+            crate::projection::validate_backend(map.projection_backend.as_deref())?;
+            if !map.output_crs.contains(&view.crs.definition().to_owned()) {
                 return Err(ServerError::invalid(
                     "Map output CRS/backend is not published",
                 ));
@@ -1930,7 +1927,8 @@ impl ServerState {
                             let level = raster_level(&raster, view, compatible_overview);
                             let source_grid = raster.grid();
                             let inverse = if source_grid.crs != view.crs {
-                                Some(crate::projection::RustProjection::new(
+                                Some(crate::projection::Projection::new(
+                                    map.projection_backend.as_deref(),
                                     view.crs.clone(),
                                     source_grid.crs.clone(),
                                 )?)
@@ -2085,7 +2083,8 @@ impl ServerState {
                             }
                             if label.crs != view.crs {
                                 use geo::MapCoords;
-                                let projection = crate::projection::RustProjection::new(
+                                let projection = crate::projection::Projection::new(
+                                    map.projection_backend.as_deref(),
                                     label.crs.clone(),
                                     view.crs.clone(),
                                 )?;
@@ -2100,7 +2099,8 @@ impl ServerState {
                         if let DrawItem::Vector(v) = draw {
                             for batch in &mut v.batches {
                                 if batch.crs != view.crs {
-                                    let projection = crate::projection::RustProjection::new(
+                                    let projection = crate::projection::Projection::new(
+                                        map.projection_backend.as_deref(),
                                         batch.crs.clone(),
                                         view.crs.clone(),
                                     )?;

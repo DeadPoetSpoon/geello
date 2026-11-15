@@ -1,0 +1,17 @@
+[package]
+name = "proj-sys"
+version = "0.27.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Audited fixed dynamic PROJ bindings for Geello"
+repository = "https://github.com/georust/proj"
+links = "proj"
+build = "build.rs"
+
+[features]
+default = []
+
+[build-dependencies]
+blake3 = { version = "=1.8.7", default-features = false, features = ["std", "pure"] }
+sha2 = "=0.10.9"
+serde_json = "=1.0.154"

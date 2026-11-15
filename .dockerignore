@@ -1,0 +1,7 @@
+.git
+.cargo
+target
+vendor
+assets/test
+**/__pycache__
+*.log

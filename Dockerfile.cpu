@@ -1,0 +1,22 @@
+# syntax=docker/dockerfile:1
+ARG RUST_IMAGE=rust:1.96.0-alpine3.23
+ARG ALPINE_IMAGE=alpine:3.23.3
+FROM ${RUST_IMAGE} AS builder
+RUN apk add --no-cache build-base cmake linux-headers
+WORKDIR /source
+COPY . .
+RUN cargo build --locked --release --target x86_64-unknown-linux-musl --no-default-features \
+    --features server,render-cpu,read-geojson,read-shapefile,read-geotiff
+
+FROM ${ALPINE_IMAGE} AS runtime
+RUN apk add --no-cache libgcc libstdc++ \
+    && addgroup -g 10001 geello && adduser -D -H -u 10001 -G geello geello \
+    && mkdir -p /data && chown geello:geello /data
+COPY --from=builder /source/target/x86_64-unknown-linux-musl/release/geello /usr/local/bin/geello
+COPY deploy/server.cpu.toml /etc/geello/server.toml
+USER 10001:10001
+VOLUME ["/data"]
+EXPOSE 3000
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["/usr/local/bin/geello"]
+CMD ["--config", "/etc/geello/server.toml"]
