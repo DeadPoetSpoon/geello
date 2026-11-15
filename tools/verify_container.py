@@ -40,6 +40,9 @@ def main():
                 try:
                     with urlopen(base + "/health/ready", timeout=1) as response:
                         ready = json.load(response)
+                    with urlopen(base + "/health/live", timeout=1) as response:
+                        live = json.load(response)
+                    assert live == {"status": "alive"}, live
                     break
                 except OSError:
                     time.sleep(.25)

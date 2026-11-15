@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import subprocess
+import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,8 +24,14 @@ def main():
                             "properties": [{"name": "cargo.lock.sha256", "value": hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest()}]},
               "components": components}
     output = ROOT / "docs/refactor/m6-sbom.json"
-    output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(output)
+    rendered = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
+    if "--check" in sys.argv[1:]:
+        if not output.exists() or output.read_text(encoding="utf-8") != rendered:
+            raise SystemExit("SBOM is stale; run python tools/generate_sbom.py")
+        print(f"Checked {output}")
+    else:
+        output.write_text(rendered, encoding="utf-8")
+        print(output)
 
 
 if __name__ == "__main__": main()

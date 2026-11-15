@@ -23,7 +23,7 @@ jobs:
       - run: cargo check --locked --no-default-features --features server-full
       - run: cargo clippy --locked --no-default-features --features server-full --all-targets -- -D warnings
       - run: python tools/generate_http_docs.py --check
-      - run: python tools/generate_sbom.py
+      - run: python tools/generate_sbom.py --check
       - run: python tools/verify_release.py
       - run: python tools/verify_native_gate.py
       - run: python tools/build_native_proj.py

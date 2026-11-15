@@ -1,4 +1,4 @@
-"""Fail-closed release audit for the checked-out M6 source tree."""
+"""Fail-closed release audit for the checked-out M7 source tree."""
 from pathlib import Path
 import hashlib
 import json
@@ -31,6 +31,8 @@ def main():
         text = (ROOT / path).read_text(encoding="utf-8")
         if "server.toml" not in text and path.startswith("Dockerfile"):
             fail(path + " has no config contract")
+        if path.startswith("Dockerfile") and "health/live" not in text:
+            fail(path + " has no liveness healthcheck")
     native = json.loads((ROOT / "docs/refactor/m5-dependency-closure.json").read_text(encoding="utf-8"))
     expected = {"proj": "9.6.2", "sqlite": "3.54.1", "tiff": "4.7.2", "zlib": "1.4"}
     if {name: spec["version"] for name, spec in native["native_sources"].items()} != expected:
@@ -39,6 +41,7 @@ def main():
     if hashlib.sha256(manifest.read_bytes()).hexdigest() != native["font_manifest_sha256"]:
         fail("font manifest hash drifted")
     subprocess.run([sys.executable, "tools/generate_http_docs.py", "--check"], cwd=ROOT, check=True)
+    subprocess.run([sys.executable, "tools/generate_sbom.py", "--check"], cwd=ROOT, check=True)
     print(json.dumps({"status": "pass", "version": cargo["package"]["version"],
                       "lock_sha256": hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest(),
                       "native_versions": expected}, indent=2))

@@ -43,6 +43,8 @@ and [independent protocol demonstration](examples/m4-protocols/README.md).
 M5 deployment evidence and M6 release-readiness checks are recorded in
 [13-m5-deployment-and-evidence.md](docs/refactor/13-m5-deployment-and-evidence.md)
 and [16-m6-release-readiness-and-evidence.md](docs/refactor/16-m6-release-readiness-and-evidence.md).
+M7 adds the automated pre-publish audit and container liveness checks documented
+in [17-m7-release-automation-and-evidence.md](docs/refactor/17-m7-release-automation-and-evidence.md).
 The public contract is served at `/api` (OpenAPI JSON) and `/api.html` (offline
 HTML). OGC conformance responses remain explicitly non-certifying; full WFS/GML
 and official certification are outside the agreed query subset. The old mutable
