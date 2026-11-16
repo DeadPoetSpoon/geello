@@ -1,0 +1,42 @@
+schema_version = 1
+id = "preview:annotations"
+
+[[rules]]
+id = "type-0"
+filter = { op = "eq", field = "/LXMC", value = "水面" }
+[[rules.symbols]]
+id = "outline"
+kind = "line"
+rings = "all"
+width = { value = 2.0, unit = "px" }
+color = "#00d9ff"
+
+[[rules]]
+id = "type-1"
+filter = { op = "eq", field = "/LXMC", value = "房屋建筑区" }
+[[rules.symbols]]
+id = "outline"
+kind = "line"
+rings = "all"
+width = { value = 2.0, unit = "px" }
+color = "#ffbd45"
+
+[[rules]]
+id = "type-2"
+filter = { op = "eq", field = "/LXMC", value = "林地" }
+[[rules.symbols]]
+id = "outline"
+kind = "line"
+rings = "all"
+width = { value = 2.0, unit = "px" }
+color = "#76ff69"
+
+[[rules]]
+id = "type-3"
+filter = { op = "eq", field = "/LXMC", value = "道路" }
+[[rules.symbols]]
+id = "outline"
+kind = "line"
+rings = "all"
+width = { value = 2.0, unit = "px" }
+color = "#ff6ba8"

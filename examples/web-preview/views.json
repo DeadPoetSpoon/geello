@@ -1,0 +1,46 @@
+{
+  "defaultMap": "preview:jd-annotations",
+  "maps": {
+    "preview:jd": {
+      "bounds": [
+        121.56852722167943,
+        24.014480203882904,
+        121.61247253417946,
+        24.045209883155973
+      ]
+    },
+    "preview:jd-annotations": {
+      "bounds": [
+        121.56852722167943,
+        24.014480203882904,
+        121.61247253417946,
+        24.045209883155973
+      ],
+      "wfsDataset": "preview:annotations",
+      "baseMap": "preview:jd",
+      "typeField": "LXMC",
+      "categories": [
+        {
+          "value": "水面",
+          "color": "#00d9ff",
+          "count": 51
+        },
+        {
+          "value": "房屋建筑区",
+          "color": "#ffbd45",
+          "count": 10
+        },
+        {
+          "value": "林地",
+          "color": "#76ff69",
+          "count": 4
+        },
+        {
+          "value": "道路",
+          "color": "#ff6ba8",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

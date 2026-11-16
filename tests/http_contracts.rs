@@ -13,6 +13,8 @@ use tower::ServiceExt;
 async fn state(root: &Path) -> Arc<ServerState> {
     let mut config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
     config.backend = BackendSelection::Cpu;
+    config.profile.response_memory_bytes = 8 << 20;
+    config.profile.response_disk_bytes = 64 << 20;
     config.public_base_url = "https://configured.example.test/prefix/geello/".into();
     config.data_directory = root.join("data");
     ServerState::open(config).await.unwrap()
@@ -66,7 +68,15 @@ async fn publish(app: &Router, kind: &str, id: &str, media: &str, body: impl Int
 #[tokio::test]
 async fn explicit_fonts_render_through_publication_maps_and_buffered_metatiles() {
     let root = tempfile::tempdir().unwrap();
-    let s = state(root.path()).await;
+    // This test isolates label layout and adjacent crops. Centered WMTS
+    // prewarming is exercised separately, including its additional areas.
+    let mut config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+    config.backend = BackendSelection::Cpu;
+    config.profile.response_memory_bytes = 8 << 20;
+    config.profile.response_disk_bytes = 64 << 20;
+    config.profile.wmts_prewarm_size = 1;
+    config.data_directory = root.path().join("data");
+    let s = ServerState::open(config).await.unwrap();
     let app = router(s.clone());
     publish(
         &app,
@@ -165,6 +175,8 @@ async fn exact_feature_queries_typed_equalities_hits_and_namespace_aware_wfs_agr
     ]}"#).unwrap();
     let mut config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
     config.backend = BackendSelection::Cpu;
+    config.profile.response_memory_bytes = 8 << 20;
+    config.profile.response_disk_bytes = 64 << 20;
     config.data_directory = root.path().join("data");
     config.external_roots = vec![root.path().into()];
     let s = ServerState::open(config).await.unwrap();
@@ -705,6 +717,8 @@ async fn openapi_response_retains_admission_and_small_output_profiles_fail_clean
     drop(s);
     let mut config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
     config.backend = BackendSelection::Cpu;
+    config.profile.response_memory_bytes = 8 << 20;
+    config.profile.response_disk_bytes = 64 << 20;
     config.data_directory = root.path().join("small");
     config.profile.max_registry_bytes = 1024;
     let s = ServerState::open(config).await.unwrap();
@@ -1314,6 +1328,8 @@ async fn feature_cursor_capacity_expiry_and_projected_crs_are_bounded() {
     let root = tempfile::tempdir().unwrap();
     let mut config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
     config.backend = BackendSelection::Cpu;
+    config.profile.response_memory_bytes = 8 << 20;
+    config.profile.response_disk_bytes = 64 << 20;
     config.data_directory = root.path().join("data");
     config.profile.max_feature_cursors = 1;
     config.profile.feature_cursor_ttl_ms = 600;

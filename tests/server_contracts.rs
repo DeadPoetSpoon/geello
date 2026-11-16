@@ -44,6 +44,7 @@ fn profile() -> ServerProfile {
         max_list_items: 100,
         metatile_size: 2,
         metatile_buffer: 16,
+        wmts_prewarm_size: 3,
     }
 }
 async fn state(root: &Path) -> Arc<ServerState> {
@@ -1359,6 +1360,77 @@ async fn concurrent_tiles_share_area_render_and_encode_only_requested_tiles() {
         .unpublish(&key, &Precondition::Version(r.version))
         .unwrap();
     assert!(s.render_tile("test:map", 2, 0, 0).await.is_err());
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn wmts_tile_warms_its_centered_window_and_cached_neighbor_extends_it() {
+    let root = tempfile::tempdir().unwrap();
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    for (kind, id, ctype, data) in [
+        ("dataset", "test:dataset", "application/geo+json", DATA),
+        ("style", "test:style", "application/toml", STYLE),
+        ("map", "test:map", "application/toml", MAP),
+    ] {
+        assert_eq!(
+            upload(&s, &app, kind, id, ctype, data).await.status,
+            OperationStatus::Ready
+        );
+    }
+    // The centered 3x3 test window clips to 2x2 at the world corner.
+    let first = request(
+        &app, "GET",
+        "/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=test:map&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=2&TILEROW=0&TILECOL=0&FORMAT=image/png", None, None, Body::empty(),
+    )
+    .await;
+    assert_eq!(first.status(), StatusCode::OK);
+    let first_bytes = to_bytes(first.into_body(), 8 << 20).await.unwrap();
+    assert_eq!(&first_bytes[..8], b"\x89PNG\r\n\x1a\n");
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let stats = s.response_cache_stats();
+            if stats["prewarm_completed"] == 3 && stats["prewarm_groups_active"] == 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        s.execution_counts().0,
+        1,
+        "neighbors must reuse the metatile render"
+    );
+    assert_eq!(
+        s.execution_counts().1,
+        4,
+        "all 2x2 tiles should be encoded once"
+    );
+    let hits_before = s.response_cache_stats()["hits"].as_u64().unwrap();
+    let neighbor = request(
+        &app, "GET",
+        "/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=test:map&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=2&TILEROW=0&TILECOL=1&FORMAT=image/png", None, None, Body::empty(),
+    ).await;
+    assert_eq!(neighbor.status(), StatusCode::OK);
+    drop(to_bytes(neighbor.into_body(), 8 << 20).await.unwrap());
+    assert!(s.response_cache_stats()["hits"].as_u64().unwrap() > hits_before);
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            if s.response_cache_stats()["prewarm_groups_active"] == 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        s.execution_counts(),
+        (2, 6),
+        "cached B extends the window with only two missing edge tiles"
+    );
     s.shutdown().await.unwrap();
 }
 #[test]
@@ -2704,7 +2776,7 @@ async fn upload_and_managed_disk_limits_preserve_a_live_version() {
 #[test]
 fn runnable_experimental_profile_matches_startup_schema() {
     let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
-    assert_eq!(config.backend, BackendSelection::GpuPreferred);
+    assert_eq!(config.backend, BackendSelection::Gpu);
     assert!(config.external_roots.is_empty());
 }
 
@@ -2939,5 +3011,47 @@ async fn raster_base_serves_while_lazy_overviews_publish_a_new_revision() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(s.execution_counts().0, renders + 1);
     assert_eq!(s.native_decode_count(), decodes);
+    // A nearest style must not consume the old weighted pyramid. First use
+    // schedules a replacement without changing the source dataset version.
+    let weighted = s.catalog.get(&key).unwrap();
+    let nearest_style = style.replace("reduce='area-average'", "reduce='nearest'");
+    let style_key = ResourceKey::new(ResourceKind::Style, "test:raster-style").unwrap();
+    let etag = s.catalog.get(&style_key).unwrap().etag();
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/admin/v1/resources/style/test:raster-style/content")
+                .header("content-type", "application/toml")
+                .header("if-match", etag)
+                .body(Body::from(nearest_style))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        wait(&s, json(response).await).await.status,
+        OperationStatus::Ready
+    );
+    let response = request(&app, "GET", uri, None, None, Body::empty()).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut nearest = None;
+    for _ in 0..1000 {
+        let current = s.catalog.get(&key).unwrap();
+        if current.derived_version != weighted.derived_version {
+            nearest = Some(current);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    let nearest = nearest.expect("nearest overview replacement");
+    assert_eq!(nearest.data_version, weighted.data_version);
+    let pyramid = geello::derived::DerivedRaster::open(
+        nearest.derived_path.as_ref().unwrap(),
+        s.config.profile.store_limits(),
+    )
+    .unwrap();
+    assert_eq!(pyramid.overview_method(), "nearest");
     s.shutdown().await.unwrap();
 }

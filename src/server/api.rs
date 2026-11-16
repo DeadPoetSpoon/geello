@@ -95,7 +95,7 @@ async fn admit_request(
 }
 async fn ready(State(s): State<Arc<ServerState>>) -> Json<serde_json::Value> {
     Json(
-        serde_json::json!({"status":"ready","backend":s.backend_name,"backend_diagnostic":s.backend_diagnostic,"catalog":s.catalog.stats(),"live_accounted_bytes":s.scheduler.live_bytes(),"cache_failures":s.cache_failures()}),
+        serde_json::json!({"status":"ready","backend":s.backend_name,"backend_diagnostic":s.backend_diagnostic,"catalog":s.catalog.stats(),"live_accounted_bytes":s.scheduler.live_bytes(),"cache_failures":s.cache_failures(),"response_cache":s.response_cache_stats()}),
     )
 }
 

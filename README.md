@@ -59,6 +59,11 @@ includes uploadable style/map/animation bodies and image/tile time examples.
 The [geometry demonstration](examples/geometry-animation/README.md) includes
 independent resource files and requests for moving an offscreen point into view.
 
+For an interactive view of published web maps, run `python tools/preview_server.py`
+alongside the server and open <http://127.0.0.1:8080>. The
+[web preview example](examples/web-preview/README.md) discovers maps and supports
+pan/zoom, OGC Maps/WMS rendering, published CRS selection and animation time.
+
 ## M1 library example
 
 ```rust
@@ -93,12 +98,35 @@ supported platform.
 cargo run --locked --features server-full -- --config examples/server.experimental.toml
 ```
 
-The profile binds to loopback and selects GPU with initialization-only CPU
-fallback. Uploads create managed immutable files; local registration retains
+The experimental profile binds to loopback and requires the GPU backend.
+Uploads create managed immutable files; local registration retains
 external ownership. Reverse-proxy protection is required for `/admin/v1`.
 This example retains experimental settings. The development/small profiles and
 benchmark targets have [G-07 owner approval](docs/refactor/18-g07-approved-targets.md);
 performance validation remains specific to each workload, platform and backend.
+
+The experimental profile accepts uploads up to 20 GiB (21,474,836,480 bytes).
+Its source limit is also 20 GiB; managed and derived storage have separate
+catalog-wide budgets. See the [web preview example](examples/web-preview/README.md)
+to publish the original `assets/test/jd.tif` and view it with OpenLayers.
+
+The experimental Foyer response cache reserves 4 GiB of memory and 32 GiB of
+disk, with four flush workers. Cache memory, flush buffers and producer
+overshoot are included in `max_live_bytes`; the disk engine preallocates its
+configured capacity. `wmts_prewarm_size = 5` prewarms a centered 5×5 square
+(two tiles outward per direction), clipped at the world boundary. Use an odd
+side length from 1 through 15; 1 disables neighbors, and omission defaults to 5.
+This is separate from the aligned 4×4 render metatile and its 128 px buffer.
+Successful protocol requests, including cache hits, warm their own window.
+Moving one tile left adds only the missing left column; overlap shares the
+response cache and in-progress work across all users. Prewarm workers do not
+recursively expand windows. Foreground subscribers promote queued neighbor
+preparation/rendering/encoding and share the same singleflight. Resource changes and shutdown cancel obsolete prewarming.
+Basic `/tiles` requests continue to encode only requested tiles.
+`/health/ready.response_cache` reports capacity, memory usage, cache hits,
+render/encode counts and active/completed prewarming. See the
+[WMTS validation record](examples/web-preview/wmts-prewarm-validation.md)
+for measured timings and browser checks.
 
 The target container is a default GPU Alpine image with an independent CPU
 `-cpu` variant. Docker, native PROJ and Linux/musl validation remain M5 work.

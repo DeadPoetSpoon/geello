@@ -140,6 +140,37 @@ impl Scheduler {
         guard.0 = None;
         result
     }
+    /// A foreground subscriber promotes a queued tile without starting a
+    /// second encoder. Once admitted, the closure always runs exactly once.
+    pub(crate) async fn blocking_tile<T: Send + 'static>(
+        &self,
+        ctx: OperationContext,
+        mut foreground: tokio::sync::watch::Receiver<bool>,
+        f: impl FnOnce(OperationContext) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let activity = self.activities.enter()?;
+        let mut guard = CancelOnDrop(Some(ctx.clone()));
+        let is_foreground = *foreground.borrow_and_update();
+        let permits = if is_foreground {
+            self.admit(WorkClass::Http, &ctx).await?
+        } else {
+            tokio::select! {
+                biased;
+                _ = foreground.changed() => self.admit(WorkClass::Http, &ctx).await?,
+                permits = self.admit(WorkClass::Background, &ctx) => permits?,
+            }
+        };
+        let result = tokio::task::spawn_blocking(move || {
+            let _activity = activity;
+            let _permits = permits;
+            ctx.check()?;
+            f(ctx)
+        })
+        .await
+        .map_err(|_| ServerError::new(500, "worker", "Worker failed"))?;
+        guard.0 = None;
+        result
+    }
     pub async fn asynchronous<T: Send + 'static>(
         &self,
         class: WorkClass,
@@ -149,6 +180,38 @@ impl Scheduler {
         let activity = self.activities.enter()?;
         let mut guard = CancelOnDrop(Some(ctx.clone()));
         let permits = self.admit(class, &ctx).await?;
+        ctx.check()?;
+        // The server owns the driver until it drains, just as it owns blocking
+        // closures. An abandoned caller cancels cooperatively, but cannot drop
+        // a submitted GPU future and release its slot during device completion.
+        let result = tokio::spawn(async move {
+            let _activity = activity;
+            let _permits = permits;
+            f.await
+        })
+        .await
+        .map_err(|_| ServerError::new(500, "worker", "Worker failed"))?;
+        guard.0 = None;
+        result
+    }
+    pub(crate) async fn asynchronous_tile<T: Send + 'static>(
+        &self,
+        ctx: OperationContext,
+        mut foreground: tokio::sync::watch::Receiver<bool>,
+        f: impl Future<Output = Result<T>> + Send + 'static,
+    ) -> Result<T> {
+        let activity = self.activities.enter()?;
+        let mut guard = CancelOnDrop(Some(ctx.clone()));
+        let is_foreground = *foreground.borrow_and_update();
+        let permits = if is_foreground {
+            self.admit(WorkClass::Http, &ctx).await?
+        } else {
+            tokio::select! {
+                biased;
+                _ = foreground.changed() => self.admit(WorkClass::Http,&ctx).await?,
+                permits = self.admit(WorkClass::Background,&ctx) => permits?,
+            }
+        };
         ctx.check()?;
         // The server owns the driver until it drains, just as it owns blocking
         // closures. An abandoned caller cancels cooperatively, but cannot drop

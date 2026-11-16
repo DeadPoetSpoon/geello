@@ -113,6 +113,34 @@ impl TileGrid {
     }
 }
 
+/// Centered square clipped at matrix edges; coordinates never wrap.
+pub(crate) fn neighbors(
+    grid: TileGrid,
+    z: u32,
+    x: u32,
+    y: u32,
+    p: &ServerProfile,
+) -> Vec<[u32; 3]> {
+    let Ok([columns, rows]) = grid.dimensions(z) else {
+        return vec![];
+    };
+    if x >= columns || y >= rows {
+        return vec![];
+    }
+    let radius = p.wmts_prewarm_size / 2;
+    let mut result = vec![];
+    for row in y.saturating_sub(radius)..=y.saturating_add(radius).min(rows - 1) {
+        for column in x.saturating_sub(radius)..=x.saturating_add(radius).min(columns - 1) {
+            if [column, row] != [x, y] {
+                result.push([z, column, row]);
+            }
+        }
+    }
+    // Warm near tiles first if the background queue is busy.
+    result.sort_by_key(|&[_, nx, ny]| (nx.abs_diff(x).max(ny.abs_diff(y)), ny, nx));
+    result
+}
+
 /// Freeze protocol defaults independently of the legacy/basic tile route.
 pub(crate) fn publication(map: &crate::config::MapDefinition) -> (Vec<TileGrid>, u32, u32) {
     let (names, min, max) = map.tiles.as_ref().map_or((None, 0, 22), |t| {
@@ -141,4 +169,44 @@ pub(crate) fn validate_publication(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn centered_neighbors_clip_both_world_grids() {
+        let mut p = ServerConfig::load(std::path::Path::new("examples/server.experimental.toml"))
+            .unwrap()
+            .profile;
+        assert_eq!(p.wmts_prewarm_size, 5);
+        for grid in [TileGrid::WebMercatorQuad, TileGrid::WorldCrs84Quad] {
+            for z in [0, 1, 2, 4, 30] {
+                let [columns, rows] = grid.dimensions(z).unwrap();
+                for [x, y] in [[0, 0], [columns - 1, rows - 1], [columns / 2, rows / 2]] {
+                    let others = neighbors(grid, z, x, y, &p);
+                    let expected = (x.saturating_add(2).min(columns - 1) - x.saturating_sub(2) + 1)
+                        * (y.saturating_add(2).min(rows - 1) - y.saturating_sub(2) + 1)
+                        - 1;
+                    assert_eq!(others.len(), expected as usize);
+                    let mut unique = std::collections::BTreeSet::new();
+                    for [nz, nx, ny] in others {
+                        assert_eq!(nz, z);
+                        assert!(nx < columns && ny < rows);
+                        assert!(nx.abs_diff(x) <= 2 && ny.abs_diff(y) <= 2);
+                        assert_ne!([nx, ny], [x, y]);
+                        assert!(unique.insert([nx, ny]));
+                        let (view, crop) = grid.layout(nz, nx, ny, &p).unwrap();
+                        assert!(crop[0] + 256 <= view.width && crop[1] + 256 <= view.height);
+                    }
+                }
+            }
+            assert!(neighbors(grid, 31, 0, 0, &p).is_empty());
+            assert!(neighbors(grid, 0, 2, 2, &p).is_empty());
+            assert_eq!(neighbors(grid, 4, 8, 8, &p).len(), 24);
+            p.wmts_prewarm_size = 1;
+            assert!(neighbors(grid, 4, 8, 8, &p).is_empty());
+            p.wmts_prewarm_size = 5;
+        }
+    }
 }

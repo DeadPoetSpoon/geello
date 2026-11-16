@@ -1,0 +1,16 @@
+schema_version = 1
+id = "preview:jd-annotations"
+title = "jd.tif 影像与 LXMC 分类边线"
+output_crs = ["EPSG:3857"]
+background = "#edf3f1"
+tiles = { matrix_sets = ["WebMercatorQuad"], min_zoom = 0, max_zoom = 22 }
+
+[[items]]
+id = "imagery"
+dataset = "preview:jd"
+style = "preview:jd"
+
+[[items]]
+id = "annotations"
+dataset = "preview:annotations"
+style = "preview:annotations"

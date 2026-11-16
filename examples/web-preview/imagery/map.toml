@@ -1,0 +1,10 @@
+schema_version=1
+id='preview:elevation'
+title='影像高程示例'
+output_crs=['OGC:CRS84','EPSG:3857']
+background='#edf3f1'
+tiles={matrix_sets=['WebMercatorQuad','WorldCRS84Quad'],min_zoom=0,max_zoom=12}
+[[items]]
+id='elevation'
+dataset='preview:elevation'
+style='preview:elevation'

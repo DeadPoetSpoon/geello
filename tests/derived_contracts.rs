@@ -573,3 +573,96 @@ fn categorical_overview_samples_each_level_center_from_base() {
         .unwrap();
     assert_eq!(pixel.bands[0].samples, RasterSamples::U64(Arc::from([10])));
 }
+
+#[test]
+fn nearest_pyramid_reads_blocks_once_and_preserves_odd_edges_masks_and_u64() {
+    let ctx = OperationContext::new(
+        OperationLimits {
+            max_live_bytes: 128 << 20,
+            max_work: 100_000,
+            max_commands: 1000,
+            max_diagnostics: 16,
+        },
+        None,
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let base = DerivedRaster::build_base(
+        dir.path(),
+        "odd-nearest",
+        9,
+        7,
+        &grid(),
+        4,
+        limits(),
+        &ctx,
+        |w, _| {
+            let mut values = vec![];
+            let mut masks = vec![];
+            let mut alpha = vec![];
+            for y in w.row..w.row + w.height {
+                for x in w.column..w.column + w.width {
+                    values.push(u64::MAX - (y * 9 + x) as u64);
+                    masks.push((x + y) % 3 != 0);
+                    alpha.push(if x % 2 == 0 { 0.5 } else { 1. });
+                }
+            }
+            let mut g = grid();
+            g.affine[0] += g.affine[1] * w.column as f64 + g.affine[2] * w.row as f64;
+            g.affine[3] += g.affine[4] * w.column as f64 + g.affine[5] * w.row as f64;
+            Ok(RasterBlock {
+                width: w.width,
+                height: w.height,
+                grid: g,
+                bands: vec![RasterBand {
+                    samples: RasterSamples::U64(values.into()),
+                    validity: Some(masks.into()),
+                    no_data: None,
+                    scale: 2.,
+                    offset: 3.,
+                }],
+                alpha: Some(alpha.into()),
+                alpha_association: AlphaAssociation::Straight,
+            })
+        },
+    )
+    .unwrap();
+    let pyramid = base.build_overviews(dir.path(), true, &ctx).unwrap();
+    assert_eq!(pyramid.overview_method(), "nearest");
+    for level in 1..pyramid.level_count() {
+        let (width, height, factor) = pyramid.level_dimensions(level).unwrap();
+        assert_eq!(pyramid.select_level(factor as f64), level);
+        assert!(pyramid.select_level(factor as f64 - 0.01) < level);
+        let b = pyramid
+            .read_window(
+                level,
+                BlockWindow {
+                    column: 0,
+                    row: 0,
+                    width,
+                    height,
+                },
+                &ctx,
+            )
+            .unwrap();
+        let RasterSamples::U64(samples) = &b.bands[0].samples else {
+            panic!("native u64 lost")
+        };
+        for y in 0..height {
+            for x in 0..width {
+                let sx = (x * factor + factor / 2).min(8);
+                let sy = (y * factor + factor / 2).min(6);
+                let i = (y * width + x) as usize;
+                assert_eq!(samples[i], u64::MAX - (sy * 9 + sx) as u64);
+                assert_eq!(b.bands[0].validity.as_ref().unwrap()[i], (sx + sy) % 3 != 0);
+                assert_eq!(
+                    b.alpha.as_ref().unwrap()[i],
+                    if sx % 2 == 0 { 0.5 } else { 1. }
+                );
+            }
+        }
+    }
+    assert!(
+        ctx.work() < 100_000,
+        "per-pixel block decode exceeds this work budget"
+    );
+}

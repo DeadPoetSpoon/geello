@@ -3,3 +3,6 @@ assets/test/*
 !assets/test/.traced
 /.cargo
 /vendor
+
+# Local OpenLayers distribution used by the web preview.
+/examples/web-preview/vendor/

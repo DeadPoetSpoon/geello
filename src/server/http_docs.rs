@@ -38,7 +38,8 @@ pub(super) async fn openapi(State(s): State<Arc<ServerState>>) -> Result<Respons
         "max-feature-cursors": s.config.profile.max_feature_cursors,
         "feature-cursor-ttl-ms": s.config.profile.feature_cursor_ttl_ms,
         "metatile-size": s.config.profile.metatile_size,
-        "metatile-buffer": s.config.profile.metatile_buffer
+        "metatile-buffer": s.config.profile.metatile_buffer,
+        "wmts-prewarm-size": s.config.profile.wmts_prewarm_size
     });
     super::api::json_response(&s, &document)
 }

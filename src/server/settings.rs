@@ -67,6 +67,13 @@ pub struct ServerProfile {
     pub max_list_items: usize,
     pub metatile_size: u32,
     pub metatile_buffer: u32,
+    /// WMTS response prewarming side length, centered on the requested tile.
+    /// Render metatiles are independent of this finite, non-wrapping square.
+    #[serde(default = "default_wmts_prewarm_size")]
+    pub wmts_prewarm_size: u32,
+}
+fn default_wmts_prewarm_size() -> u32 {
+    5
 }
 impl ServerConfig {
     pub fn load(path: &Path) -> Result<Self> {
@@ -165,6 +172,7 @@ impl ServerProfile {
                 .checked_add(Duration::from_millis(self.feature_cursor_ttl_ms))
                 .is_none()
             || self.metatile_size == 0
+            || self.wmts_prewarm_size == 0
         {
             return Err(ServerError::invalid(
                 "Positive explicit profile capacities required",
@@ -182,6 +190,11 @@ impl ServerProfile {
         {
             return Err(ServerError::invalid(
                 "Metatile exceeds configured dimension",
+            ));
+        }
+        if self.wmts_prewarm_size > 15 || self.wmts_prewarm_size % 2 == 0 {
+            return Err(ServerError::invalid(
+                "WMTS prewarm size must be odd and between 1 and 15",
             ));
         }
         if !self.metatile_size.is_power_of_two() {
@@ -251,6 +264,23 @@ impl ServerProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wmts_prewarm_defaults_and_validation() {
+        let text = std::fs::read_to_string("examples/server.experimental.toml").unwrap();
+        let old = text.replace("wmts_prewarm_size = 5", "");
+        let config: ServerConfig = toml::from_str(&old).unwrap();
+        assert_eq!(config.profile.wmts_prewarm_size, 5);
+        let mut config = config;
+        for size in [1, 3, 5, 15] {
+            config.profile.wmts_prewarm_size = size;
+            config.validate().unwrap();
+        }
+        for size in [0, 2, 16, u32::MAX] {
+            config.profile.wmts_prewarm_size = size;
+            assert!(config.validate().is_err());
+        }
+    }
 
     #[test]
     fn oversized_startup_toml_is_rejected_before_parsing() {

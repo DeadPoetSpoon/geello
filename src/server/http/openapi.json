@@ -10664,6 +10664,54 @@
           "cache_failures": {
             "type": "integer",
             "minimum": 0
+          },
+          "response_cache": {
+            "type": "object",
+            "properties": {
+              "memory_capacity_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "disk_capacity_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "memory_used_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "hits": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "area_renders": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tile_encodes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "prewarm_completed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "prewarm_groups_active": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "memory_capacity_bytes",
+              "disk_capacity_bytes",
+              "memory_used_bytes",
+              "hits",
+              "area_renders",
+              "tile_encodes",
+              "prewarm_completed",
+              "prewarm_groups_active"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -10672,7 +10720,8 @@
           "backend_diagnostic",
           "catalog",
           "live_accounted_bytes",
-          "cache_failures"
+          "cache_failures",
+          "response_cache"
         ],
         "additionalProperties": false
       },

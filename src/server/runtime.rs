@@ -57,7 +57,28 @@ enum Backend {
     #[cfg(feature = "render-gpu")]
     Gpu(Arc<tokio::sync::Mutex<GpuRenderer>>),
 }
-type Flight = watch::Sender<Option<Result<Arc<EncodedResponse>>>>;
+struct Flight {
+    result: watch::Sender<Option<Result<Arc<EncodedResponse>>>>,
+    foreground: watch::Sender<bool>,
+}
+struct WarmTiles {
+    key: String,
+    targets: Vec<(String, String, View, [u32; 4])>,
+    revision: String,
+    versions: Vec<(ResourceKey, String)>,
+    definition: Arc<Accounted<String>>,
+    pin: Arc<ResourcePin>,
+    time: f64,
+}
+enum EncodingInput {
+    Scene {
+        area_key: String,
+        definition: Arc<Accounted<String>>,
+        pin: Arc<ResourcePin>,
+        view: View,
+        time: f64,
+    },
+}
 #[derive(Clone, Copy)]
 enum RenderDelivery {
     Http,
@@ -75,7 +96,10 @@ impl std::ops::Deref for RenderedArea {
         &self.image
     }
 }
-type PixelFlight = watch::Sender<Option<Result<Arc<RenderedArea>>>>;
+struct PixelFlight {
+    result: watch::Sender<Option<Result<Arc<RenderedArea>>>>,
+    foreground: watch::Sender<bool>,
+}
 #[derive(Clone)]
 enum CachedObject {
     Image(Arc<RenderedArea>),
@@ -115,8 +139,14 @@ pub struct ServerState {
     _response_memory: crate::operation::Reservation,
     render_flights: Mutex<BTreeMap<String, PixelFlight>>,
     encode_flights: Mutex<BTreeMap<String, Flight>>,
+    /// Center-tile keys currently being warmed. This bounds repeated foreground
+    /// hits and makes one request own the neighbor fan-out.
+    warm_groups: Mutex<std::collections::BTreeSet<String>>,
+    warm_slots: Arc<tokio::sync::Semaphore>,
+    cache_hits: std::sync::atomic::AtomicU64,
+    warmed: std::sync::atomic::AtomicU64,
     preparation_commit: Mutex<()>,
-    overview_attempts: Mutex<BTreeMap<(ResourceKey, String), crate::operation::Reservation>>,
+    overview_attempts: Mutex<BTreeMap<(ResourceKey, String, bool), crate::operation::Reservation>>,
     restore_attempts: Mutex<BTreeMap<(ResourceKey, String), Accounted<String>>>,
     cache_failures: std::sync::atomic::AtomicU64,
     renders: std::sync::atomic::AtomicU64,
@@ -190,18 +220,23 @@ impl ServerState {
         }
         .to_owned();
         let p = &config.profile;
-        let cache_buffer_bytes = p.response_memory_bytes.max(4096) / 4096 * 4096;
+        let cache_buffer_bytes = p.response_memory_bytes.clamp(16384, 64 << 20) / 16384 * 16384;
         // Foyer has two alternating flush buffers and a soft submit threshold.
         // Cover concurrent producer overshoot separately from memory retention.
         // Engine indexes and OS/allocator overhead remain external estimates.
         let cache_memory_bytes = cache_buffer_bytes
             .checked_mul(2)
-            .and_then(|n| n.checked_add(p.response_memory_bytes.checked_mul(2)?))
+            .and_then(|n| {
+                n.checked_add(p.response_memory_bytes)?
+                    .checked_add(cache_buffer_bytes)
+            })
             .and_then(|n| {
                 n.checked_add(
-                    response_limit(p.max_image_bytes)
-                        .ok()?
-                        .checked_mul(p.active_http.checked_add(p.queued_per_class)?)?,
+                    response_limit(p.max_image_bytes).ok()?.checked_mul(
+                        p.active_http
+                            .checked_add(p.active_background)?
+                            .checked_add(p.queued_per_class.checked_mul(2)?)?,
+                    )?,
                 )
             })
             .ok_or(GeelloError::SizeOverflow)?;
@@ -219,9 +254,14 @@ impl ServerState {
             .with_compression(foyer::Compression::None)
             .with_engine_config(
                 foyer::BlockEngineConfig::new(device)
-                    .with_flushers(1)
+                    // Four flushers need spare blocks for reclaim after
+                    // recovery, including deliberately small test profiles.
+                    .with_block_size(
+                        (p.response_disk_bytes / 16).clamp(4096, 16 << 20) / 4096 * 4096,
+                    )
+                    .with_flushers(4)
                     .with_buffer_pool_size(cache_buffer_bytes)
-                    .with_submit_queue_size_threshold(p.response_memory_bytes),
+                    .with_submit_queue_size_threshold(cache_buffer_bytes),
             )
             .build()
             .await
@@ -297,6 +337,9 @@ impl ServerState {
             p.active_http + p.queued_per_class,
         ));
         let activities = super::activity::Activities::new();
+        let warm_slots = Arc::new(tokio::sync::Semaphore::new(
+            p.active_background + p.queued_per_class,
+        ));
         let feature_cursors =
             super::features::CursorStore::new(&config.profile, memory.clone(), activities.clone());
         Ok(Arc::new(Self {
@@ -312,6 +355,10 @@ impl ServerState {
             _response_memory: response_memory,
             render_flights: Mutex::new(BTreeMap::new()),
             encode_flights: Mutex::new(BTreeMap::new()),
+            warm_groups: Mutex::new(std::collections::BTreeSet::new()),
+            warm_slots,
+            cache_hits: std::sync::atomic::AtomicU64::new(0),
+            warmed: std::sync::atomic::AtomicU64::new(0),
             preparation_commit: Mutex::new(()),
             overview_attempts: Mutex::new(BTreeMap::new()),
             restore_attempts: Mutex::new(BTreeMap::new()),
@@ -375,7 +422,7 @@ impl ServerState {
         self.overview_attempts
             .lock()
             .unwrap()
-            .retain(|(key, version), _| self.catalog.is_current_version(key, version));
+            .retain(|(key, version, _), _| self.catalog.is_current_version(key, version));
         let mut operations = self.operations.lock().unwrap();
         let mut removed = vec![];
         for (id, op) in operations.iter() {
@@ -430,6 +477,20 @@ impl ServerState {
     pub fn cache_failures(&self) -> u64 {
         self.cache_failures
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+    /// Counters are process-local; Foyer entries survive clean restarts.
+    pub fn response_cache_stats(&self) -> serde_json::Value {
+        use std::sync::atomic::Ordering::Relaxed;
+        serde_json::json!({
+            "memory_capacity_bytes": self.config.profile.response_memory_bytes,
+            "disk_capacity_bytes": self.config.profile.response_disk_bytes,
+            "memory_used_bytes": self.responses.memory().usage(),
+            "hits": self.cache_hits.load(Relaxed),
+            "area_renders": self.renders.load(Relaxed),
+            "tile_encodes": self.encodes.load(Relaxed),
+            "prewarm_completed": self.warmed.load(Relaxed),
+            "prewarm_groups_active": self.warm_groups.lock().unwrap().len(),
+        })
     }
     pub(crate) fn new_operation(&self, key: ResourceKey) -> Result<ResourceOperation> {
         let mut all = self.operations.lock().unwrap();
@@ -1059,7 +1120,7 @@ impl ServerState {
     /// Serving continues with the pinned base while a complete replacement is
     /// built. Commit rechecks the original ETag; failures retain the base and
     /// leave a persistent operation diagnostic rather than a retry storm.
-    fn request_overviews(self: &Arc<Self>, record: &ResourceRecord) {
+    fn request_overviews(self: &Arc<Self>, record: &ResourceRecord, nearest: bool) {
         if record.class.as_deref() != Some("raster") {
             return;
         }
@@ -1072,10 +1133,10 @@ impl ServerState {
         let Ok(record_hold) = self.scheduler.memory_context().reserve(bytes) else {
             return;
         };
-        let identity = (record.key.clone(), record.version.clone());
+        let identity = (record.key.clone(), record.version.clone(), nearest);
         {
             let mut attempts = self.overview_attempts.lock().unwrap();
-            attempts.retain(|(key, version), _| self.catalog.is_current_version(key, version));
+            attempts.retain(|(key, version, _), _| self.catalog.is_current_version(key, version));
             if attempts.contains_key(&identity)
                 || attempts.len() >= self.config.profile.max_operations
             {
@@ -1102,7 +1163,10 @@ impl ServerState {
             else {
                 return;
             };
-            if base.level_count() != 1 || base.dimensions() == (1, 1) {
+            let method = if nearest { "nearest" } else { "weighted-mean" };
+            if (base.level_count() > 1 && base.overview_method() == method)
+                || base.dimensions() == (1, 1)
+            {
                 return;
             }
             let op = match state.new_operation(record.key.clone()) {
@@ -1133,11 +1197,7 @@ impl ServerState {
                         limits,
                         &ctx,
                     )?;
-                    let overview = base.build_overviews(
-                        &parent,
-                        record.source.sample_kind.as_deref() == Some("categorical"),
-                        &ctx,
-                    )?;
+                    let overview = base.build_overviews(&parent, nearest, &ctx)?;
                     let mut replacement = record;
                     replacement.version = opid;
                     replacement.derived_version = Some(overview.derived_version().into());
@@ -1441,10 +1501,120 @@ impl ServerState {
             view,
             Some(crop),
             time,
-            Some((grid, z)),
+            Some((grid, coordinates)),
             (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
         )
         .await
+    }
+    fn warm_protocol_neighbors(self: &Arc<Self>, warm: WarmTiles) {
+        if warm.targets.is_empty() {
+            return;
+        }
+        let Ok(slot) = self.warm_slots.clone().try_acquire_owned() else {
+            return;
+        };
+        let Ok(activity) = self.activities.enter() else {
+            return;
+        };
+        {
+            let mut groups = self.warm_groups.lock().unwrap();
+            if !groups.insert(warm.key.clone()) {
+                return;
+            }
+        }
+        let state = self.clone();
+        tokio::spawn(async move {
+            let _activity = activity;
+            let _slot = slot;
+            use futures_util::StreamExt;
+            let mut changes = state.catalog.subscribe();
+            let targets = warm.targets;
+            let versions = warm.versions;
+            let definition = warm.definition;
+            let pin = warm.pin;
+            let revision = warm.revision;
+            let time = warm.time;
+            let group_key = warm.key;
+            let worker = state.clone();
+            let worker_versions = versions.clone();
+            let work = futures_util::stream::iter(targets.into_iter())
+                .map(move |(area_key, key, view, crop)| {
+                    let state = worker.clone();
+                    let definition = definition.clone();
+                    let pin = pin.clone();
+                    let revision = revision.clone();
+                    let versions = worker_versions.clone();
+                    async move {
+                        if state.activities.is_closed() || !state.versions_current(&versions) {
+                            return;
+                        }
+                        let result = state
+                            .encoded_tile(
+                                key.clone(),
+                                revision,
+                                Some(crop),
+                                EncodingInput::Scene {
+                                    area_key: area_key.clone(),
+                                    definition,
+                                    pin,
+                                    view: view.clone(),
+                                    time,
+                                },
+                                false,
+                                Some(versions.clone()),
+                            )
+                            .await;
+                        if result.is_ok() {
+                            state
+                                .warmed
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                })
+                .buffer_unordered(state.config.profile.active_background);
+            tokio::pin!(work);
+            loop {
+                tokio::select! {
+                    item = work.next() => if item.is_none() { break; },
+                    _ = state.activities.closed() => break,
+                    _ = changes.changed() => if !state.versions_current(&versions) { break; },
+                }
+            }
+            // Dropping the stream cancels unobserved flights; retained blocking
+            // drivers release scheduler capacity only after real completion.
+            state.warm_groups.lock().unwrap().remove(&group_key);
+        });
+    }
+    fn versions_current(&self, versions: &[(ResourceKey, String)]) -> bool {
+        versions
+            .iter()
+            .all(|(key, version)| self.catalog.is_current_version(key, version))
+    }
+    fn area_key(&self, revision: &str, view: &View, time: f64) -> Result<String> {
+        let bytes = crate::derived::bounded_json(
+            view,
+            self.config.profile.max_registry_bytes,
+            &self.scheduler.context(),
+        )?;
+        Ok(super::catalog::identity(&[
+            b"geello-raster-overview-v6",
+            revision.as_bytes(),
+            self.backend_name.as_bytes(),
+            &bytes,
+            &time.to_le_bytes(),
+        ]))
+    }
+    fn response_key(&self, area_key: &str, crop: Option<[u32; 4]>) -> Result<String> {
+        let bytes = crate::derived::bounded_json(
+            &crop,
+            self.config.profile.max_registry_bytes,
+            &self.scheduler.context(),
+        )?;
+        Ok(super::catalog::identity(&[
+            area_key.as_bytes(),
+            &bytes,
+            b"png",
+        ]))
     }
     async fn render_request(
         self: &Arc<Self>,
@@ -1452,7 +1622,7 @@ impl ServerState {
         view: View,
         crop: Option<[u32; 4]>,
         time: f64,
-        protocol_tile: Option<(super::tile_grid::TileGrid, u32)>,
+        protocol_tile: Option<(super::tile_grid::TileGrid, [u32; 3])>,
         output: (RenderDelivery, crate::encoding::ImageFormat),
     ) -> Result<Arc<EncodedResponse>> {
         let (delivery, image_format) = output;
@@ -1471,7 +1641,7 @@ impl ServerState {
             .pin(&ResourceKey::new(ResourceKind::Map, id)?)?;
         let map_key = ResourceKey::new(ResourceKind::Map, id)?;
         let record = &pin.records[&map_key];
-        if let Some((grid, z)) = protocol_tile {
+        if let Some((grid, [z, _, _])) = protocol_tile {
             let text = record
                 .definition
                 .as_deref()
@@ -1483,6 +1653,11 @@ impl ServerState {
             let map = parse_map(text).map_err(ServerError::from)?;
             super::tile_grid::validate_publication(&map, grid, z)?;
         }
+        let definition = record
+            .definition
+            .as_deref()
+            .ok_or_else(|| ServerError::io("missing map definition"))?;
+        let published_map = parse_map(definition)?;
         for resource in pin.records.values() {
             if resource.key.kind == ResourceKind::Dataset
                 && resource
@@ -1492,7 +1667,26 @@ impl ServerState {
             {
                 self.request_base_restore(resource)?;
             }
-            self.request_overviews(resource);
+            let mut nearest = true;
+            for item in published_map
+                .items
+                .iter()
+                .filter(|item| item.dataset == resource.key.id)
+            {
+                let key = ResourceKey::new(ResourceKind::Style, &item.style)?;
+                if let Some(text) = pin.records.get(&key).and_then(|r| r.definition.as_deref()) {
+                    let style = parse_style(text)?;
+                    for symbol in style.rules.iter().flat_map(|r| &r.symbols) {
+                        if let SymbolDefinition::Raster { resampling, .. } = symbol {
+                            nearest &= resampling.reduce == "nearest";
+                        }
+                    }
+                }
+            }
+            self.request_overviews(
+                resource,
+                nearest || resource.source.sample_kind.as_deref() == Some("categorical"),
+            );
         }
         let ctx = self.scheduler.context();
         let _graph_memory = ctx.reserve(memory::envelope(
@@ -1565,22 +1759,64 @@ impl ServerState {
                 _memory: vec![hold],
             }));
         }
-        let view_bytes =
-            crate::derived::bounded_json(&view, self.config.profile.max_registry_bytes, &ctx)?;
-        let crop_bytes =
-            crate::derived::bounded_json(&crop, self.config.profile.max_registry_bytes, &ctx)?;
-        let area_key = super::catalog::identity(&[
-            // Bump when scene/response semantics change across binary upgrades.
-            b"geello-text-render-v5",
-            revision.as_bytes(),
-            self.backend_name.as_bytes(),
-            &view_bytes,
-            &time.to_le_bytes(),
-        ]);
-        let key = super::catalog::identity(&[area_key.as_bytes(), &crop_bytes, b"png"]);
-        let cache_limit = response_limit(self.config.profile.max_image_bytes)?;
-        let _cache_read = ctx.reserve(cache_limit)?;
-        let cached = self.responses.get(&key).await;
+        let area_key = self.area_key(&revision, &view, time)?;
+        let key = self.response_key(&area_key, crop)?;
+        let definition_hold = ctx.reserve(memory::envelope(definition.len())?)?;
+        let definition = Arc::new(Accounted::new(definition.to_owned(), vec![definition_hold]));
+        let pin = Arc::new(pin);
+        let warm = if let (Some((grid, [z, x, y])), Some(_)) = (protocol_tile, crop) {
+            let mut targets = vec![];
+            for [z, x, y] in super::tile_grid::neighbors(grid, z, x, y, &self.config.profile) {
+                let (view, crop) = grid.layout(z, x, y, &self.config.profile)?;
+                let area_key = self.area_key(&revision, &view, time)?;
+                let key = self.response_key(&area_key, Some(crop))?;
+                targets.push((area_key, key, view, crop));
+            }
+            Some(WarmTiles {
+                key: key.clone(),
+                targets,
+                revision: revision.clone(),
+                versions: pin
+                    .records
+                    .values()
+                    .map(|r| (r.key.clone(), r.version.clone()))
+                    .collect(),
+                definition: definition.clone(),
+                pin: pin.clone(),
+                time,
+            })
+        } else {
+            None
+        };
+        let result = self
+            .encoded_tile(
+                key,
+                revision,
+                crop,
+                EncodingInput::Scene {
+                    area_key,
+                    definition,
+                    pin,
+                    view,
+                    time,
+                },
+                true,
+                None,
+            )
+            .await;
+        // Every successful public request, including cache hits and flight
+        // subscribers, advances its own centered window. Workers never recurse.
+        if result.is_ok()
+            && let Some(warm) = warm
+        {
+            self.warm_protocol_neighbors(warm);
+        }
+        result
+    }
+    async fn cached_response(&self, key: &String) -> Result<Option<Arc<EncodedResponse>>> {
+        let ctx = self.scheduler.context();
+        let _cache_read = ctx.reserve(response_limit(self.config.profile.max_image_bytes)?)?;
+        let cached = self.responses.get(key).await;
         if cached.is_err() {
             self.cache_failures
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1588,29 +1824,56 @@ impl ServerState {
         if let Ok(Some(entry)) = cached {
             match decode_response(
                 entry.value(),
-                &key,
+                key,
                 self.config.profile.max_image_bytes,
                 &ctx,
             ) {
-                Ok(value) => return Ok(Arc::new(value)),
+                Ok(response) => {
+                    self.cache_hits
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(Some(Arc::new(response)));
+                }
                 Err(error) if error.status == 503 => return Err(error),
                 Err(_) => {}
             }
-            self.responses.remove(&key);
+            self.responses.remove(key);
             self.cache_failures
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        drop(_cache_read);
-        drop(version_bytes);
-        drop(view_bytes);
-        drop(crop_bytes);
+        Ok(None)
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn encoded_tile(
+        self: &Arc<Self>,
+        key: String,
+        revision: String,
+        crop: Option<[u32; 4]>,
+        input: EncodingInput,
+        foreground: bool,
+        versions: Option<Vec<(ResourceKey, String)>>,
+    ) -> Result<Arc<EncodedResponse>> {
+        // Register before async disk lookup. Cache insertion precedes flight
+        // removal, closing the cache-miss/flight-completion duplication race.
         let mut receiver = {
             let mut flights = self.encode_flights.lock().unwrap();
-            if let Some(tx) = flights.get(&key) {
-                tx.subscribe()
+            if let Some(flight) = flights.get(&key) {
+                let promoted = *flight.foreground.borrow();
+                if foreground && !promoted {
+                    flight.foreground.send_replace(true);
+                }
+                flight.result.subscribe()
             } else {
-                if flights.len()
-                    >= self.config.profile.queued_per_class + self.config.profile.active_http
+                let limit = self.config.profile.queued_per_class
+                    + if foreground {
+                        self.config.profile.active_http
+                    } else {
+                        self.config.profile.active_background
+                    };
+                if flights
+                    .values()
+                    .filter(|f| *f.foreground.borrow() == foreground)
+                    .count()
+                    >= limit
                 {
                     return Err(ServerError::new(
                         503,
@@ -1619,96 +1882,132 @@ impl ServerState {
                     ));
                 }
                 let activity = self.activities.enter()?;
-                let definition_hold = self.scheduler.memory_context().reserve(memory::envelope(
-                    record.definition.as_ref().map_or(0, String::len),
-                )?)?;
-                let definition = record
-                    .definition
-                    .clone()
-                    .ok_or_else(|| ServerError::io("missing immutable map definition"))?;
-                let definition = Accounted::new(definition, vec![definition_hold]);
-                // Admission and validation must finish before publishing a flight.
-                // Otherwise an early error leaves subscribers waiting forever.
                 let (tx, rx) = watch::channel(None);
-                flights.insert(key.clone(), tx.clone());
+                let (foreground_tx, priority) = watch::channel(foreground);
+                flights.insert(
+                    key.clone(),
+                    Flight {
+                        result: tx.clone(),
+                        foreground: foreground_tx,
+                    },
+                );
                 let state = self.clone();
                 let key = key.clone();
-                let view = view.clone();
-                let revision = revision.clone();
                 tokio::spawn(async move {
                     let _activity = activity;
                     let work = async {
-                        let pixels = state
-                            .area_pixels(area_key, definition, pin, view, time)
-                            .await?;
-                        let incomplete = pixels.incomplete;
-                        let max = state.config.profile.max_image_bytes;
-                        let c = state.scheduler.context();
-                        state
-                            .encodes
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let encoded = state
-                            .scheduler
-                            .blocking(WorkClass::Http, c, move |c| {
-                                let _hold = c.reserve(pixels.pixels().len())?;
-                                let image = if let Some([x, y, w, h]) = crop {
-                                    let _crop_hold = c.reserve(
-                                        (w as usize)
-                                            .checked_mul(h as usize)
-                                            .and_then(|v| v.checked_mul(8))
-                                            .ok_or(GeelloError::SizeOverflow)?,
-                                    )?;
-                                    let mut bytes = vec![];
-                                    for row in y..y + h {
-                                        let start = ((row * pixels.width() + x) * 4) as usize;
-                                        bytes.extend_from_slice(
-                                            &pixels.pixels()[start..start + (w * 4) as usize],
-                                        );
-                                    }
-                                    RgbaImage::from_rgba(w, h, bytes)?
-                                } else {
-                                    (**pixels).clone()
-                                };
-                                Ok(crate::encoding::encode(
-                                    &image,
-                                    crate::encoding::ImageFormat::Png,
-                                    max,
-                                    &c,
-                                )?)
+                        if let Some(response) = state.cached_response(&key).await? {
+                            return Ok(response);
+                        }
+                        if versions
+                            .as_ref()
+                            .is_some_and(|v| !state.versions_current(v))
+                        {
+                            return Err(ServerError::new(
+                                503,
+                                "cancelled",
+                                "Prewarm resources changed",
+                            ));
+                        }
+                        let pixels = match input {
+                            EncodingInput::Scene {
+                                area_key,
+                                definition,
+                                pin,
+                                view,
+                                time,
+                            } => {
+                                state
+                                    .area_pixels(
+                                        area_key,
+                                        definition,
+                                        pin,
+                                        view,
+                                        time,
+                                        priority.clone(),
+                                    )
+                                    .await?
+                            }
+                        };
+                        let result: Result<EncodedResponse> = async {
+                            let incomplete = pixels.incomplete;
+                            let max = state.config.profile.max_image_bytes;
+                            let c = state.scheduler.context();
+                            let counter = state.clone();
+                            let encoded = state
+                                .scheduler
+                                .blocking_tile(c, priority, move |c| {
+                                    counter
+                                        .encodes
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    let _hold = c.reserve(pixels.pixels().len())?;
+                                    let image = if let Some([x, y, w, h]) = crop {
+                                        let _crop_hold = c.reserve(
+                                            (w as usize)
+                                                .checked_mul(h as usize)
+                                                .and_then(|v| v.checked_mul(8))
+                                                .ok_or(GeelloError::SizeOverflow)?,
+                                        )?;
+                                        let mut bytes = vec![];
+                                        for row in y..y + h {
+                                            let start = ((row * pixels.width() + x) * 4) as usize;
+                                            bytes.extend_from_slice(
+                                                &pixels.pixels()[start..start + (w * 4) as usize],
+                                            );
+                                        }
+                                        RgbaImage::from_rgba(w, h, bytes)?
+                                    } else {
+                                        (**pixels).clone()
+                                    };
+                                    Ok(crate::encoding::encode(
+                                        &image,
+                                        crate::encoding::ImageFormat::Png,
+                                        max,
+                                        &c,
+                                    )?)
+                                })
+                                .await?;
+                            let etag = format!("\"{}\"", blake3::hash(&encoded).to_hex());
+                            let (bytes, encoding_holds) = encoded.into_parts();
+                            let hold = state.scheduler.memory_context().reserve(
+                                bytes
+                                    .capacity()
+                                    .checked_add(RESPONSE_HEADER_MAX)
+                                    .ok_or(GeelloError::SizeOverflow)?,
+                            )?;
+                            drop(encoding_holds);
+                            Ok(EncodedResponse {
+                                bytes,
+                                etag,
+                                content_type: "image/png".into(),
+                                render_revision: revision,
+                                backend: state.backend_name.clone(),
+                                incomplete,
+                                _memory: vec![hold],
                             })
-                            .await?;
-                        let etag = format!("\"{}\"", blake3::hash(&encoded).to_hex());
-                        let (bytes, encoding_holds) = encoded.into_parts();
-                        let hold = state.scheduler.memory_context().reserve(
-                            bytes
-                                .capacity()
-                                .checked_add(RESPONSE_HEADER_MAX)
-                                .ok_or(GeelloError::SizeOverflow)?,
-                        )?;
-                        drop(encoding_holds);
-                        Ok(EncodedResponse {
-                            bytes,
-                            etag,
-                            content_type: "image/png".into(),
-                            render_revision: revision,
-                            backend: state.backend_name.clone(),
-                            incomplete,
-                            _memory: vec![hold],
-                        })
+                        }
+                        .await;
+                        let response = Arc::new(result?);
+                        if !state.activities.is_closed()
+                            && versions.as_ref().is_none_or(|v| state.versions_current(v))
+                            && let Ok(bytes) = encode_response(
+                                &response,
+                                &key,
+                                state.config.profile.max_image_bytes,
+                                &state.scheduler.context(),
+                            )
+                        {
+                            let (bytes, _hold) = bytes.into_parts();
+                            state.responses.insert(key.clone(), bytes);
+                        }
+                        Ok(response)
                     };
-                    let result = tokio::select! {r=work=>r,_=tx.closed()=>Err(ServerError::new(503,"cancelled","All encoding waiters disconnected"))};
-                    if let Ok(response) = &result
-                        && let Ok(bytes) = encode_response(
-                            response,
-                            &key,
-                            state.config.profile.max_image_bytes,
-                            &state.scheduler.context(),
-                        )
-                    {
-                        let (bytes, _hold) = bytes.into_parts();
-                        state.responses.insert(key.clone(), bytes);
-                    }
-                    tx.send_replace(Some(result.map(Arc::new)));
+                    let result = tokio::select! {
+                        r = work => r,
+                        _ = tx.closed() => Err(ServerError::new(503,"cancelled","All encoding waiters disconnected")),
+                        _ = state.activities.closed() => Err(ServerError::new(503,"shutdown","Server is shutting down")),
+                    };
+                    tx.send_replace(Some(result));
                     state.encode_flights.lock().unwrap().remove(&key);
                 });
                 rx
@@ -1727,18 +2026,22 @@ impl ServerState {
     async fn area_pixels(
         self: &Arc<Self>,
         key: String,
-        definition: Accounted<String>,
-        pin: ResourcePin,
+        definition: Arc<Accounted<String>>,
+        pin: Arc<ResourcePin>,
         view: View,
         time: f64,
+        mut priority: watch::Receiver<bool>,
     ) -> Result<Arc<RenderedArea>> {
-        if let Some(CachedObject::Image(image)) = self.objects.get(&key) {
-            return Ok(image);
-        }
-        let mut rx = {
+        let (mut rx, area_priority) = {
             let mut flights = self.render_flights.lock().unwrap();
-            if let Some(tx) = flights.get(&key) {
-                tx.subscribe()
+            if let Some(CachedObject::Image(image)) = self.objects.get(&key) {
+                return Ok(image);
+            }
+            if let Some(flight) = flights.get(&key) {
+                if *priority.borrow() {
+                    flight.foreground.send_replace(true);
+                }
+                (flight.result.subscribe(), flight.foreground.clone())
             } else {
                 if flights.len()
                     >= self.config.profile.queued_per_class + self.config.profile.active_http
@@ -1751,7 +2054,14 @@ impl ServerState {
                 }
                 let activity = self.activities.enter()?;
                 let (tx, rx) = watch::channel(None);
-                flights.insert(key.clone(), tx.clone());
+                let (area_priority, render_priority) = watch::channel(*priority.borrow());
+                flights.insert(
+                    key.clone(),
+                    PixelFlight {
+                        result: tx.clone(),
+                        foreground: area_priority.clone(),
+                    },
+                );
                 let state = self.clone();
                 tokio::spawn(async move {
                     let _activity = activity;
@@ -1760,13 +2070,15 @@ impl ServerState {
                     let work = async {
                         let scene = state
                             .scheduler
-                            .blocking(WorkClass::Http, ctx.clone(), move |c| {
+                            .blocking_tile(ctx.clone(), render_priority.clone(), move |c| {
                                 worker.prepare_definition(&definition, &pin, &view, time, &c)
                             })
                             .await?;
                         let incomplete = scene.summary().incompatible_components > 0;
                         Ok(RenderedArea {
-                            image: state.execute_pixels(scene, &ctx, WorkClass::Http).await?,
+                            image: state
+                                .execute_tile_pixels(scene, &ctx, render_priority.clone())
+                                .await?,
                             incomplete,
                         })
                     };
@@ -1783,16 +2095,19 @@ impl ServerState {
                     tx.send_replace(Some(result));
                     state.render_flights.lock().unwrap().remove(&key);
                 });
-                rx
+                (rx, area_priority)
             }
         };
         loop {
             if let Some(result) = rx.borrow().clone() {
                 return result;
             }
-            rx.changed()
-                .await
-                .map_err(|_| ServerError::new(503, "worker", "Area worker stopped"))?;
+            tokio::select! {
+                changed = rx.changed() => changed.map_err(|_| ServerError::new(503,"worker","Area worker stopped"))?,
+                changed = priority.changed() => {
+                    if changed.is_ok() && *priority.borrow_and_update() {area_priority.send_replace(true);}
+                },
+            }
         }
     }
     fn prepare_definition(
@@ -1919,9 +2234,14 @@ impl ServerState {
                             let enlarge = parse_method(&resampling.enlarge)?;
                             let reduce = parse_method(&resampling.reduce)?;
                             let compatible_overview = match kind {
-                                crate::raster_processing::RasterKind::Categorical => true,
+                                crate::raster_processing::RasterKind::Categorical => {
+                                    raster.overview_method() == "nearest"
+                                }
                                 crate::raster_processing::RasterKind::Continuous => {
-                                    reduce == crate::raster_processing::Resampling::AreaAverage
+                                    (reduce == crate::raster_processing::Resampling::AreaAverage
+                                        && raster.overview_method() == "weighted-mean")
+                                        || (reduce == crate::raster_processing::Resampling::Nearest
+                                            && raster.overview_method() == "nearest")
                                 }
                             };
                             let level = raster_level(&raster, view, compatible_overview);
@@ -2155,6 +2475,41 @@ impl ServerState {
         let hold = ctx.reserve(pixels.pixels().len())?;
         Ok(Accounted::new(pixels, vec![hold]))
     }
+    async fn execute_tile_pixels(
+        &self,
+        scene: PreparedScene,
+        ctx: &OperationContext,
+        priority: watch::Receiver<bool>,
+    ) -> Result<Accounted<RgbaImage>> {
+        self.renders
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let pixels = match &self.backend {
+            #[cfg(feature = "render-cpu")]
+            Backend::Cpu => {
+                self.scheduler
+                    .blocking_tile(ctx.clone(), priority.clone(), move |c| {
+                        Ok(CpuRenderer::new(1).render(&scene, &c)?)
+                    })
+                    .await?
+            }
+            #[cfg(feature = "render-gpu")]
+            Backend::Gpu(renderer) => {
+                let renderer = renderer.clone();
+                let render_context = ctx.clone();
+                self.scheduler
+                    .asynchronous_tile(ctx.clone(), priority, async move {
+                        Ok(renderer
+                            .lock()
+                            .await
+                            .render_pixels(&scene, &render_context)
+                            .await?)
+                    })
+                    .await?
+            }
+        };
+        let hold = ctx.reserve(pixels.pixels().len())?;
+        Ok(Accounted::new(pixels, vec![hold]))
+    }
 }
 impl RasterBlockCache for ServerState {
     fn get_or_load(
@@ -2224,7 +2579,22 @@ fn raster_level(store: &DerivedRaster, view: &View, allow_overview: bool) -> usi
     let [_, b, c, _, e, f] = grid.affine;
     let dx = (view.bounds.max_x - view.bounds.min_x) / view.width as f64;
     let dy = (view.bounds.max_y - view.bounds.min_y) / view.height as f64;
-    store.select_level(dx.min(dy) / (b * b + c * c + e * e + f * f).sqrt())
+    // Smallest singular value of target-pixel -> native-pixel mapping. It
+    // bounds both axes, including rotated/skewed rasters, without choosing an
+    // unnecessarily fine level for ordinary square north-up pixels.
+    let det = b * f - c * e;
+    if !det.is_finite() || det == 0. {
+        return 0;
+    }
+    let m = [f * dx / det, -c * dy / det, -e * dx / det, b * dy / det];
+    let trace = m.iter().map(|v| v * v).sum::<f64>();
+    let area = (m[0] * m[3] - m[1] * m[2]).abs();
+    let largest = ((trace + (trace * trace - 4. * area * area).max(0.).sqrt()) / 2.).sqrt();
+    let factor = area / largest;
+    if !factor.is_finite() {
+        return 0;
+    }
+    store.select_level(factor)
 }
 
 const RESPONSE_MAGIC: &[u8; 8] = b"GLRC0002";
@@ -2451,11 +2821,354 @@ fn directory_bytes(root: &Path, ctx: &OperationContext) -> Result<u64> {
 mod tests {
     use super::*;
 
+    async fn warm_test_state(root: &Path, max_image_bytes: usize) -> Arc<ServerState> {
+        let mut config =
+            ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
+        config.data_directory = root.into();
+        config.backend = BackendSelection::Cpu;
+        let p = &mut config.profile;
+        p.response_memory_bytes = 8 << 20;
+        p.response_disk_bytes = 64 << 20;
+        p.object_cache_bytes = 128 << 20;
+        p.max_live_bytes = 512 << 20;
+        p.max_image_bytes = max_image_bytes;
+        p.active_http = 2;
+        p.active_background = 2;
+        p.queued_per_class = 16;
+        let state = ServerState::open(config).await.unwrap();
+        state.catalog.publish(ResourceRecord {
+            key: ResourceKey::new(ResourceKind::Map,"test:warm").unwrap(),
+            ownership: Ownership::External, version:"v1".into(), published:true,
+            source:SourceSpec {path:root.join("map.toml"),format:"toml".into(),encoding:None,crs:None,sample_kind:None},
+            dependencies:vec![],data_version:"d1".into(),derived_version:None,derived_path:None,
+            managed_directory:None,class:None,effective_crs:None,type_bindings:vec![],
+            definition:Some("schema_version=1\nid='test:warm'\noutput_crs=['OGC:CRS84','EPSG:3857']\nitems=[]\n".into()),
+        },&Precondition::Absent).unwrap();
+        state
+    }
+    async fn warm_idle(state: &ServerState) {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                if state.warm_groups.lock().unwrap().is_empty()
+                    && state.encode_flights.lock().unwrap().is_empty()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn wmts_centered_windows_cache_hit_advances_and_users_share_both_grids() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        for grid in [
+            super::super::tile_grid::TileGrid::WebMercatorQuad,
+            super::super::tile_grid::TileGrid::WorldCrs84Quad,
+        ] {
+            let base = state.execution_counts();
+            // A's centered 5x5 is columns/rows 4..8; B is one tile left.
+            let first = state
+                .render_protocol_tile_at("test:warm", grid, [4, 6, 6], 0.)
+                .await
+                .unwrap();
+            warm_idle(&state).await;
+            assert_eq!(state.execution_counts().1 - base.1, 25);
+            let before = state.execution_counts();
+            let hits = state.cache_hits.load(std::sync::atomic::Ordering::Relaxed);
+            // Independent user calls share the same B PNG. B must warm x=3,
+            // which was outside A's completed window, including another area.
+            let (b1, b2) = tokio::join!(
+                state.render_protocol_tile_at("test:warm", grid, [4, 5, 6], 0.),
+                state.render_protocol_tile_at("test:warm", grid, [4, 5, 6], 0.),
+            );
+            let (b1, b2) = (b1.unwrap(), b2.unwrap());
+            assert_eq!(b1.bytes, b2.bytes);
+            assert_eq!(b1.render_revision, first.render_revision);
+            assert!(state.cache_hits.load(std::sync::atomic::Ordering::Relaxed) > hits);
+            warm_idle(&state).await;
+            let after = state.execution_counts();
+            assert_eq!(
+                after.1 - before.1,
+                5,
+                "only B's new left column should encode"
+            );
+            assert_eq!(
+                after.0 - before.0,
+                2,
+                "new column intersects two aligned render areas"
+            );
+            let (view, crop) = grid.layout(4, 3, 6, &state.config.profile).unwrap();
+            let area = state.area_key(&first.render_revision, &view, 0.).unwrap();
+            let key = state.response_key(&area, Some(crop)).unwrap();
+            assert!(state.cached_response(&key).await.unwrap().is_some());
+            // Repeated B checks cached neighbors without rendering/encoding.
+            state
+                .render_protocol_tile_at("test:warm", grid, [4, 5, 6], 0.)
+                .await
+                .unwrap();
+            warm_idle(&state).await;
+            assert_eq!(state.execution_counts(), after);
+        }
+        let config = state.config.clone();
+        state.shutdown().await.unwrap();
+        drop(state);
+        let state = ServerState::open(config).await.unwrap();
+        state
+            .render_protocol_tile_at(
+                "test:warm",
+                super::super::tile_grid::TileGrid::WorldCrs84Quad,
+                [4, 5, 6],
+                0.,
+            )
+            .await
+            .unwrap();
+        warm_idle(&state).await;
+        assert_eq!(state.execution_counts(), (0, 0));
+        state.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn wmts_foreground_neighbor_joins_active_prewarms() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        let grid = super::super::tile_grid::TileGrid::WebMercatorQuad;
+        let (a, b, c) = tokio::join!(
+            state.render_protocol_tile_at("test:warm", grid, [4, 6, 6], 0.),
+            state.render_protocol_tile_at("test:warm", grid, [4, 5, 6], 0.),
+            state.render_protocol_tile_at("test:warm", grid, [4, 5, 6], 0.),
+        );
+        assert!(a.is_ok());
+        assert_eq!(b.unwrap().bytes, c.unwrap().bytes);
+        warm_idle(&state).await;
+        assert_eq!(state.execution_counts(), (6, 30));
+        state.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn wmts_failed_foreground_does_not_warm_or_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 1).await;
+        assert!(
+            state
+                .render_protocol_tile_at(
+                    "test:warm",
+                    super::super::tile_grid::TileGrid::WebMercatorQuad,
+                    [2, 0, 0],
+                    0.
+                )
+                .await
+                .is_err()
+        );
+        warm_idle(&state).await;
+        assert_eq!(state.execution_counts(), (1, 1));
+        assert_eq!(state.responses.memory().usage(), 0);
+        assert_eq!(state.warmed.load(std::sync::atomic::Ordering::Relaxed), 0);
+        state.shutdown().await.unwrap();
+    }
+    async fn occupy_background(
+        state: &Arc<ServerState>,
+    ) -> (
+        tokio::sync::watch::Sender<bool>,
+        Vec<tokio::task::JoinHandle<Result<()>>>,
+    ) {
+        let (release, _) = watch::channel(false);
+        let (started, mut ready) = tokio::sync::mpsc::unbounded_channel();
+        let mut tasks = vec![];
+        for _ in 0..state.config.profile.active_background {
+            let state = state.clone();
+            let started = started.clone();
+            let mut released = release.subscribe();
+            tasks.push(tokio::spawn(async move {
+                let ctx = state.scheduler.context();
+                let check = ctx.clone();
+                state
+                    .scheduler
+                    .asynchronous(WorkClass::Background, ctx, async move {
+                        started.send(()).unwrap();
+                        loop {
+                            check.check()?;
+                            if *released.borrow_and_update() {
+                                break;
+                            }
+                            tokio::select! {
+                                _ = released.changed() => {},
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(5)) => {},
+                            }
+                        }
+                        Ok(())
+                    })
+                    .await
+            }));
+        }
+        for _ in 0..state.config.profile.active_background {
+            ready.recv().await.unwrap();
+        }
+        (release, tasks)
+    }
+    #[tokio::test]
+    async fn wmts_foreground_promotes_queued_neighbor_and_refresh_cancels_old_group() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        let (release, tasks) = occupy_background(&state).await;
+        let grid = super::super::tile_grid::TileGrid::WebMercatorQuad;
+        state
+            .render_protocol_tile_at("test:warm", grid, [2, 0, 0], 0.)
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while state.encode_flights.lock().unwrap().len()
+                < state.config.profile.active_background
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Both background slots remain occupied, so only promotion can finish.
+        let old = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            state.render_protocol_tile_at("test:warm", grid, [2, 1, 0], 0.),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(state.execution_counts(), (1, 2));
+        let key = ResourceKey::new(ResourceKind::Map, "test:warm").unwrap();
+        let mut replacement = state.catalog.get(&key).unwrap();
+        replacement.version = "v2".into();
+        state
+            .catalog
+            .publish(replacement, &Precondition::Version("v1".into()))
+            .unwrap();
+        warm_idle(&state).await;
+        release.send_replace(true);
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
+        assert_eq!(
+            state.execution_counts(),
+            (1, 2),
+            "cancelled queued encoders must not execute"
+        );
+        let new = state
+            .render_protocol_tile_at("test:warm", grid, [2, 1, 0], 0.)
+            .await
+            .unwrap();
+        assert_ne!(old.render_revision, new.render_revision);
+        warm_idle(&state).await;
+        assert_eq!(state.execution_counts(), (2, 14));
+        state.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn wmts_shutdown_drains_pending_prewarms() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        let (_release, tasks) = occupy_background(&state).await;
+        state
+            .render_protocol_tile_at(
+                "test:warm",
+                super::super::tile_grid::TileGrid::WebMercatorQuad,
+                [2, 0, 0],
+                0.,
+            )
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), state.shutdown())
+            .await
+            .unwrap()
+            .unwrap();
+        for task in tasks {
+            assert!(task.await.unwrap().is_err());
+        }
+        assert!(state.encode_flights.lock().unwrap().is_empty());
+        assert!(state.warm_groups.lock().unwrap().is_empty());
+        assert_eq!(state.execution_counts(), (1, 1));
+    }
+    #[test]
+    fn raster_level_respects_pixel_precision_and_rotation() {
+        let root = tempfile::tempdir().unwrap();
+        let ctx = OperationContext::new(
+            OperationLimits {
+                max_live_bytes: 64 << 20,
+                max_work: 1_000_000,
+                max_commands: 1000,
+                max_diagnostics: 16,
+            },
+            None,
+        );
+        let limits = StoreLimits {
+            max_disk_bytes: 16 << 20,
+            max_manifest_bytes: 1 << 20,
+            max_shard_features: 1,
+            max_record_bytes: 1 << 16,
+            max_block_bytes: 1 << 20,
+        };
+        for affine in [[0., 1., 0., 16., 0., -1.], [0., 0., 1., 0., 1., 0.]] {
+            let grid = RasterGrid {
+                crs: Crs::new("OGC:CRS84", CoordinateSpace::GeographicXy).unwrap(),
+                affine,
+                interpretation: PixelInterpretation::Area,
+            };
+            let base = DerivedRaster::build_base(
+                root.path(),
+                &format!("level-{affine:?}"),
+                16,
+                16,
+                &grid,
+                16,
+                limits,
+                &ctx,
+                |_, _| {
+                    Ok(RasterBlock {
+                        width: 16,
+                        height: 16,
+                        grid: grid.clone(),
+                        bands: vec![RasterBand {
+                            samples: RasterSamples::U8(vec![3; 256].into()),
+                            validity: None,
+                            no_data: None,
+                            scale: 1.,
+                            offset: 0.,
+                        }],
+                        alpha: None,
+                        alpha_association: AlphaAssociation::Straight,
+                    })
+                },
+            )
+            .unwrap();
+            let store = base.build_overviews(root.path(), true, &ctx).unwrap();
+            let view = |span| View {
+                crs: Crs::new("OGC:CRS84", CoordinateSpace::GeographicXy).unwrap(),
+                bounds: Bounds {
+                    min_x: 0.,
+                    min_y: 0.,
+                    max_x: span,
+                    max_y: span,
+                },
+                width: 4,
+                height: 4,
+                aspect: AspectPolicy::Stretch,
+            };
+            assert_eq!(raster_level(&store, &view(16.), true), 2);
+            assert_eq!(raster_level(&store, &view(15.99), true), 1);
+            assert_eq!(raster_level(&store, &view(4.), true), 0);
+            assert_eq!(raster_level(&store, &view(16.), false), 0);
+            let mut unequal = view(16.);
+            unequal.height = 16;
+            assert_eq!(raster_level(&store, &unequal, true), 0);
+        }
+    }
+
     #[tokio::test]
     async fn animation_uses_its_own_queue_and_does_not_reuse_or_populate_http_caches() {
         let root = tempfile::tempdir().unwrap();
         let mut config =
             ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = root.path().into();
         config.backend = BackendSelection::Cpu;
         config.profile.active_http = 1;
@@ -2556,6 +3269,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let mut config =
             ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = temp.path().into();
         config.backend = BackendSelection::GpuPreferred;
         let state = ServerState::open(config).await.unwrap();
@@ -2612,6 +3327,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let mut config =
             ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = temp.path().into();
         config.backend = BackendSelection::Gpu;
         let failure = ServerError::new(503, "backend", "Injected GPU initialization failure");
@@ -2744,6 +3461,8 @@ mod tests {
         let mut config =
             ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();
         let temp = tempfile::tempdir().unwrap();
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = temp.path().into();
         config.backend = BackendSelection::Cpu;
         let state = ServerState::open(config).await.unwrap();

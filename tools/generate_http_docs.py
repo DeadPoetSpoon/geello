@@ -112,7 +112,13 @@ def build():
                              "pinned_versions": INTEGER, "detached_content": INTEGER}),
         "Ready": obj({"status": {"type": "string", "enum": ["ready"]}, "backend": STRING,
                       "backend_diagnostic": NULL_STRING, "catalog": ref("CatalogStats"),
-                      "live_accounted_bytes": INTEGER, "cache_failures": INTEGER}),
+                      "live_accounted_bytes": INTEGER, "cache_failures": INTEGER,
+                      "response_cache": obj({
+                          "memory_capacity_bytes": INTEGER, "disk_capacity_bytes": INTEGER,
+                          "memory_used_bytes": INTEGER, "hits": INTEGER,
+                          "area_renders": INTEGER, "tile_encodes": INTEGER,
+                          "prewarm_completed": INTEGER, "prewarm_groups_active": INTEGER,
+                      })}),
         "ResourcePage": obj({"generation": INTEGER, "resources": array(ref("ResourceRecord"))}),
     }
     key_params = [param("kind", "path", KINDS, "Resource kind.", True),

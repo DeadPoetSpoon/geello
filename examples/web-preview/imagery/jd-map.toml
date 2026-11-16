@@ -1,0 +1,11 @@
+schema_version = 1
+id = "preview:jd"
+title = "jd.tif 影像"
+output_crs = ["EPSG:3857"]
+background = "#edf3f1"
+tiles = { matrix_sets = ["WebMercatorQuad"], min_zoom = 0, max_zoom = 22 }
+
+[[items]]
+id = "imagery"
+dataset = "preview:jd"
+style = "preview:jd"

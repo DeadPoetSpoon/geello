@@ -350,6 +350,10 @@ impl DerivedRaster {
     pub fn level_count(&self) -> usize {
         self.manifest.levels.len()
     }
+    /// The pixel-selection method used to construct the overview samples.
+    pub fn overview_method(&self) -> &str {
+        &self.manifest.method
+    }
     pub fn ranges(&self) -> Vec<Option<crate::raster_processing::SampleRange>> {
         self.manifest
             .ranges
@@ -650,46 +654,68 @@ impl DerivedRaster {
         let mut output = None;
         let mut weights = vec![];
         let n = width as usize * height as usize;
-        for y in 0..height {
-            for x in 0..width {
-                let column = (((col + x) as u64 * factor as u64) + factor as u64 / 2)
-                    .min(base_width as u64 - 1) as u32;
-                let row_source = (((row + y) as u64 * factor as u64) + factor as u64 / 2)
-                    .min(base_height as u64 - 1) as u32;
-                let pixel = self.read_window(
-                    0,
-                    BlockWindow {
-                        column,
-                        row: row_source,
-                        width: 1,
-                        height: 1,
-                    },
-                    ctx,
-                )?;
-                if output.is_none() {
-                    output = Some(empty_like(
-                        &pixel,
-                        width,
-                        height,
-                        window_grid(&self.grid(), col, row, factor),
-                    ));
-                    weights.resize(n * (pixel.bands.len() + 1), 0.);
-                }
-                let out = output.as_mut().unwrap();
-                let index = (y * width + x) as usize;
-                for (band, source) in pixel.bands.iter().enumerate() {
-                    copy_sample(&mut out.bands[band].samples, index, &source.samples, 0)?;
-                    let valid = crate::raster_processing::valid_sample(source, 0);
-                    Arc::make_mut(out.bands[band].validity.as_mut().unwrap())[index] = valid;
-                    weights[band * n + index] = if valid {
-                        pixel.alpha.as_ref().map_or(1., |a| a[0] as f64)
-                    } else {
-                        0.
-                    };
-                }
-                weights[pixel.bands.len() * n + index] = 1.;
-                if let (Some(out), Some(alpha)) = (&mut out.alpha, &pixel.alpha) {
-                    Arc::make_mut(out)[index] = alpha[0];
+        let columns: Vec<u32> = (col..col + width)
+            .map(|x| {
+                (x as u64 * factor as u64 + factor as u64 / 2).min(base_width as u64 - 1) as u32
+            })
+            .collect();
+        let rows: Vec<u32> = (row..row + height)
+            .map(|y| {
+                (y as u64 * factor as u64 + factor as u64 / 2).min(base_height as u64 - 1) as u32
+            })
+            .collect();
+        // Decode each intersecting base tile once, not once per output pixel.
+        // Sampling every level directly from the base preserves exact integer
+        // values and avoids the center drift of repeated 2x nearest reductions.
+        for tile in &self.manifest.levels[0].tiles {
+            let tw = self.manifest.block_size.min(base_width - tile.column);
+            let th = self.manifest.block_size.min(base_height - tile.row);
+            let x0 = columns.partition_point(|x| *x < tile.column);
+            let x1 = columns.partition_point(|x| *x < tile.column + tw);
+            let y0 = rows.partition_point(|y| *y < tile.row);
+            let y1 = rows.partition_point(|y| *y < tile.row + th);
+            if x0 == x1 || y0 == y1 {
+                continue;
+            }
+            let pixel = self.read_window(
+                0,
+                BlockWindow {
+                    column: tile.column,
+                    row: tile.row,
+                    width: tw,
+                    height: th,
+                },
+                ctx,
+            )?;
+            if output.is_none() {
+                output = Some(empty_like(
+                    &pixel,
+                    width,
+                    height,
+                    window_grid(&self.grid(), col, row, factor),
+                ));
+                weights.resize(n * (pixel.bands.len() + 1), 0.);
+            }
+            let out = output.as_mut().unwrap();
+            for (y, &sy) in rows.iter().enumerate().take(y1).skip(y0) {
+                ctx.checkpoint(1)?;
+                for (x, &sx) in columns.iter().enumerate().take(x1).skip(x0) {
+                    let src = ((sy - tile.row) * tw + sx - tile.column) as usize;
+                    let index = y * width as usize + x;
+                    for (band, source) in pixel.bands.iter().enumerate() {
+                        copy_sample(&mut out.bands[band].samples, index, &source.samples, src)?;
+                        let valid = crate::raster_processing::valid_sample(source, src);
+                        Arc::make_mut(out.bands[band].validity.as_mut().unwrap())[index] = valid;
+                        weights[band * n + index] = if valid {
+                            pixel.alpha.as_ref().map_or(1., |a| a[src] as f64)
+                        } else {
+                            0.
+                        };
+                    }
+                    weights[pixel.bands.len() * n + index] = 1.;
+                    if let (Some(out), Some(alpha)) = (&mut out.alpha, &pixel.alpha) {
+                        Arc::make_mut(out)[index] = alpha[src];
+                    }
                 }
             }
         }

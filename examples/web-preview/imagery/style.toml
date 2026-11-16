@@ -1,0 +1,11 @@
+schema_version=1
+id='preview:elevation'
+[[rules]]
+id='elevation'
+[[rules.symbols]]
+id='image'
+kind='raster'
+mode='gray'
+band=1
+range={kind='explicit',min=0,max=255}
+resampling={enlarge='bilinear',reduce='area-average'}

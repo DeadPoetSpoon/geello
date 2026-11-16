@@ -776,6 +776,8 @@ mod tests {
         let mut config =
             ServerConfig::load(std::path::Path::new("examples/server.experimental.toml")).unwrap();
         config.backend = BackendSelection::Cpu;
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = root.path().join("data");
         let s = ServerState::open(config).await.unwrap();
         let key = ResourceKey::new(ResourceKind::Map, "test:tcp").unwrap();
@@ -937,6 +939,8 @@ mod tests {
         let mut config =
             ServerConfig::load(std::path::Path::new("examples/server.experimental.toml")).unwrap();
         config.backend = BackendSelection::Cpu;
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = root.path().join("data");
         config.profile.operation_timeout_ms = 100;
         let s = ServerState::open(config).await.unwrap();

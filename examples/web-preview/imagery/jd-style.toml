@@ -1,0 +1,13 @@
+schema_version = 1
+id = "preview:jd"
+
+[[rules]]
+id = "imagery"
+[[rules.symbols]]
+id = "rgb"
+kind = "raster"
+mode = "rgb"
+bands = [1, 2, 3]
+range = { kind = "explicit", min = 0, max = 255 }
+# Aerial imagery preview favors fast, deterministic pixel selection.
+resampling = { enlarge = "nearest", reduce = "nearest" }
