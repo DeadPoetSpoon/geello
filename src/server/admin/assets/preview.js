@@ -1,5 +1,17 @@
 import { request, serviceURL } from "./requests.js";
 
+export function imageRequestPlan(bounds, worldExtent, size, maxDimension, deviceRatio = 1) {
+  if (![...bounds, ...worldExtent, ...size, maxDimension, deviceRatio].every(Number.isFinite) || !size.every((value) => value > 0) || maxDimension < 1 || bounds[2] <= bounds[0] || bounds[3] <= bounds[1]) return;
+  const extent = [Math.max(bounds[0], worldExtent[0]), Math.max(bounds[1], worldExtent[1]), Math.min(bounds[2], worldExtent[2]), Math.min(bounds[3], worldExtent[3])];
+  if (extent[0] >= extent[2] || extent[1] >= extent[3]) return;
+  const cssWidth = size[0] * (extent[2] - extent[0]) / (bounds[2] - bounds[0]);
+  const cssHeight = size[1] * (extent[3] - extent[1]) / (bounds[3] - bounds[1]);
+  const pixelRatio = Math.min(Math.max(1, deviceRatio), 2, maxDimension / cssWidth, maxDimension / cssHeight);
+  const width = Math.max(1, Math.floor(cssWidth * pixelRatio));
+  const height = Math.max(1, Math.floor(cssHeight * pixelRatio));
+  return { extent, width, height, pixelRatio };
+}
+
 export async function mountPreview({ id, container, signal, h, field, input, select, button, head, notify, pageLimit, maxDimension }) {
   if (!globalThis.ol) throw new Error("本地 OpenLayers 加载失败，请检查管理静态资源认证及 CSP");
   const { data: record } = await request(`admin/v1/resources/map/${encodeURIComponent(id)}`, { signal });
@@ -87,22 +99,21 @@ export async function mountPreview({ id, container, signal, h, field, input, sel
     const size = map.getSize();
     const bounds = map.getView().calculateExtent(size);
     const worldExtent = validExtent();
-    const extent = [Math.max(bounds[0], worldExtent[0]), Math.max(bounds[1], worldExtent[1]), Math.min(bounds[2], worldExtent[2]), Math.min(bounds[3], worldExtent[3])];
-    if (extent[0] >= extent[2] || extent[1] >= extent[3]) return;
-    const scale = Math.min(1, maxDimension / size[0], maxDimension / size[1], 1600 / size[0], 1200 / size[1]);
-    const width = Math.max(1, Math.floor(size[0] * scale));
-    const height = Math.max(1, Math.floor(size[1] * scale));
+    const plan = imageRequestPlan(bounds, worldExtent, size, maxDimension, globalThis.devicePixelRatio || 1);
+    if (!plan) return;
+    const { extent, width, height, pixelRatio } = plan;
     const query = protocols.value === "wms" ? new URLSearchParams({ SERVICE: "WMS", VERSION: "1.3.0", REQUEST: "GetMap", LAYERS: id, STYLES: "", CRS: crs.value === "OGC:CRS84" ? "CRS:84" : crs.value, BBOX: extent.join(","), WIDTH: width, HEIGHT: height, FORMAT: "image/png", TRANSPARENT: "TRUE", geello_time: appliedTime }) : new URLSearchParams({ bbox: extent.join(","), crs: crs.value, width, height, geello_time: appliedTime });
-    const url = protocols.value === "wms" ? `wms?${query}` : `ogc/maps/collections/${encodeURIComponent(id)}/map?${query}`;
+    query.set("geello_pixel_ratio", pixelRatio);
+    const imageURL = protocols.value === "wms" ? `wms?${query}` : `ogc/maps/collections/${encodeURIComponent(id)}/map?${query}`;
     const source = new ol.source.Image({ projection: projection(), interpolate: false, loader: async () => {
       const image = new Image();
-      try { await showImage(image, url, requestSignal, expected, expectedImage); }
+      try { await showImage(image, imageURL, requestSignal, expected, expectedImage); }
       catch (error) {
         if (error.name === "AbortError") return { image: document.createElement("canvas"), extent, resolution: 1, pixelRatio: 1 };
         if (expected === generation && !requestSignal.aborted) imageError(error);
         throw error;
       }
-      return { image, extent, resolution: [(extent[2] - extent[0]) / width, (extent[3] - extent[1]) / height], pixelRatio: 1 };
+      return { image, extent, resolution: [(extent[2] - extent[0]) * pixelRatio / width, (extent[3] - extent[1]) * pixelRatio / height], pixelRatio };
     } });
     const next = new ol.layer.Image({ source, extent });
     if (overlay) map.removeLayer(overlay);
@@ -128,7 +139,7 @@ export async function mountPreview({ id, container, signal, h, field, input, sel
     overlay = undefined;
     if (resetView || !configured) {
       const extent = validExtent();
-      map.setView(new ol.View({ projection: projection(), center: [0, 0], zoom: 1, extent, showFullExtent: true, multiWorld: false, minZoom: protocols.value === "wmts" ? collection["x-geello-min-zoom"] || 0 : 0, maxZoom: collection["x-geello-max-zoom"] ?? 22 }));
+      map.setView(new ol.View({ projection: projection(), center: [0, 0], zoom: 1, extent, showFullExtent: true, multiWorld: false, constrainResolution: protocols.value === "wmts", maxResolution: (crs.value === "EPSG:3857" ? world * 2 : 180) / 256, minZoom: protocols.value === "wmts" ? collection["x-geello-min-zoom"] || 0 : 0, maxZoom: collection["x-geello-max-zoom"] ?? 22 }));
       map.getView().fit(extent, { size: map.getSize(), padding: [12, 12, 12, 12], maxZoom: 2 });
       configured = true;
     }

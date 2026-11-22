@@ -84,6 +84,9 @@ Origin 检查不能替代认证。不要用 CORS 放开管理写入。
 
 ## 请求预算与排错
 
+本轮性能实现、空间筛选回退条件、高分屏图像参数和 WebSocket 连接配置见
+[代码审阅优化实施记录](performance-optimizations.md)。
+
 共享调度器覆盖管理 fetch、原始文件 XHR 和 OL 图像。总并发最多 2，预览最多 1，待执行
 最多 64。若服务端 `active_http = 1`，管理台保守串行。写操作优先于管理读取，管理读取
 优先于预览；已发出的请求要等响应体实际完成才释放槽位，过期结果不会回写新视图。
@@ -119,6 +122,9 @@ node tools/verify_admin_ui.mjs
 窄屏和并发；最后按依赖逆序删除自己创建的托管测试资源。任务历史保留。
 截图、报告和临时数据默认位于已忽略的 `assets/test/admin-ui/results/`。
 可用 `GEELLO_ADMIN_BASE`、`CHROME_DEBUG_URL`、`GEELLO_ADMIN_RESULTS` 指定服务前缀及输出。
+应指向独立的测试服务，不要对现有业务服务运行会创建/删除资源的浏览器验收。
+设置 `GEELLO_ADMIN_DEVICE_SCALE_FACTOR=2` 可验收高分屏；默认值为 1。
+脚本检查实际画布的点标记像素宽度和请求比例，防止单图放置拉伸或像素样式漏缩放。
 设置 `GEELLO_OPEN_DATA_MAPS=open:vector,open:raster,open:overlay,open:landsat` 可额外检查已发布开放数据。
 检查不再豁免局部 UTM 影像的 422；先验证初始世界范围瓦片，再验证世界范围 OGC Maps/WMS
 和局部影像显示。脚本还注入预览错误，验证停止自动请求以及显式定位/全图恢复。

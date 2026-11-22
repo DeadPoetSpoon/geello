@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Dispatcher, errorMessage, serviceURL } from "../src/server/admin/assets/requests.js";
+import { Dispatcher, errorMessage, latestRequest, serviceURL } from "../src/server/admin/assets/requests.js";
+import { imageRequestPlan } from "../src/server/admin/assets/preview.js";
 
 const defer = () => {
   let resolve;
@@ -8,6 +9,35 @@ const defer = () => {
   return { promise, resolve };
 };
 const turn = () => new Promise((resolve) => setImmediate(resolve));
+
+test("only the latest list response can replace the current filter results", async () => {
+  const begin = latestRequest();
+  const older = defer();
+  const newer = defer();
+  let displayed;
+  const load = async (pending) => {
+    const isLatest = begin();
+    const value = await pending;
+    if (isLatest()) displayed = value;
+  };
+  const previous = load(older.promise);
+  const current = load(newer.promise);
+  newer.resolve("new filter");
+  await current;
+  older.resolve("old filter");
+  await previous;
+  assert.equal(displayed, "new filter");
+});
+
+test("preview requests preserve clipped aspect and scale for HiDPI within server limits", () => {
+  const plan = imageRequestPlan([-200, -100, 200, 100], [-180, -90, 180, 90], [1000, 500], 2048, 2);
+  assert.deepEqual(plan, { extent: [-180, -90, 180, 90], width: 1800, height: 900, pixelRatio: 2 });
+  const limited = imageRequestPlan([-180, -90, 180, 90], [-180, -90, 180, 90], [2000, 1000], 1024, 3);
+  assert.equal(limited.width, 1024);
+  assert.equal(limited.height, 512);
+  assert.equal(limited.pixelRatio, 1024 / 2000);
+  assert.equal(imageRequestPlan([200, 0, 300, 50], [-180, -90, 180, 90], [1000, 500], 2048), undefined);
+});
 
 test("writes overtake queued reads and preview, without abort releasing a running slot", async () => {
   const dispatcher = new Dispatcher({ concurrency: 1 });

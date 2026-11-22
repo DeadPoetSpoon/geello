@@ -77,11 +77,12 @@ enum EncodingInput {
         pin: Arc<ResourcePin>,
         view: View,
         time: f64,
+        pixel_ratio: f64,
     },
 }
 #[derive(Clone, Copy)]
 enum RenderDelivery {
-    Http,
+    Http(f64),
     Animation,
 }
 /// Area caches retain the preparation outcome alongside pixels so a different
@@ -155,6 +156,7 @@ pub struct ServerState {
     native_decodes: std::sync::atomic::AtomicU64,
     pub(crate) uploads: Arc<tokio::sync::Semaphore>,
     pub(crate) requests: Arc<tokio::sync::Semaphore>,
+    pub(crate) websocket_sessions: Arc<tokio::sync::Semaphore>,
     pub(crate) activities: Arc<super::activity::Activities>,
     pub(crate) feature_cursors: Arc<super::features::CursorStore>,
     shutdown_lock: tokio::sync::Mutex<bool>,
@@ -334,6 +336,7 @@ impl ServerState {
         // reclaimable; originals and unknown staging entries remain untouched.
         catalog.collect_abandoned_uploads()?;
         let uploads = Arc::new(tokio::sync::Semaphore::new(p.active_background));
+        let websocket_sessions = Arc::new(tokio::sync::Semaphore::new(p.max_websocket_sessions));
         let requests = Arc::new(tokio::sync::Semaphore::new(
             p.active_http + p.queued_per_class,
         ));
@@ -371,6 +374,7 @@ impl ServerState {
             native_decodes: std::sync::atomic::AtomicU64::new(0),
             uploads,
             requests,
+            websocket_sessions,
             activities,
             feature_cursors,
             shutdown_lock: tokio::sync::Mutex::new(false),
@@ -1366,13 +1370,25 @@ impl ServerState {
         view: View,
         time: f64,
     ) -> Result<Arc<EncodedResponse>> {
+        self.render_map_scaled(id, view, time, 1.).await
+    }
+    pub async fn render_map_scaled(
+        self: &Arc<Self>,
+        id: &str,
+        view: View,
+        time: f64,
+        pixel_ratio: f64,
+    ) -> Result<Arc<EncodedResponse>> {
         self.render_request(
             id,
             view,
             None,
             time,
             None,
-            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
+            (
+                RenderDelivery::Http(pixel_ratio),
+                crate::encoding::ImageFormat::Png,
+            ),
         )
         .await
     }
@@ -1423,14 +1439,17 @@ impl ServerState {
     }
     /// Legacy multi-map requests share one pinned generation, canvas, global
     /// label pass and final encoding. Request background applies exactly once.
-    pub(crate) async fn render_protocol_maps(
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn render_protocol_maps_scaled(
         self: &Arc<Self>,
         ids: Vec<String>,
         view: View,
         time: f64,
         background: Option<Color>,
         format: crate::encoding::ImageFormat,
+        pixel_ratio: f64,
     ) -> Result<Arc<EncodedResponse>> {
+        super::planning::validate_pixel_ratio(pixel_ratio)?;
         let _activity = self.activities.enter()?;
         crate::animation::validate_time(time)?;
         view.validate()?;
@@ -1473,7 +1492,7 @@ impl ServerState {
                     holds.push(c.reserve(memory::envelope(definition.len())?)?);
                     maps.push(parse_map(definition)?);
                 }
-                worker.prepare_maps(&maps, &pin, &view, time, background, &c)
+                worker.prepare_maps(&maps, &pin, &view, time, background, pixel_ratio, &c)
             })
             .await?;
         let incomplete = scene.summary().incompatible_components > 0;
@@ -1526,7 +1545,7 @@ impl ServerState {
             Some(crop),
             time,
             None,
-            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
+            (RenderDelivery::Http(1.), crate::encoding::ImageFormat::Png),
         )
         .await
     }
@@ -1547,7 +1566,7 @@ impl ServerState {
             Some(crop),
             time,
             Some((grid, coordinates)),
-            (RenderDelivery::Http, crate::encoding::ImageFormat::Png),
+            (RenderDelivery::Http(1.), crate::encoding::ImageFormat::Png),
         )
         .await
     }
@@ -1607,6 +1626,7 @@ impl ServerState {
                                     pin,
                                     view: view.clone(),
                                     time,
+                                    pixel_ratio: 1.,
                                 },
                                 false,
                                 Some(versions.clone()),
@@ -1638,18 +1658,19 @@ impl ServerState {
             .iter()
             .all(|(key, version)| self.catalog.is_current_version(key, version))
     }
-    fn area_key(&self, revision: &str, view: &View, time: f64) -> Result<String> {
+    fn area_key(&self, revision: &str, view: &View, time: f64, pixel_ratio: f64) -> Result<String> {
         let bytes = crate::derived::bounded_json(
             view,
             self.config.profile.max_registry_bytes,
             &self.scheduler.context(),
         )?;
         Ok(super::catalog::identity(&[
-            b"geello-render-v7",
+            b"geello-render-v8",
             revision.as_bytes(),
             self.backend_name.as_bytes(),
             &bytes,
             &time.to_le_bytes(),
+            &pixel_ratio.to_le_bytes(),
         ]))
     }
     fn response_key(&self, area_key: &str, crop: Option<[u32; 4]>) -> Result<String> {
@@ -1674,6 +1695,11 @@ impl ServerState {
         output: (RenderDelivery, crate::encoding::ImageFormat),
     ) -> Result<Arc<EncodedResponse>> {
         let (delivery, image_format) = output;
+        let pixel_ratio = match delivery {
+            RenderDelivery::Http(ratio) => ratio,
+            RenderDelivery::Animation => 1.,
+        };
+        super::planning::validate_pixel_ratio(pixel_ratio)?;
         let _activity = self.activities.enter()?;
         crate::animation::validate_time(time)
             .map_err(|_| ServerError::invalid("Invalid animation time"))?;
@@ -1768,7 +1794,7 @@ impl ServerState {
             let scene = self
                 .scheduler
                 .blocking(WorkClass::Animation, ctx.clone(), move |c| {
-                    worker.prepare_definition(&definition, &pin, &view, time, &c)
+                    worker.prepare_definition(&definition, &pin, &view, time, pixel_ratio, &c)
                 })
                 .await?;
             let incomplete = scene.summary().incompatible_components > 0;
@@ -1807,7 +1833,7 @@ impl ServerState {
                 _memory: vec![hold],
             }));
         }
-        let area_key = self.area_key(&revision, &view, time)?;
+        let area_key = self.area_key(&revision, &view, time, pixel_ratio)?;
         let key = self.response_key(&area_key, crop)?;
         let definition_hold = ctx.reserve(memory::envelope(definition.len())?)?;
         let definition = Arc::new(Accounted::new(definition.to_owned(), vec![definition_hold]));
@@ -1816,7 +1842,7 @@ impl ServerState {
             let mut targets = vec![];
             for [z, x, y] in super::tile_grid::neighbors(grid, z, x, y, &self.config.profile) {
                 let (view, crop) = grid.layout(z, x, y, &self.config.profile)?;
-                let area_key = self.area_key(&revision, &view, time)?;
+                let area_key = self.area_key(&revision, &view, time, 1.)?;
                 let key = self.response_key(&area_key, Some(crop))?;
                 targets.push((area_key, key, view, crop));
             }
@@ -1847,6 +1873,7 @@ impl ServerState {
                     pin,
                     view,
                     time,
+                    pixel_ratio,
                 },
                 true,
                 None,
@@ -1964,6 +1991,7 @@ impl ServerState {
                                 pin,
                                 view,
                                 time,
+                                pixel_ratio,
                             } => {
                                 state
                                     .area_pixels(
@@ -1972,6 +2000,7 @@ impl ServerState {
                                         pin,
                                         view,
                                         time,
+                                        pixel_ratio,
                                         priority.clone(),
                                     )
                                     .await?
@@ -2071,6 +2100,7 @@ impl ServerState {
                 .map_err(|_| ServerError::new(503, "worker", "Render worker stopped"))?;
         }
     }
+    #[allow(clippy::too_many_arguments)]
     async fn area_pixels(
         self: &Arc<Self>,
         key: String,
@@ -2078,6 +2108,7 @@ impl ServerState {
         pin: Arc<ResourcePin>,
         view: View,
         time: f64,
+        pixel_ratio: f64,
         mut priority: watch::Receiver<bool>,
     ) -> Result<Arc<RenderedArea>> {
         let (mut rx, area_priority) = {
@@ -2129,7 +2160,14 @@ impl ServerState {
                         let scene = state
                             .scheduler
                             .blocking_tile(ctx.clone(), render_priority.clone(), move |c| {
-                                worker.prepare_definition(&definition, &pin, &view, time, &c)
+                                worker.prepare_definition(
+                                    &definition,
+                                    &pin,
+                                    &view,
+                                    time,
+                                    pixel_ratio,
+                                    &c,
+                                )
                             })
                             .await?;
                         let incomplete = scene.summary().incompatible_components > 0;
@@ -2174,6 +2212,7 @@ impl ServerState {
         pin: &ResourcePin,
         view: &View,
         time: f64,
+        pixel_ratio: f64,
         ctx: &OperationContext,
     ) -> Result<PreparedScene> {
         let _map_memory = ctx.reserve(memory::envelope(definition.len())?)?;
@@ -2182,19 +2221,18 @@ impl ServerState {
             return Err(ServerError::invalid("Output CRS is not published by map"));
         }
         crate::projection::validate_backend(map.projection_backend.as_deref())?;
-        self.prepare_map(&map, pin, view, time, ctx)
-    }
-    fn prepare_map(
-        &self,
-        map: &MapDefinition,
-        pin: &ResourcePin,
-        view: &View,
-        time: f64,
-        ctx: &OperationContext,
-    ) -> Result<PreparedScene> {
         let background = map.background.as_deref().map(parse_color).transpose()?;
-        self.prepare_maps(std::slice::from_ref(map), pin, view, time, background, ctx)
+        self.prepare_maps(
+            std::slice::from_ref(&map),
+            pin,
+            view,
+            time,
+            background,
+            pixel_ratio,
+            ctx,
+        )
     }
+    #[allow(clippy::too_many_arguments)]
     fn prepare_maps(
         &self,
         maps: &[MapDefinition],
@@ -2202,6 +2240,7 @@ impl ServerState {
         view: &View,
         time: f64,
         background: Option<Color>,
+        pixel_ratio: f64,
         ctx: &OperationContext,
     ) -> Result<PreparedScene> {
         let mut composition = MapComposition {
@@ -2211,6 +2250,27 @@ impl ServerState {
         let mut missing_geometry_targets = 0usize;
         let mut holds = vec![];
         let mut animations = BTreeMap::new();
+        let mut fonts = BTreeMap::new();
+        let mut styles = BTreeMap::new();
+        for record in pin
+            .records
+            .values()
+            .filter(|record| record.key.kind == ResourceKind::Style)
+        {
+            let definition = record
+                .definition
+                .as_deref()
+                .ok_or_else(|| ServerError::io("missing immutable style definition"))?;
+            holds.push(ctx.reserve(memory::envelope(definition.len())?)?);
+            styles.insert(record.key.clone(), parse_style(definition)?);
+        }
+        let global_label_layout = styles.values().any(|style| {
+            style
+                .rules
+                .iter()
+                .flat_map(|rule| &rule.symbols)
+                .any(|symbol| matches!(symbol, SymbolDefinition::Label { .. }))
+        });
         for record in pin
             .records
             .values()
@@ -2233,18 +2293,8 @@ impl ServerState {
             for item in &map.items {
                 let dataset =
                     &pin.records[&ResourceKey::new(ResourceKind::Dataset, &item.dataset)?];
-                let style_record =
-                    &pin.records[&ResourceKey::new(ResourceKind::Style, &item.style)?];
-                let _style_memory = ctx.reserve(memory::envelope(
-                    style_record.definition.as_ref().map_or(0, String::len),
-                )?)?;
-                let style = parse_style(
-                    style_record
-                        .definition
-                        .as_deref()
-                        .ok_or_else(|| ServerError::io("missing immutable style definition"))?,
-                )?;
-                let bindings = prepare_style_animations(&style, item, &animations, ctx)?;
+                let style = &styles[&ResourceKey::new(ResourceKind::Style, &item.style)?];
+                let bindings = prepare_style_animations(style, item, &animations, ctx)?;
                 let path = dataset.derived_path.as_ref().ok_or_else(|| {
                     ServerError::new(503, "preparing", "Dataset has no complete derived version")
                 })?;
@@ -2302,7 +2352,6 @@ impl ServerState {
                                             && raster.overview_method() == "nearest")
                                 }
                             };
-                            let level = raster_level(&raster, view, compatible_overview);
                             let source_grid = raster.grid();
                             let inverse = if source_grid.crs != view.crs {
                                 Some(crate::projection::Projection::new(
@@ -2312,6 +2361,17 @@ impl ServerState {
                                 )?)
                             } else {
                                 None
+                            };
+                            let level = if compatible_overview && let Some(inverse) = &inverse {
+                                super::planning::projected_raster_level(
+                                    &raster,
+                                    view,
+                                    inverse,
+                                    map.projection_backend.as_deref(),
+                                    ctx,
+                                )?
+                            } else {
+                                raster_level(&raster, view, compatible_overview)
                             };
                             let [a, b, c, d, e, f] = source_grid.affine;
                             let _ = (a, d);
@@ -2380,7 +2440,26 @@ impl ServerState {
                             .ok_or(GeelloError::SizeOverflow)?,
                     )?;
                     let mut found = std::collections::HashSet::new();
-                    let mut cursor = store.query(VectorQuery::default(), ctx)?;
+                    let spatial = super::planning::vector_bounds(
+                        style,
+                        store.crs(),
+                        view,
+                        global_label_layout || !bindings.is_empty(),
+                        pixel_ratio,
+                    )
+                    .map(|bounds| (bounds, SpatialMatch::BoundingBoxCandidates));
+                    let target_ids = geometry
+                        .iter()
+                        .flat_map(|binding| binding.ids().iter().cloned())
+                        .collect::<Vec<_>>();
+                    let mut cursor = store.query_with_spatial_exemptions(
+                        VectorQuery {
+                            spatial,
+                            ..VectorQuery::default()
+                        },
+                        &target_ids,
+                        ctx,
+                    )?;
                     let mut batches = vec![];
                     while let Some(batch) = cursor.next_batch(
                         self.config.profile.shard_features,
@@ -2409,7 +2488,6 @@ impl ServerState {
                     missing_geometry_targets = missing_geometry_targets
                         .checked_add(target_count - found.len())
                         .ok_or(GeelloError::SizeOverflow)?;
-                    let mut fonts = BTreeMap::new();
                     for symbol in style.rules.iter().flat_map(|r| &r.symbols) {
                         if let SymbolDefinition::Label {
                             fonts: definitions, ..
@@ -2446,7 +2524,7 @@ impl ServerState {
                         }
                     }
                     let resolved = resolve_vector_style_with_fonts(
-                        &style, &batches, &bindings, time, &fonts, ctx,
+                        style, &batches, &bindings, time, &fonts, ctx,
                     )?;
                     let (mut resolved, reservations) = resolved.into_parts();
                     holds.extend(reservations);
@@ -2494,7 +2572,8 @@ impl ServerState {
                 }
             }
         }
-        let mut scene = crate::prepare_scene(&composition, view, ctx)?;
+        super::planning::scale_composition(&mut composition, pixel_ratio);
+        let mut scene = crate::scene::prepare_scene_scaled(&composition, view, pixel_ratio, ctx)?;
         scene.add_missing_geometry_targets(missing_geometry_targets, ctx)?;
         Ok(scene)
     }
@@ -2961,7 +3040,9 @@ mod tests {
                 "new column intersects two aligned render areas"
             );
             let (view, crop) = grid.layout(4, 3, 6, &state.config.profile).unwrap();
-            let area = state.area_key(&first.render_revision, &view, 0.).unwrap();
+            let area = state
+                .area_key(&first.render_revision, &view, 0., 1.)
+                .unwrap();
             let key = state.response_key(&area, Some(crop)).unwrap();
             assert!(state.cached_response(&key).await.unwrap().is_some());
             // Repeated B checks cached neighbors without rendering/encoding.

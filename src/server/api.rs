@@ -481,6 +481,7 @@ pub(super) struct ImageQuery {
     width: u32,
     height: u32,
     geello_time: Option<f64>,
+    geello_pixel_ratio: Option<f64>,
 }
 async fn image(
     State(s): State<Arc<ServerState>>,
@@ -514,7 +515,12 @@ async fn image(
         aspect: AspectPolicy::Stretch,
     };
     let image = s
-        .render_map_at(&id, view, q.geello_time.unwrap_or(0.))
+        .render_map_scaled(
+            &id,
+            view,
+            q.geello_time.unwrap_or(0.),
+            q.geello_pixel_ratio.unwrap_or(1.),
+        )
         .await?;
     response(&s, &image, &headers)
 }

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet},
     fs::File,
-    io::{Cursor, Read, Seek, SeekFrom},
+    io::{BufReader, Cursor, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
@@ -282,20 +282,59 @@ impl DerivedVector {
         query: VectorQuery,
         ctx: &OperationContext,
     ) -> Result<DerivedVectorCursor, GeelloError> {
+        self.query_with_spatial_exemptions(query, &[], ctx)
+    }
+    pub fn query_with_spatial_exemptions(
+        &self,
+        query: VectorQuery,
+        spatial_exemptions: &[FeatureId],
+        ctx: &OperationContext,
+    ) -> Result<DerivedVectorCursor, GeelloError> {
         if let Some(f) = &query.filter {
             f.validate()?;
         }
         if let Some((b, _)) = query.spatial {
             b.validate()?;
         }
-        let count: usize = self.manifest.shards.iter().map(|s| s.locations.len()).sum();
-        let hold = ctx.reserve(count.checked_mul(128).ok_or(GeelloError::SizeOverflow)?)?;
+        let mut holds = vec![ctx.reserve(64 * 1024)?];
+        holds.push(
+            ctx.reserve(
+                spatial_exemptions
+                    .len()
+                    .checked_mul(128)
+                    .and_then(|bytes| {
+                        spatial_exemptions
+                            .iter()
+                            .try_fold(bytes, |total, identity| {
+                                total.checked_add(match identity {
+                                    FeatureId::String(value) => value.len(),
+                                    _ => 0,
+                                })
+                            })
+                    })
+                    .ok_or(GeelloError::SizeOverflow)?,
+            )?,
+        );
+        let spatial_exemptions: HashSet<_> = spatial_exemptions.iter().cloned().collect();
         let mut selected = vec![];
         for (n, shard) in self.manifest.shards.iter().enumerate() {
             ctx.checkpoint(1)?;
             // Checksum the companion before any successful page is returned.
             let _verified =
                 read_file(&self.root, &shard.records, self.limits.max_block_bytes, ctx)?;
+            let _index_memory = if query.spatial.is_some() {
+                Some(
+                    ctx.reserve(
+                        shard
+                            .locations
+                            .len()
+                            .checked_mul(64)
+                            .ok_or(GeelloError::SizeOverflow)?,
+                    )?,
+                )
+            } else {
+                None
+            };
             let candidates = if let Some((b, _)) = query.spatial {
                 let mut ids = HashSet::new();
                 if let Some(index) = &shard.index {
@@ -314,34 +353,58 @@ impl DerivedVector {
                 None
             };
             for (j, l) in shard.locations.iter().enumerate() {
-                if candidates.as_ref().is_some_and(|v| !v.contains(&l.ordinal)) {
+                if candidates.as_ref().is_some_and(|v| !v.contains(&l.ordinal))
+                    && !l
+                        .id
+                        .as_ref()
+                        .is_some_and(|identity| spatial_exemptions.contains(identity))
+                {
                     continue;
                 }
                 if !query.ids.is_empty() && !l.id.as_ref().is_some_and(|id| query.ids.contains(id))
                 {
                     continue;
                 }
+                if selected.len() == selected.capacity() {
+                    let additional = selected.capacity().max(64);
+                    holds.push(
+                        ctx.reserve(
+                            additional
+                                .checked_mul(std::mem::size_of::<(u64, usize, usize)>())
+                                .ok_or(GeelloError::SizeOverflow)?,
+                        )?,
+                    );
+                    selected.reserve_exact(additional);
+                }
                 selected.push((l.ordinal, n, j));
             }
         }
         selected.sort_unstable();
+        let mut unbounded_query = query.clone();
+        unbounded_query.spatial = None;
         Ok(DerivedVectorCursor {
             store: self.clone(),
             query,
+            unbounded_query,
+            spatial_exemptions,
             selected,
             next: 0,
             failed: false,
-            _hold: hold,
+            file: None,
+            _holds: holds,
         })
     }
 }
 pub struct DerivedVectorCursor {
     store: DerivedVector,
     query: VectorQuery,
+    unbounded_query: VectorQuery,
+    spatial_exemptions: HashSet<FeatureId>,
     selected: Vec<(u64, usize, usize)>,
     next: usize,
     failed: bool,
-    _hold: crate::operation::Reservation,
+    file: Option<(usize, BufReader<File>, u64)>,
+    _holds: Vec<crate::operation::Reservation>,
 }
 impl DerivedVectorCursor {
     /// A failed cursor never returns another successful page. Full geometries
@@ -389,17 +452,33 @@ impl DerivedVectorCursor {
                 break;
             }
             let reservation = ctx.reserve(envelope)?;
-            let mut file = File::open(self.store.root.join(&shard.records.name)).map_err(error)?;
-            file.seek(SeekFrom::Start(loc.offset)).map_err(error)?;
+            if self.file.as_ref().is_none_or(|(index, _, _)| *index != s) {
+                let file = File::open(self.store.root.join(&shard.records.name)).map_err(error)?;
+                self.file = Some((s, BufReader::with_capacity(64 * 1024, file), 0));
+            }
+            let (_, file, position) = self.file.as_mut().unwrap();
+            if *position != loc.offset {
+                file.seek(SeekFrom::Start(loc.offset)).map_err(error)?;
+            }
             let mut bytes = vec![0; loc.length];
             file.read_exact(&mut bytes).map_err(error)?;
+            *position = loc.offset + loc.length as u64;
             let record: Record = serde_json::from_slice(&bytes).map_err(error)?;
             let feature = Feature::from(record);
             self.next += 1;
             if feature.source_ordinal != loc.ordinal {
                 return Err(error("companion ordinal mismatch"));
             }
-            if crate::readers::matches_query(&feature, &self.query)? {
+            let query = if feature
+                .id
+                .as_ref()
+                .is_some_and(|identity| self.spatial_exemptions.contains(identity))
+            {
+                &self.unbounded_query
+            } else {
+                &self.query
+            };
+            if crate::readers::matches_query(&feature, query)? {
                 features.push(feature);
                 reservations.push(reservation);
                 used += envelope;

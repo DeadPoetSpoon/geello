@@ -64,6 +64,10 @@ pub struct ServerProfile {
     pub max_feature_cursors: usize,
     pub feature_cursor_ttl_ms: u64,
     pub max_animation_fps: u32,
+    #[serde(default = "default_max_websocket_sessions")]
+    pub max_websocket_sessions: usize,
+    #[serde(default = "default_websocket_idle_timeout_ms")]
+    pub websocket_idle_timeout_ms: u64,
     pub max_list_items: usize,
     pub metatile_size: u32,
     pub metatile_buffer: u32,
@@ -74,6 +78,12 @@ pub struct ServerProfile {
 }
 fn default_wmts_prewarm_size() -> u32 {
     5
+}
+fn default_max_websocket_sessions() -> usize {
+    64
+}
+fn default_websocket_idle_timeout_ms() -> u64 {
+    120_000
 }
 impl ServerConfig {
     pub fn load(path: &Path) -> Result<Self> {
@@ -140,6 +150,7 @@ impl ServerProfile {
             self.max_resources,
             self.max_operations,
             self.max_feature_cursors,
+            self.max_websocket_sessions,
             self.max_source_bytes,
             self.max_record_bytes,
             self.max_features,
@@ -166,6 +177,10 @@ impl ServerProfile {
             || self.max_compression_ratio == 0
             || self.operation_timeout_ms == 0
             || self.feature_cursor_ttl_ms == 0
+            || self.websocket_idle_timeout_ms < 100
+            || Instant::now()
+                .checked_add(Duration::from_millis(self.websocket_idle_timeout_ms))
+                .is_none()
             || self.max_animation_fps == 0
             || self.max_animation_fps > 1000
             || Instant::now()
@@ -218,6 +233,7 @@ impl ServerProfile {
                 self.active_animation,
                 self.active_background,
                 self.queued_per_class,
+                self.max_websocket_sessions,
             ]
             .into_iter()
             .any(|v| v > tokio::sync::Semaphore::MAX_PERMITS / 2)

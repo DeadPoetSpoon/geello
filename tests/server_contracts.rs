@@ -41,6 +41,8 @@ fn profile() -> ServerProfile {
         max_feature_cursors: 128,
         feature_cursor_ttl_ms: 60000,
         max_animation_fps: 60,
+        max_websocket_sessions: 64,
+        websocket_idle_timeout_ms: 120_000,
         max_list_items: 100,
         metatile_size: 2,
         metatile_buffer: 16,

@@ -183,15 +183,21 @@ struct Shard {
 struct State {
     generation: Generation,
     records: BTreeMap<ResourceKey, ResourceRecord>,
-    pins: BTreeMap<ResourceKey, usize>,
-    pinned_paths: BTreeMap<PathBuf, usize>,
     _memory: Vec<Reservation>,
     records_bytes: usize,
+}
+#[derive(Default)]
+struct Pins {
+    versions: BTreeMap<ResourceKey, usize>,
+    paths: BTreeMap<PathBuf, usize>,
+    deleting: BTreeSet<ResourceKey>,
 }
 pub struct Catalog {
     root: PathBuf,
     profile: ServerProfile,
-    state: Mutex<State>,
+    state: Mutex<Arc<State>>,
+    writer: Mutex<()>,
+    pins: Mutex<Pins>,
     _lock: File,
     memory: OperationContext,
     changes: tokio::sync::watch::Sender<u64>,
@@ -214,23 +220,32 @@ pub struct ResourcePin {
 }
 impl Drop for ResourcePin {
     fn drop(&mut self) {
-        let mut s = self.catalog.state.lock().unwrap();
+        let mut pins = self.catalog.pins.lock().unwrap();
         for v in &self.versions {
-            if let Some(n) = s.pins.get_mut(v) {
+            if let Some(n) = pins.versions.get_mut(v) {
                 *n -= 1;
                 if *n == 0 {
-                    s.pins.remove(v);
+                    pins.versions.remove(v);
                 }
             }
         }
         for p in &self.paths {
-            if let Some(n) = s.pinned_paths.get_mut(p) {
+            if let Some(n) = pins.paths.get_mut(p) {
                 *n -= 1;
                 if *n == 0 {
-                    s.pinned_paths.remove(p);
+                    pins.paths.remove(p);
                 }
             }
         }
+    }
+}
+struct Deleting<'a> {
+    catalog: &'a Catalog,
+    key: ResourceKey,
+}
+impl Drop for Deleting<'_> {
+    fn drop(&mut self) {
+        self.catalog.pins.lock().unwrap().deleting.remove(&self.key);
     }
 }
 impl Catalog {
@@ -332,14 +347,14 @@ impl Catalog {
         Ok(Arc::new(Self {
             root,
             profile,
-            state: Mutex::new(State {
+            state: Mutex::new(Arc::new(State {
                 generation,
                 records,
-                pins: BTreeMap::new(),
-                pinned_paths: BTreeMap::new(),
                 _memory: holds,
                 records_bytes,
-            }),
+            })),
+            writer: Mutex::new(()),
+            pins: Mutex::new(Pins::default()),
             _lock: lock,
             memory,
             changes,
@@ -348,34 +363,49 @@ impl Catalog {
     pub fn root(&self) -> &Path {
         &self.root
     }
+    fn snapshot(&self) -> Arc<State> {
+        self.state.lock().unwrap().clone()
+    }
+    fn install(
+        &self,
+        records: BTreeMap<ResourceKey, ResourceRecord>,
+        generation: Generation,
+        records_bytes: usize,
+        holds: Vec<Reservation>,
+    ) {
+        let number = generation.number;
+        let next = Arc::new(State {
+            records,
+            generation,
+            records_bytes,
+            _memory: holds,
+        });
+        let previous = std::mem::replace(&mut *self.state.lock().unwrap(), next);
+        self.changes.send_replace(number);
+        drop(previous);
+    }
     pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
         self.changes.subscribe()
     }
     pub fn stats(&self) -> CatalogStats {
-        let s = self.state.lock().unwrap();
+        let s = self.snapshot();
         CatalogStats {
             generation: s.generation.number,
             resources: s.records.len(),
-            pinned_versions: s.pins.len(),
+            pinned_versions: self.pins.lock().unwrap().versions.len(),
             detached_content: s.generation.detached.len(),
         }
     }
     pub fn get(&self, key: &ResourceKey) -> Result<ResourceRecord> {
-        self.state
-            .lock()
-            .unwrap()
-            .records
-            .get(key)
-            .cloned()
-            .ok_or_else(|| {
-                ServerError::new(404, "resource-not-found", "Resource is not registered")
-            })
+        self.snapshot().records.get(key).cloned().ok_or_else(|| {
+            ServerError::new(404, "resource-not-found", "Resource is not registered")
+        })
     }
     pub(crate) fn get_accounted(
         &self,
         key: &ResourceKey,
     ) -> Result<crate::Accounted<ResourceRecord>> {
-        let state = self.state.lock().unwrap();
+        let state = self.snapshot();
         let record = state.records.get(key).ok_or_else(|| {
             ServerError::new(404, "resource-not-found", "Resource is not registered")
         })?;
@@ -385,9 +415,7 @@ impl Catalog {
     /// Retry suppression is useful only while its immutable publication remains
     /// current. This lookup does not copy the resource definition.
     pub(crate) fn is_current_version(&self, key: &ResourceKey, version: &str) -> bool {
-        self.state
-            .lock()
-            .unwrap()
+        self.snapshot()
             .records
             .get(key)
             .is_some_and(|record| record.version == version)
@@ -403,7 +431,7 @@ impl Catalog {
         if limit == 0 || limit > self.profile.max_list_items {
             return Err(ServerError::invalid("List limit exceeds profile"));
         }
-        let state = self.state.lock().unwrap();
+        let state = self.snapshot();
         let mut holds = vec![];
         let mut records = vec![];
         if query.is_some_and(|query| query.len() > 256) {
@@ -432,9 +460,7 @@ impl Catalog {
     }
     pub(crate) fn find_dataset_source(&self, path: &Path) -> Result<Option<ResourceKey>> {
         Ok(self
-            .state
-            .lock()
-            .unwrap()
+            .snapshot()
             .records
             .values()
             .find(|r| r.published && r.key.kind == ResourceKind::Dataset && r.source.path == path)
@@ -450,7 +476,7 @@ impl Catalog {
         if limit == 0 || limit > self.profile.max_list_items {
             return Err(ServerError::invalid("Collection limit exceeds profile"));
         }
-        let state = self.state.lock().unwrap();
+        let state = self.snapshot();
         let mut maps = state
             .records
             .values()
@@ -476,7 +502,7 @@ impl Catalog {
         if limit == 0 || limit > self.profile.max_list_items {
             return Err(ServerError::invalid("Collection limit exceeds profile"));
         }
-        let state = self.state.lock().unwrap();
+        let state = self.snapshot();
         let mut datasets = state
             .records
             .values()
@@ -503,9 +529,7 @@ impl Catalog {
             return Err(ServerError::invalid("List limit exceeds profile"));
         }
         Ok(self
-            .state
-            .lock()
-            .unwrap()
+            .snapshot()
             .records
             .values()
             .skip(offset)
@@ -514,7 +538,7 @@ impl Catalog {
             .collect())
     }
     pub fn check(&self, key: &ResourceKey, condition: &Precondition) -> Result<()> {
-        condition.check(self.state.lock().unwrap().records.get(key))
+        condition.check(self.snapshot().records.get(key))
     }
     pub fn pin(self: &Arc<Self>, key: &ResourceKey) -> Result<ResourcePin> {
         self.pin_many(std::slice::from_ref(key))
@@ -527,7 +551,8 @@ impl Catalog {
         self.pin_records(std::slice::from_ref(key), false)
     }
     fn pin_records(self: &Arc<Self>, keys: &[ResourceKey], published: bool) -> Result<ResourcePin> {
-        let mut s = self.state.lock().unwrap();
+        let state = self.state.lock().unwrap();
+        let s = &**state;
         let mut holds = vec![];
         let mut records = BTreeMap::new();
         let mut todo = keys.to_vec();
@@ -547,8 +572,12 @@ impl Catalog {
             records.insert(k, r.clone());
         }
         let versions = records.keys().cloned().collect::<Vec<_>>();
+        let mut pins = self.pins.lock().unwrap();
+        if versions.iter().any(|key| pins.deleting.contains(key)) {
+            return Err(ServerError::conflict("Resource content is being removed"));
+        }
         for v in &versions {
-            *s.pins.entry(v.clone()).or_default() += 1;
+            *pins.versions.entry(v.clone()).or_default() += 1;
         }
         let mut paths = vec![];
         for record in records.values() {
@@ -566,7 +595,7 @@ impl Catalog {
             .into_iter()
             .flatten()
             {
-                *s.pinned_paths.entry(p.clone()).or_default() += 1;
+                *pins.paths.entry(p.clone()).or_default() += 1;
                 paths.push(p.clone());
             }
         }
@@ -583,7 +612,8 @@ impl Catalog {
         mut record: ResourceRecord,
         condition: &Precondition,
     ) -> Result<ResourceRecord> {
-        let mut s = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let s = self.snapshot();
         condition.check(s.records.get(&record.key))?;
         if !s.records.contains_key(&record.key) && s.records.len() >= self.profile.max_resources {
             return Err(ServerError::new(503, "registry-budget", "Catalog is full"));
@@ -594,13 +624,14 @@ impl Catalog {
         records.insert(record.key.clone(), record.clone());
         let validation_ctx = self.memory.child(self.profile.context().limits(), None);
         validate_graph(&records, self.profile.store_limits(), &validation_ctx)?;
-        self.commit(&mut s, records, safe_shard(&record.key), None)?;
+        self.commit(&s, records, safe_shard(&record.key), None)?;
         Ok(record)
     }
     pub fn unpublish(&self, key: &ResourceKey, condition: &Precondition) -> Result<ResourceRecord> {
-        let mut s = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let s = self.snapshot();
         condition.check(s.records.get(key))?;
-        check_references(&s, key, false)?;
+        check_references(&s, key, false, false)?;
         let _workspace = self.workspace(&s, 0)?;
         let mut records = s.records.clone();
         let r = records.get_mut(key).ok_or_else(|| {
@@ -609,7 +640,7 @@ impl Catalog {
         r.published = false;
         r.version = identity(&[r.version.as_bytes(), b"unpublished"]);
         let out = r.clone();
-        self.commit(&mut s, records, safe_shard(key), None)?;
+        self.commit(&s, records, safe_shard(key), None)?;
         Ok(out)
     }
     pub fn remove(
@@ -618,7 +649,8 @@ impl Catalog {
         condition: &Precondition,
         delete_content: bool,
     ) -> Result<ResourceRecord> {
-        let mut s = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let s = self.snapshot();
         condition.check(s.records.get(key))?;
         let _workspace = self.workspace(&s, 0)?;
         let record = s.records.get(key).cloned().ok_or_else(|| {
@@ -631,7 +663,15 @@ impl Catalog {
                 "External content is not owned",
             ));
         }
-        check_references(&s, key, true)?;
+        {
+            let mut pins = self.pins.lock().unwrap();
+            check_references(&s, key, true, pins.versions.contains_key(key))?;
+            pins.deleting.insert(key.clone());
+        }
+        let _deleting = Deleting {
+            catalog: self,
+            key: key.clone(),
+        };
         let mut records = s.records.clone();
         records.remove(key);
         // Removal retains content in the generation ledger. Content deletion
@@ -670,7 +710,7 @@ impl Catalog {
             crash_checkpoint("delete-journal", &self.root);
             fs::rename(&original, &trash).map_err(ServerError::io)?;
             crash_checkpoint("delete-renamed", &self.root);
-            if let Err(e) = self.commit(&mut s, records, safe_shard(key), None) {
+            if let Err(e) = self.commit(&s, records, safe_shard(key), None) {
                 fs::rename(&trash, &original).map_err(ServerError::io)?;
                 let _ = fs::remove_file(journal_path);
                 return Err(e);
@@ -682,7 +722,7 @@ impl Catalog {
                 let _ = fs::remove_file(journal_path);
             }
         } else {
-            self.commit(&mut s, records, safe_shard(key), detached)?;
+            self.commit(&s, records, safe_shard(key), detached)?;
         }
         Ok(record)
     }
@@ -705,7 +745,7 @@ impl Catalog {
     }
     fn commit(
         &self,
-        s: &mut State,
+        s: &State,
         records: BTreeMap<ResourceKey, ResourceRecord>,
         shard_id: String,
         detached: Option<PathBuf>,
@@ -777,11 +817,7 @@ impl Catalog {
         }
         let holds = self.retained(records_bytes, &generation)?;
         self.save_generation(&generation)?;
-        s.generation = generation;
-        s.records = records;
-        s._memory = holds;
-        s.records_bytes = records_bytes;
-        self.changes.send_replace(s.generation.number);
+        self.install(records, generation, records_bytes, holds);
         Ok(())
     }
     fn save_generation(&self, generation: &Generation) -> Result<()> {
@@ -810,12 +846,13 @@ impl Catalog {
     /// Reclaim only explicitly retired versions; unknown managed originals and
     /// detached record-only removals are never interpreted as GC permission.
     pub fn collect_garbage(&self) -> Result<usize> {
-        let mut s = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let s = self.snapshot();
         let _workspace = self.workspace(&s, 0)?;
         let mut generation = s.generation.clone();
         let mut removed = 0;
         for path in &s.generation.retired {
-            if s.pinned_paths.contains_key(path)
+            if self.pins.lock().unwrap().paths.contains_key(path)
                 || generation.detached.contains(path)
                 || s.records.values().any(|r| {
                     r.source.path.starts_with(path)
@@ -839,11 +876,13 @@ impl Catalog {
             removed += 1;
         }
         if removed > 0 {
-            generation.number += 1;
+            generation.number = generation
+                .number
+                .checked_add(1)
+                .ok_or_else(|| ServerError::io("generation overflow"))?;
             let holds = self.retained(s.records_bytes, &generation)?;
             self.save_generation(&generation)?;
-            s.generation = generation;
-            s._memory = holds;
+            self.install(s.records.clone(), generation, s.records_bytes, holds);
         }
         recover_deletions(
             &self.root,
@@ -856,7 +895,7 @@ impl Catalog {
     /// Explicit maintenance scan reports unknown managed directories. It never
     /// imports or removes originals and is not part of request-time lookup.
     pub fn reconcile(&self) -> Result<Vec<String>> {
-        let s = self.state.lock().unwrap();
+        let s = self.snapshot();
         let _workspace = self.workspace(&s, 0)?;
         let known: BTreeSet<_> = s
             .records
@@ -879,12 +918,12 @@ impl Catalog {
     /// Bounded diagnostics for unregistered derived entries, including missing
     /// or malformed manifests. Reporting never imports or deletes an artifact.
     pub fn reconcile_derived(&self) -> Result<Vec<String>> {
-        let state = self.state.lock().unwrap();
+        let state = self.snapshot();
         let mut diagnostics = vec![];
         for entry in fs::read_dir(self.root.join("derived")).map_err(ServerError::io)? {
             let entry = entry.map_err(ServerError::io)?;
             let path = entry.path();
-            if state.pinned_paths.contains_key(&path)
+            if self.pins.lock().unwrap().paths.contains_key(&path)
                 || state.generation.retired.contains(&path)
                 || state.records.values().any(|r| {
                     r.derived_path.as_ref() == Some(&path) || r.source.path.starts_with(&path)
@@ -903,7 +942,8 @@ impl Catalog {
     /// directories never become registered merely because maintenance finds them.
     /// The old pointer remains usable until every rebuilt shard has been synced.
     pub fn rebuild_index(&self) -> Result<()> {
-        let mut state = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let state = self.snapshot();
         let _workspace = self.workspace(&state, 0)?;
         let mut grouped: BTreeMap<String, Vec<ResourceRecord>> = BTreeMap::new();
         for record in state.records.values() {
@@ -941,15 +981,20 @@ impl Catalog {
             .ok_or_else(|| ServerError::io("generation overflow"))?;
         let holds = self.retained(state.records_bytes, &generation)?;
         self.save_generation(&generation)?;
-        state.generation = generation;
-        state._memory = holds;
+        self.install(
+            state.records.clone(),
+            generation,
+            state.records_bytes,
+            holds,
+        );
         Ok(())
     }
     /// Explicit offline-style maintenance while holding the single-writer
     /// mutex. Snapshot pins own complete records, so no reader needs old index
     /// files. Original/detached content and derived blocks are untouched.
     pub fn compact_index(&self) -> Result<usize> {
-        let state = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let state = self.snapshot();
         let _workspace = self.workspace(&state, 0)?;
         let pointer_bytes = memory::read_file(
             &self.root.join("registry/catalog.toml"),
@@ -991,7 +1036,8 @@ impl Catalog {
     /// Derived artifacts are disposable; managed/detached originals are never
     /// candidates. Unknown names and mismatched manifests remain diagnostics.
     pub(crate) fn collect_derived_orphans(&self) -> Result<usize> {
-        let state = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let state = self.snapshot();
         let mut removed = 0;
         let base = self.root.join("derived");
         for entry in fs::read_dir(&base).map_err(ServerError::io)? {
@@ -1000,7 +1046,7 @@ impl Catalog {
                 continue;
             }
             let path = entry.path();
-            if state.pinned_paths.contains_key(&path)
+            if self.pins.lock().unwrap().paths.contains_key(&path)
                 || state.generation.retired.contains(&path)
                 || state.records.values().any(|r| {
                     r.derived_path.as_ref() == Some(&path) || r.source.path.starts_with(&path)
@@ -1041,7 +1087,8 @@ impl Catalog {
     /// Startup-only: the exclusive writer lock is held and deletion recovery
     /// has completed, so no request can still own a private upload directory.
     pub(crate) fn collect_abandoned_uploads(&self) -> Result<usize> {
-        let state = self.state.lock().unwrap();
+        let _writer = self.writer.lock().unwrap();
+        let state = self.snapshot();
         let base = self.root.join("staging");
         let mut removed = 0;
         for entry in fs::read_dir(&base).map_err(ServerError::io)? {
@@ -1066,7 +1113,7 @@ impl Catalog {
         Ok(removed)
     }
 }
-fn check_references(s: &State, key: &ResourceKey, pins: bool) -> Result<()> {
+fn check_references(s: &State, key: &ResourceKey, pins: bool, pinned: bool) -> Result<()> {
     let references: Vec<_> = s
         .records
         .values()
@@ -1074,7 +1121,6 @@ fn check_references(s: &State, key: &ResourceKey, pins: bool) -> Result<()> {
         .take(32)
         .map(|r| r.key.clone())
         .collect();
-    let pinned = pins && s.pins.contains_key(key);
     if !references.is_empty() || pinned {
         let mut e = ServerError::new(
             409,
@@ -1395,6 +1441,54 @@ fn read_member(
 #[cfg(all(test, feature = "render-cpu"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readers_and_pins_do_not_wait_for_the_writer() {
+        let root = tempfile::tempdir().unwrap();
+        let (catalog, record) = fixture(root.path());
+        catalog
+            .publish(record.clone(), &Precondition::Absent)
+            .unwrap();
+        let writer = catalog.writer.lock().unwrap();
+        let reader = catalog.clone();
+        let key = record.key.clone();
+        let (sent, received) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            assert_eq!(reader.get(&key).unwrap().version, "v1");
+            let pin = reader.pin(&key).unwrap();
+            assert_eq!(reader.stats().resources, 1);
+            drop(pin);
+            sent.send(()).unwrap();
+        });
+        let result = received.recv_timeout(std::time::Duration::from_secs(2));
+        drop(writer);
+        thread.join().unwrap();
+        result.unwrap();
+        assert_eq!(catalog.stats().pinned_versions, 0);
+    }
+
+    #[test]
+    fn pending_content_deletion_rejects_new_pins_and_guard_restores_admission() {
+        let root = tempfile::tempdir().unwrap();
+        let (catalog, record) = fixture(root.path());
+        catalog
+            .publish(record.clone(), &Precondition::Absent)
+            .unwrap();
+        catalog
+            .pins
+            .lock()
+            .unwrap()
+            .deleting
+            .insert(record.key.clone());
+        let deleting = Deleting {
+            catalog: &catalog,
+            key: record.key.clone(),
+        };
+        assert_eq!(catalog.pin(&record.key).err().unwrap().status, 409);
+        assert_eq!(catalog.stats().pinned_versions, 0);
+        drop(deleting);
+        assert!(catalog.pin(&record.key).is_ok());
+    }
 
     fn fixture(root: &Path) -> (Arc<Catalog>, ResourceRecord) {
         let config = ServerConfig::load(Path::new("examples/server.experimental.toml")).unwrap();

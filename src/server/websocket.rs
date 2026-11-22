@@ -15,6 +15,19 @@ use tokio::time::{Duration, Instant};
 
 const MAX_CONTROL_BYTES: usize = 64 * 1024;
 
+fn socket_buffers(ws: WebSocketUpgrade, max_image_bytes: usize) -> Result<WebSocketUpgrade> {
+    Ok(ws
+        .read_buffer_size(MAX_CONTROL_BYTES)
+        .write_buffer_size(MAX_CONTROL_BYTES)
+        .max_write_buffer_size(
+            max_image_bytes
+                .checked_add(MAX_CONTROL_BYTES * 2)
+                .ok_or_else(|| ServerError::invalid("WebSocket output capacity overflow"))?,
+        )
+        .max_frame_size(MAX_CONTROL_BYTES)
+        .max_message_size(MAX_CONTROL_BYTES))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ViewState {
@@ -131,14 +144,32 @@ async fn upgrade(
     let pin = s
         .catalog
         .pin(&ResourceKey::new(ResourceKind::Map, id.clone())?)?;
+    let session_slot = s
+        .websocket_sessions
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            ServerError::new(
+                503,
+                "websocket-capacity",
+                "WebSocket session capacity is exhausted",
+            )
+        })?;
+    let session_memory = s
+        .scheduler
+        .memory_context()
+        .reserve(MAX_CONTROL_BYTES * 6)?;
     let activity = s.activities.enter()?;
-    Ok(ws
-        .max_frame_size(MAX_CONTROL_BYTES)
-        .max_message_size(MAX_CONTROL_BYTES)
-        .on_upgrade(move |socket| async move {
-            let _activity = activity;
-            session(s, id, pin, socket).await;
-        }))
+    Ok(
+        socket_buffers(ws, s.config.profile.max_image_bytes)?.on_upgrade(
+            move |socket| async move {
+                let _session_slot = session_slot;
+                let _session_memory = session_memory;
+                let _activity = activity;
+                session(s, id, pin, socket).await;
+            },
+        ),
+    )
 }
 async fn session(s: Arc<ServerState>, id: String, _pin: ResourcePin, socket: WebSocket) {
     drop(_pin);
@@ -230,6 +261,12 @@ where
     let mut suspended = false;
     let mut pending: Option<RenderJob> = None;
     let mut next_tick = Instant::now();
+    let idle_timeout = Duration::from_millis(s.config.profile.websocket_idle_timeout_ms);
+    let heartbeat_period = idle_timeout / 3;
+    let mut last_received = Instant::now();
+    let mut next_heartbeat = last_received + heartbeat_period;
+    let mut frame_buffer_capacity = 0usize;
+    let mut frame_buffer_memory = Vec::new();
     loop {
         let playing = !suspended && state.as_ref().is_some_and(|v| v.playback.playing);
         let period = state
@@ -239,6 +276,14 @@ where
         tokio::select! {
             biased;
             _ = s.activities.closed() => break,
+            _ = tokio::time::sleep_until(last_received + idle_timeout) => {
+                let _ = send_message(&mut tx, Message::Close(None), send_timeout).await;
+                break;
+            }
+            _ = tokio::time::sleep_until(next_heartbeat) => {
+                if send_message(&mut tx, Message::Ping(Vec::new().into()), send_timeout).await.is_err() { break; }
+                next_heartbeat = Instant::now() + heartbeat_period;
+            }
             _ = tokio::time::sleep_until(init_deadline), if state.is_none() => {
                 let _ = send_error(&mut tx,send_timeout,None,"init-timeout","Initialization deadline expired").await;
                 break;
@@ -271,6 +316,7 @@ where
             }
             message = rx.next() => {
                 let Some(Ok(message)) = message else { break };
+                last_received = Instant::now();
                 let text = match message {
                     Message::Text(text) => text,
                     Message::Ping(payload) => {
@@ -325,8 +371,24 @@ where
                 state=Some(next);
                 suspended=false;
             }
-            rendered = async { match pending.as_mut() {Some(job)=>job.await,None=>std::future::pending().await} } => {
+            mut rendered = async { match pending.as_mut() {Some(job)=>job.await,None=>std::future::pending().await} } => {
                 pending=None;
+                if let Ok(image) = &rendered.result
+                    && image.bytes.len() > frame_buffer_capacity {
+                    let capacity = image.bytes.len().max(frame_buffer_capacity.saturating_mul(2))
+                        .min(s.config.profile.max_image_bytes);
+                    let reservation = capacity.checked_sub(frame_buffer_capacity)
+                        .and_then(|extra| extra.checked_mul(4))
+                        .ok_or_else(|| ServerError::invalid("WebSocket frame accounting overflow"))
+                        .and_then(|extra| s.scheduler.memory_context().reserve(extra).map_err(Into::into));
+                    match reservation {
+                        Ok(hold) => {
+                            frame_buffer_memory.push(hold);
+                            frame_buffer_capacity = capacity;
+                        }
+                        Err(error) => rendered.result = Err(error),
+                    }
+                }
                 let outcome=send_rendered_frame(&mut tx,send_timeout,&mut frame_id,rendered).await;
                 if matches!(outcome,FrameOutcome::Closed) {break;}
                 suspended=suspension_after(&outcome,suspended);
@@ -776,6 +838,7 @@ mod tests {
         let mut config =
             ServerConfig::load(std::path::Path::new("examples/server.experimental.toml")).unwrap();
         config.backend = BackendSelection::Cpu;
+        config.profile.max_websocket_sessions = 1;
         config.profile.response_memory_bytes = 8 << 20;
         config.profile.response_disk_bytes = 64 << 20;
         config.data_directory = root.path().join("data");
@@ -846,6 +909,7 @@ mod tests {
                 .await
                 .unwrap();
         });
+        let server = s.clone();
         tokio::task::spawn_blocking(move || {
             let mut socket = std::net::TcpStream::connect(address).unwrap();
             socket.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
@@ -892,6 +956,18 @@ mod tests {
                 socket.write_all(&frame).unwrap();
             }
             assert_eq!(control(&mut socket)["type"], "hello");
+            assert_eq!(server.websocket_sessions.available_permits(), 0);
+            let mut rejected = std::net::TcpStream::connect(address).unwrap();
+            rejected.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            write!(rejected, "GET /ws/maps/test:tcp HTTP/1.1\r\nHost: {address}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").unwrap();
+            let mut rejected_headers = vec![];
+            while !rejected_headers.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                rejected.read_exact(&mut byte).unwrap();
+                rejected_headers.push(byte[0]);
+                assert!(rejected_headers.len() < 8192);
+            }
+            assert!(String::from_utf8(rejected_headers).unwrap().starts_with("HTTP/1.1 503"));
             send(&mut socket, 1, br#"{"type":"init","request_id":"init","view":{"crs":"OGC:CRS84","bbox":[0,0,1,1],"width":16,"height":16},"variant":{"id":"default"},"playback":{"time":5,"speed":1,"playing":false}}"#);
             assert_eq!(control(&mut socket)["revision"], 1);
             let first = control(&mut socket);
@@ -918,7 +994,9 @@ mod tests {
             send(&mut socket, 8, &[]);
         }).await.unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
-            while s.catalog.stats().pinned_versions != 0 {
+            while s.catalog.stats().pinned_versions != 0
+                || s.websocket_sessions.available_permits() != 1
+            {
                 tokio::task::yield_now().await;
             }
         })
@@ -930,6 +1008,121 @@ mod tests {
             .unwrap()
             .unwrap();
         s.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "render-cpu")]
+    async fn initialized_idle_session_pings_then_closes_without_a_pong() {
+        let root = tempfile::tempdir().unwrap();
+        let mut config =
+            ServerConfig::load(std::path::Path::new("examples/server.experimental.toml")).unwrap();
+        config.backend = BackendSelection::Cpu;
+        config.profile.response_memory_bytes = 8 << 20;
+        config.profile.response_disk_bytes = 64 << 20;
+        config.profile.websocket_idle_timeout_ms = 300;
+        config.data_directory = root.path().join("data");
+        let server = ServerState::open(config).await.unwrap();
+        let (controls, input) = tokio::sync::mpsc::channel::<Message>(8);
+        let (output, mut messages) = tokio::sync::mpsc::channel::<Message>(16);
+        let rx = Box::pin(futures_util::stream::unfold(input, |mut input| async {
+            input
+                .recv()
+                .await
+                .map(|message| (Ok::<_, ()>(message), input))
+        }));
+        let tx = Box::pin(futures_util::sink::unfold(
+            output,
+            |output, message| async move {
+                output.send(message).await.map_err(|_| ())?;
+                Ok::<_, ()>(output)
+            },
+        ));
+        let session_server = server.clone();
+        let task = tokio::spawn(async move {
+            run_session(session_server, "test:idle".into(), tx, rx).await;
+        });
+        controls
+            .send(Message::Text(
+                serde_json::json!({
+                    "type":"init", "request_id":"idle", "variant":{"id":"default"},
+                    "view":{"crs":"OGC:CRS84","bbox":[0,0,1,1],"width":16,"height":16}
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let mut acknowledged = false;
+        let mut pong_at = None;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(message) = messages.recv().await {
+                match message {
+                    Message::Text(text) => {
+                        let control: serde_json::Value = serde_json::from_str(&text).unwrap();
+                        acknowledged |= control["type"] == "ack";
+                    }
+                    Message::Ping(payload) if pong_at.is_none() => {
+                        controls.send(Message::Pong(payload)).await.unwrap();
+                        pong_at = Some(Instant::now());
+                    }
+                    Message::Close(_) => {
+                        assert!(acknowledged);
+                        assert!(pong_at.unwrap().elapsed() >= Duration::from_millis(270));
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            panic!("idle session did not send Close");
+        })
+        .await
+        .unwrap();
+        task.await.unwrap();
+        server.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn websocket_buffers_allow_large_outgoing_binary_frames() {
+        use std::io::{Read, Write};
+        let app = Router::new().route(
+            "/",
+            get(|ws: WebSocketUpgrade| async move {
+                socket_buffers(ws, 1 << 20)
+                    .unwrap()
+                    .on_upgrade(|mut socket| async move {
+                        socket
+                            .send(Message::Binary(vec![42; 256 * 1024].into()))
+                            .await
+                            .unwrap();
+                    })
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let serving = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        tokio::task::spawn_blocking(move || {
+            let mut socket = std::net::TcpStream::connect(address).unwrap();
+            socket.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            write!(socket, "GET / HTTP/1.1\r\nHost: {address}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n").unwrap();
+            let mut headers = Vec::new();
+            while !headers.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                socket.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+                assert!(headers.len() < 8192);
+            }
+            assert!(headers.starts_with(b"HTTP/1.1 101"));
+            let mut header = [0; 10];
+            socket.read_exact(&mut header).unwrap();
+            assert_eq!(header[0], 0x82);
+            assert_eq!(header[1], 127);
+            let length = u64::from_be_bytes(header[2..].try_into().unwrap());
+            assert_eq!(length, 256 * 1024);
+            let mut bytes = vec![0; length as usize];
+            socket.read_exact(&mut bytes).unwrap();
+            assert!(bytes.iter().all(|byte| *byte == 42));
+        }).await.unwrap();
+        serving.abort();
     }
 
     #[tokio::test]

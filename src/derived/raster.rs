@@ -47,6 +47,20 @@ struct Level {
     factor: u32,
     tiles: Vec<Tile>,
 }
+fn window_tiles(
+    level: &Level,
+    block_size: u32,
+    window: BlockWindow,
+) -> impl Iterator<Item = &Tile> {
+    let columns = level.width.div_ceil(block_size) as usize;
+    let first_column = (window.column / block_size) as usize;
+    let last_column = ((window.column + window.width - 1) / block_size) as usize;
+    let first_row = (window.row / block_size) as usize;
+    let last_row = ((window.row + window.height - 1) / block_size) as usize;
+    (first_row..=last_row).flat_map(move |row| {
+        level.tiles[row * columns + first_column..=row * columns + last_column].iter()
+    })
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Manifest {
@@ -407,15 +421,7 @@ impl DerivedRaster {
             .ok_or(GeelloError::SizeOverflow)?;
         let mut output: Option<RasterBlock> = None;
         let mut hold = None;
-        for tile in &l.tiles {
-            let size = self.manifest.block_size;
-            if tile.column >= w.column + w.width
-                || tile.row >= w.row + w.height
-                || tile.column + size <= w.column
-                || tile.row + size <= w.row
-            {
-                continue;
-            }
+        for tile in window_tiles(l, self.manifest.block_size, w) {
             ctx.check()?;
             let mut load = || {
                 let bytes = read_file(&self.root, &tile.block, self.limits.max_block_bytes, ctx)?;
@@ -745,14 +751,7 @@ impl DerivedRaster {
             }
             return Ok(weights);
         }
-        for tile in &self.manifest.levels[level].tiles {
-            if tile.column >= w.column + w.width
-                || tile.row >= w.row + w.height
-                || tile.column + self.manifest.block_size <= w.column
-                || tile.row + self.manifest.block_size <= w.row
-            {
-                continue;
-            }
+        for tile in window_tiles(&self.manifest.levels[level], self.manifest.block_size, w) {
             let bytes = read_file(
                 &self.root,
                 tile.weights

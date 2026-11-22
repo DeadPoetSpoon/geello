@@ -359,6 +359,7 @@ async fn wms(
             "BGCOLOR",
             "TIME",
             "geello_time",
+            "geello_pixel_ratio",
         ],
     )?;
     if !q
@@ -576,12 +577,20 @@ async fn wms_map(
         crate::encoding::ImageFormat::Png
     };
     let image = s
-        .render_protocol_maps(
+        .render_protocol_maps_scaled(
             ids,
             view,
             time,
             if transparent { None } else { Some(background) },
             encoding,
+            q.get("geello_pixel_ratio")
+                .map(|value| {
+                    value
+                        .parse::<f64>()
+                        .map_err(|_| ServerError::invalid("Invalid geello_pixel_ratio"))
+                })
+                .transpose()?
+                .unwrap_or(1.),
         )
         .await?;
     api::response(s, &image, headers)

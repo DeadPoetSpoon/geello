@@ -56,6 +56,13 @@ export class Dispatcher {
 }
 
 export const dispatcher = new Dispatcher();
+export function latestRequest() {
+  let sequence = 0;
+  return () => {
+    const current = ++sequence;
+    return () => current === sequence;
+  };
+}
 export const serviceBase = new URL("../../", import.meta.url);
 
 export function serviceURL(path) {

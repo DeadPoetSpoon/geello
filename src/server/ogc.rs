@@ -55,6 +55,7 @@ pub(crate) struct MapQuery {
     width: u32,
     height: u32,
     geello_time: Option<f64>,
+    geello_pixel_ratio: Option<f64>,
 }
 fn base(s: &ServerState) -> String {
     s.config.public_base_url.trim_end_matches('/').into()
@@ -307,7 +308,12 @@ async fn map_image(
 ) -> Result<Response> {
     let view = parse_bbox(&q)?;
     let image = s
-        .render_map_at(&id, view, q.geello_time.unwrap_or(0.))
+        .render_map_scaled(
+            &id,
+            view,
+            q.geello_time.unwrap_or(0.),
+            q.geello_pixel_ratio.unwrap_or(1.),
+        )
         .await?;
     api::response(&s, &image, &headers)
 }

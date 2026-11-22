@@ -3929,6 +3929,19 @@
             }
           },
           {
+            "name": "geello_pixel_ratio",
+            "in": "query",
+            "required": false,
+            "description": "Physical output pixels per CSS pixel. Scales pixel-space symbols, strokes, labels and spacing; map-unit lengths are unchanged. Width/height are physical pixels. Partitions render caches; does not change resource revision.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 4,
+              "default": 1
+            }
+          },
+          {
             "name": "If-None-Match",
             "in": "header",
             "required": false,
@@ -7214,6 +7227,19 @@
             }
           },
           {
+            "name": "geello_pixel_ratio",
+            "in": "query",
+            "required": false,
+            "description": "Physical output pixels per CSS pixel. Scales pixel-space symbols, strokes, labels and spacing; map-unit lengths are unchanged. Width/height are physical pixels. Partitions render caches; does not change resource revision.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 4,
+              "default": 1
+            }
+          },
+          {
             "name": "If-None-Match",
             "in": "header",
             "required": false,
@@ -9706,6 +9732,19 @@
             }
           },
           {
+            "name": "geello_pixel_ratio",
+            "in": "query",
+            "required": false,
+            "description": "Physical output pixels per CSS pixel. Scales pixel-space symbols, strokes, labels and spacing; map-unit lengths are unchanged. Width/height are physical pixels. Partitions render caches; does not change resource revision.",
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 4,
+              "default": 1
+            }
+          },
+          {
             "name": "X-Request-Id",
             "in": "header",
             "required": false,
@@ -10685,6 +10724,26 @@
         "description": "Published vector datasets as CRS84 XY GeoJSON. Exact geometry/bbox intersection returns complete original geometries; null geometry matches bbox for Features, empty geometry does not. Declared queryable aliases accept typed scalar equalities combined with AND; typed IDs combine with OR. numberMatched is exact within operation budgets. Data is timeless: valid RFC3339 datetime selections match all records. Fixed-snapshot v2 next cursors bind the complete query and source version across refresh/unpublish, expire at absolute profile TTL, and are lost on restart. No complete conformance class is claimed.",
         "parameters": [
           {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based collection offset; default 0.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size bounded by profile.max_list_items. Responses include self/next links and generation.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
             "name": "X-Request-Id",
             "in": "header",
             "required": false,
@@ -10698,7 +10757,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Published vector collection list.",
+            "description": "Published vector collection page.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11923,7 +11982,7 @@
       "get": {
         "operationId": "websocketMap",
         "summary": "Upgrade to the tested WebSocket map subset",
-        "description": "One-map WebSocket protocol 1. No URL query. Hello precedes init; init/update/retry use ASCII request IDs up to 128 bytes and atomic complete view/variant/playback/output groups. Variant is {id:'default'}. Output supports png or jpeg (explicit jpeg_quality 1-100), default 30 fps and profile ceiling. Accepted controls receive ack in receive order; superseded unstarted frames are discarded, so each ack does not promise a frame. One pending render and one serial writer bound backpressure; a started frame metadata/image pair completes before any later control/event. Metadata carries frame_id, control revision, resource render_revision, time, content_type and bytes. Playing uses a monotonic speed-scaled clock; paused updates redraw. Refresh emits resource-changed and redraws paused state; unpublish finishes any started pair then emits resource-unpublished and closes. Render failure suspends automatic frames until valid update/retry succeeds. Animation work bypasses HTTP caches. Init and each send have operation deadlines; timeout closes. Reconnect is client-owned with complete init against current resources.",
+        "description": "One-map WebSocket protocol 1. No URL query. Hello precedes init; init/update/retry use ASCII request IDs up to 128 bytes and atomic complete view/variant/playback/output groups. Variant is {id:'default'}. Output supports png or jpeg (explicit jpeg_quality 1-100), default 30 fps and profile ceiling. Accepted controls receive ack in receive order; superseded unstarted frames are discarded, so each ack does not promise a frame. One pending render and one serial writer bound backpressure; a started frame metadata/image pair completes before any later control/event. Metadata carries frame_id, control revision, resource render_revision, time, content_type and bytes. Playing uses a monotonic speed-scaled clock; paused updates redraw. Refresh emits resource-changed and redraws paused state; unpublish finishes any started pair then emits resource-unpublished and closes. Render failure suspends automatic frames until valid update/retry succeeds. Animation work bypasses HTTP caches. Init and each send have operation deadlines; timeout closes. Reconnect is client-owned with complete init against current resources. Independent profile.max_websocket_sessions admission applies for the entire connection; full capacity returns 503. Session buffers retain memory reservations, growing by outgoing image high-water mark. Inbound control frames/messages are limited to 64 KiB; outgoing images use max_image_bytes. Ping runs every websocket_idle_timeout_ms / 3; only received messages/Pong reset the idle timer, and idle expiry sends Close. Missing profile fields default to 64 sessions and 120000 ms idle (minimum 100 ms).",
         "parameters": [
           {
             "name": "id",

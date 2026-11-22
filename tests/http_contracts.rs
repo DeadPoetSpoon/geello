@@ -66,6 +66,109 @@ async fn publish(app: &Router, kind: &str, id: &str, media: &str, body: impl Int
 }
 
 #[tokio::test]
+async fn feature_collections_paginate_with_generation_and_reject_invalid_queries() {
+    let root = tempfile::tempdir().unwrap();
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    for id in ["test:page-a", "test:page-b", "test:page-c"] {
+        publish(&app, "dataset", id, "application/geo+json",
+            r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[0,0]}}]}"#).await;
+    }
+    let mut path = "/ogc/features/collections?offset=0&limit=1".to_owned();
+    let mut ids = Vec::new();
+    let mut generation = None;
+    loop {
+        let result = response(&app, "GET", &path).await;
+        assert_eq!(result.status(), StatusCode::OK);
+        let page = json_body(result).await;
+        assert_eq!(page["collections"].as_array().unwrap().len(), 1);
+        ids.push(page["collections"][0]["id"].as_str().unwrap().to_owned());
+        if let Some(expected) = &generation {
+            assert_eq!(expected, &page["x-geello-generation"]);
+        } else {
+            generation = Some(page["x-geello-generation"].clone());
+        }
+        let next = page["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|link| link["rel"] == "next");
+        let Some(next) = next else { break };
+        path = next["href"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("https://configured.example.test/prefix/geello")
+            .unwrap()
+            .to_owned();
+        assert!(ids.len() <= 3);
+    }
+    assert_eq!(ids, ["test:page-a", "test:page-b", "test:page-c"]);
+    let empty =
+        json_body(response(&app, "GET", "/ogc/features/collections?offset=3&limit=1").await).await;
+    assert!(empty["collections"].as_array().unwrap().is_empty());
+    for query in [
+        "limit=0",
+        "limit=101",
+        "offset=-1",
+        "limit=1&limit=2",
+        "unknown=1",
+    ] {
+        assert_eq!(
+            response(&app, "GET", &format!("/ogc/features/collections?{query}"))
+                .await
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn image_pixel_ratio_scales_symbols_and_partitions_the_response_cache() {
+    let root = tempfile::tempdir().unwrap();
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    publish(&app, "dataset", "test:hidpi-data", "application/geo+json",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[0,0]}}]}"#).await;
+    publish(&app, "style", "test:hidpi-style", "application/toml",
+        "schema_version=1\nid='test:hidpi-style'\n[[rules]]\nid='base'\n[[rules.symbols]]\nid='point'\nkind='point'\nfill='#00ff00'\nsize={value=12,unit='px'}\n").await;
+    publish(&app, "map", "test:hidpi-map", "application/toml",
+        "schema_version=1\nid='test:hidpi-map'\noutput_crs=['OGC:CRS84']\n[[items]]\nid='point'\ndataset='test:hidpi-data'\nstyle='test:hidpi-style'\n").await;
+    let mut widths = Vec::new();
+    let mut tags = Vec::new();
+    for (dimension, ratio) in [(64, 1), (128, 2), (128, 1)] {
+        let uri = format!(
+            "/ogc/maps/collections/test:hidpi-map/map?bbox=-1,-1,1,1&crs=OGC:CRS84&width={dimension}&height={dimension}&geello_pixel_ratio={ratio}"
+        );
+        let result = response(&app, "GET", &uri).await;
+        assert_eq!(result.status(), StatusCode::OK);
+        tags.push(result.headers()["etag"].clone());
+        let bytes = to_bytes(result.into_body(), 1 << 20).await.unwrap();
+        let image = image::load_from_memory(&bytes).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (dimension, dimension));
+        let occupied = image
+            .enumerate_pixels()
+            .filter(|(_, _, pixel)| pixel[3] > 127)
+            .map(|(column, _, _)| column)
+            .collect::<Vec<_>>();
+        widths.push(occupied.iter().max().unwrap() - occupied.iter().min().unwrap() + 1);
+    }
+    assert!(widths[1].abs_diff(widths[0] * 2) <= 2, "{widths:?}");
+    assert!(widths[2].abs_diff(widths[0]) <= 1, "{widths:?}");
+    assert_ne!(tags[1], tags[2]);
+    for ratio in ["0", "-1", "4.1", "NaN", "inf"] {
+        let uri = format!(
+            "/ogc/maps/collections/test:hidpi-map/map?bbox=-1,-1,1,1&crs=OGC:CRS84&width=64&height=64&geello_pixel_ratio={ratio}"
+        );
+        assert_eq!(
+            response(&app, "GET", &uri).await.status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn explicit_fonts_render_through_publication_maps_and_buffered_metatiles() {
     let root = tempfile::tempdir().unwrap();
     // This test isolates label layout and adjacent crops. Centered WMTS

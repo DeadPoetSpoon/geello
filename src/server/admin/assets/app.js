@@ -1,4 +1,4 @@
-import { dispatcher, poll, request, serviceURL, upload } from "./requests.js";
+import { dispatcher, latestRequest, poll, request, serviceURL, upload } from "./requests.js";
 import { mountPreview } from "./preview.js";
 
 const names = { dataset: "数据集", font: "字体", style: "样式", map: "地图", animation: "动画" };
@@ -108,11 +108,17 @@ async function resources(kind) {
   const published = select([["", "全部状态"], ["true", "已发布"], ["false", "已下线"]], "", { "aria-label": "发布状态" });
   const content = h("div");
   let generation;
+  const beginLoad = latestRequest();
   const signal = scope.signal;
   const load = async (offset = 0) => {
+    const isLatest = beginLoad();
     const query = new URLSearchParams({ kind, q: search.value, offset, limit: pageLimit });
     if (published.value) query.set("published", published.value);
-    const { data } = await request(`admin/v1/resources?${query}`, { signal });
+    let result;
+    try { result = await request(`admin/v1/resources?${query}`, { signal }); }
+    catch (error) { if (isLatest() && !signal.aborted) throw error; return; }
+    const { data } = result;
+    if (!isLatest() || signal.aborted) return;
     if (generation !== undefined && generation !== data.generation && offset) {
       generation = data.generation;
       notify("目录已更新，已返回第一页。", "warning");
@@ -127,6 +133,7 @@ async function resources(kind) {
 }
 
 async function operationPage() {
+  const beginLoad = latestRequest();
   let offset = 0;
   const status = select([["", "全部状态"], ...Object.entries(statuses)], "", { "aria-label": "任务状态" });
   const kind = select([["", "全部类型"], ...Object.entries(names)], "", { "aria-label": "资源类型" });
@@ -134,14 +141,16 @@ async function operationPage() {
   const content = h("div");
   const signal = scope.signal;
   const load = async (next = offset) => {
+    const isLatest = beginLoad();
     const query = new URLSearchParams({ offset: next, limit: pageLimit });
     for (const [key, control] of [["status", status], ["kind", kind], ["resource_id", id]]) if (control.value) query.set(key, control.value);
     try {
       const { data } = await request(`admin/v1/operations?${query}`, { signal });
+      if (!isLatest() || signal.aborted) return;
       offset = next;
       content.replaceChildren(data.operations.length ? table(["任务 ID（倒序）", "资源", "状态", "诊断 / 版本"], data.operations.map((operation) => h("tr", {}, h("td", {}, h("code", {}, operation.operation_id)), h("td", {}, link(`${names[operation.resource.kind]} · ${operation.resource.id}`, resourceHash(operation.resource.kind, operation.resource.id))), h("td", {}, badge(operation.status)), h("td", {}, operation.diagnostics.length ? operation.diagnostics.join("\n") : shortVersion(operation.version))))) : h("div", { className: "panel empty" }, "没有匹配的任务。"), pagination(offset, data.total, load));
       messages.replaceChildren();
-    } catch (error) { if (!signal.aborted) { notify(`连接已断开，以下为上次结果。${error.message}`, "warning"); throw error; } }
+    } catch (error) { if (isLatest() && !signal.aborted) { notify(`连接已断开，以下为上次结果。${error.message}`, "warning"); throw error; } }
   };
   main.append(head("异步任务", "每 2 秒更新，隐藏标签页暂停；不伪造进度，也不提供服务端未支持的取消操作。"), h("form", { className: "toolbar", onsubmit: (event) => { event.preventDefault(); guarded(() => load(0))(); } }, status, kind, id, h("button", { type: "submit" }, "筛选"), button("刷新", guarded(() => load()))), content);
   cleanups.push(poll(load));

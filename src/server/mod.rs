@@ -13,6 +13,7 @@ mod http_extract;
 mod legacy;
 mod memory;
 mod ogc;
+mod planning;
 mod runtime;
 mod scheduler;
 mod settings;

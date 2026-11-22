@@ -36,6 +36,8 @@ pub(super) async fn openapi(State(s): State<Arc<ServerState>>) -> Result<Respons
         "max-active-http": s.config.profile.active_http,
         "text": cfg!(feature = "text"),
         "max-animation-fps": s.config.profile.max_animation_fps,
+        "max-websocket-sessions": s.config.profile.max_websocket_sessions,
+        "websocket-idle-timeout-ms": s.config.profile.websocket_idle_timeout_ms,
         "max-feature-cursors": s.config.profile.max_feature_cursors,
         "feature-cursor-ttl-ms": s.config.profile.feature_cursor_ttl_ms,
         "metatile-size": s.config.profile.metatile_size,

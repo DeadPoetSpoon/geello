@@ -18,6 +18,10 @@ jobs:
           toolchain: 1.96.0
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/admin_requests.test.mjs
       - run: cargo test --locked --no-default-features
       - run: cargo test --locked --no-default-features --features server,render-cpu,read-geojson,read-shapefile,read-geotiff
       - run: cargo check --locked --no-default-features --features server-full

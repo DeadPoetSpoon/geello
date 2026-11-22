@@ -453,6 +453,15 @@ pub fn prepare_scene(
     view: &View,
     context: &OperationContext,
 ) -> Result<PreparedScene, GeelloError> {
+    prepare_scene_scaled(composition, view, 1., context)
+}
+pub(crate) fn prepare_scene_scaled(
+    composition: &MapComposition,
+    view: &View,
+    pixel_ratio: f64,
+    context: &OperationContext,
+) -> Result<PreparedScene, GeelloError> {
+    let _ = pixel_ratio;
     view.validate()?;
     context.check()?;
     let mut b = Builder {
@@ -544,7 +553,7 @@ pub fn prepare_scene(
         }
     }
     #[cfg(feature = "text")]
-    for label in crate::text::layout(composition, view, &b.obstacles, context)? {
+    for label in crate::text::layout(composition, view, &b.obstacles, pixel_ratio, context)? {
         for hold in label.holds {
             b.summary.estimated_accounted_bytes = b
                 .summary

@@ -9,7 +9,10 @@ use cosmic_text::skrifa::{
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Wrap, fontdb};
 use geo::{Contains, InteriorPoint};
 use geo_types::{Geometry, LineString, Point, Polygon};
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 /// Placement is evaluated after projection, in the complete map/metatile view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +78,112 @@ pub fn shape_text(
     wrap: Option<f64>,
     ctx: &OperationContext,
 ) -> Result<ShapedText, GeelloError> {
+    shape_with_engine(text, style, size, wrap, ctx, &mut ShapeEngine::default())
+}
+
+struct FontStack {
+    system: FontSystem,
+    faces: Vec<(fontdb::ID, Arc<FontResource>)>,
+    language: String,
+    glyphs: BTreeMap<(usize, u16, u32), Arc<CachedOutline>>,
+    glyph_bytes: usize,
+    work_bytes: usize,
+    holds: Vec<crate::operation::Reservation>,
+}
+struct CachedOutline {
+    path: Vec<PathElement>,
+    _holds: Vec<crate::operation::Reservation>,
+}
+#[derive(Default)]
+struct ShapeEngine {
+    stack: Option<FontStack>,
+    shapes: BTreeMap<(String, u64, Option<u64>), Arc<ShapedText>>,
+    shape_bytes: usize,
+}
+impl ShapeEngine {
+    fn prepare(&mut self, style: &TextStyle, language: &str) {
+        let matches = self.stack.as_ref().is_some_and(|stack| {
+            stack.language == language
+                && stack.work_bytes < 4 * 1024 * 1024
+                && stack.faces.len() == style.fonts.len()
+                && stack
+                    .faces
+                    .iter()
+                    .zip(&style.fonts)
+                    .all(|((_, previous), current)| {
+                        previous.identity == current.identity
+                            && previous.face_index == current.face_index
+                            && Arc::ptr_eq(&previous.bytes, &current.bytes)
+                    })
+        });
+        if !matches {
+            self.shapes.clear();
+            self.shape_bytes = 0;
+            self.stack = None;
+        }
+    }
+    fn shape(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        size: f64,
+        wrap: Option<f64>,
+        ctx: &OperationContext,
+    ) -> Result<Arc<ShapedText>, GeelloError> {
+        ctx.checkpoint(text.len() as u64)?;
+        let _key_memory = ctx.reserve(
+            text.len()
+                .checked_add(128)
+                .ok_or(GeelloError::SizeOverflow)?,
+        )?;
+        self.prepare(
+            style,
+            if style.language.is_empty() {
+                "und"
+            } else {
+                &style.language
+            },
+        );
+        let key = (text.to_owned(), size.to_bits(), wrap.map(f64::to_bits));
+        if let Some(shaped) = self.shapes.get(&key) {
+            return Ok(shaped.clone());
+        }
+        let mut shaped = shape_with_engine(text, style, size, wrap, ctx, self)?;
+        let bytes = shaped
+            .outlines
+            .iter()
+            .map(|path| path.len() * std::mem::size_of::<PathElement>() * 2)
+            .sum::<usize>()
+            .saturating_add(
+                shaped
+                    .glyphs
+                    .iter()
+                    .map(|glyph| glyph.font_identity.len() + std::mem::size_of::<GlyphInfo>() + 64)
+                    .sum::<usize>(),
+            )
+            .saturating_add(text.len() + 256);
+        let cacheable =
+            self.shapes.len() < 128 && self.shape_bytes.saturating_add(bytes) <= 4 * 1024 * 1024;
+        if cacheable {
+            shaped.holds.push(ctx.reserve(text.len() + 256)?);
+        }
+        let shaped = Arc::new(shaped);
+        if cacheable {
+            self.shapes.insert(key, shaped.clone());
+            self.shape_bytes += bytes;
+        }
+        Ok(shaped)
+    }
+}
+
+fn shape_with_engine(
+    text: &str,
+    style: &TextStyle,
+    size: f64,
+    wrap: Option<f64>,
+    ctx: &OperationContext,
+    engine: &mut ShapeEngine,
+) -> Result<ShapedText, GeelloError> {
     ctx.checkpoint(text.len() as u64)?;
     if style.fonts.is_empty()
         || !size.is_finite()
@@ -98,61 +207,83 @@ pub fn shape_text(
     {
         return Err(invalid("invalid BCP47 language tag"));
     }
+    engine.prepare(style, language);
     let font_bytes = style.fonts.iter().try_fold(0usize, |n, f| {
         n.checked_add(f.bytes.len())
             .ok_or(GeelloError::SizeOverflow)
     })?;
-    let workspace = font_bytes
-        .checked_mul(4)
-        .and_then(|n| text.len().checked_mul(4096).and_then(|t| n.checked_add(t)))
+    let workspace = text
+        .len()
+        .checked_mul(4096)
         .and_then(|n| n.checked_add(65536))
         .ok_or(GeelloError::SizeOverflow)?;
-    let _workspace = ctx.reserve(workspace)?;
-    let mut db = fontdb::Database::new();
-    let mut faces = vec![];
-    for resource in &style.fonts {
-        ctx.checkpoint(1)?;
-        validate_font(resource)?;
-        let mut source_db = fontdb::Database::new();
-        let ids =
-            source_db.load_font_source(fontdb::Source::Binary(Arc::new(resource.bytes.clone())));
-        let selected = ids
-            .iter()
-            .find(|id| {
-                source_db
-                    .face(**id)
-                    .is_some_and(|f| f.index == resource.face_index)
-            })
-            .copied()
-            .ok_or_else(|| invalid("explicit font face is not loadable"))?;
-        let mut face = source_db.face(selected).unwrap().clone();
-        if let Some((id, _)) = faces.first() {
-            let first: &fontdb::FaceInfo = db.face(*id).unwrap();
-            if face.weight != first.weight
-                || face.style != first.style
-                || face.stretch != first.stretch
-            {
-                return Err(invalid(
-                    "a font stack must declare matching exact weight/style/stretch faces",
-                ));
+    if engine.stack.is_none() {
+        let font_hold = ctx.reserve(
+            font_bytes
+                .checked_mul(4)
+                .and_then(|bytes| bytes.checked_add(65536))
+                .ok_or(GeelloError::SizeOverflow)?,
+        )?;
+        let mut db = fontdb::Database::new();
+        let mut faces = vec![];
+        for resource in &style.fonts {
+            ctx.checkpoint(1)?;
+            validate_font(resource)?;
+            let mut source_db = fontdb::Database::new();
+            let ids = source_db
+                .load_font_source(fontdb::Source::Binary(Arc::new(resource.bytes.clone())));
+            let selected = ids
+                .iter()
+                .find(|id| {
+                    source_db
+                        .face(**id)
+                        .is_some_and(|f| f.index == resource.face_index)
+                })
+                .copied()
+                .ok_or_else(|| invalid("explicit font face is not loadable"))?;
+            let mut face = source_db.face(selected).unwrap().clone();
+            if let Some((id, _)) = faces.first() {
+                let first: &fontdb::FaceInfo = db.face(*id).unwrap();
+                if face.weight != first.weight
+                    || face.style != first.style
+                    || face.stretch != first.stretch
+                {
+                    return Err(invalid(
+                        "a font stack must declare matching exact weight/style/stretch faces",
+                    ));
+                }
             }
+            // A private family makes platform fallback lists inapplicable. All faces
+            // share it; stable insertion IDs retain the declared fallback ordering.
+            face.families
+                .iter_mut()
+                .for_each(|(name, _)| *name = "Geello isolated stack".into());
+            let id = db.push_face_info(face);
+            faces.push((id, resource.clone()));
         }
-        // A private family makes platform fallback lists inapplicable. All faces
-        // share it; stable insertion IDs retain the declared fallback ordering.
-        face.families
-            .iter_mut()
-            .for_each(|(name, _)| *name = "Geello isolated stack".into());
-        let id = db.push_face_info(face);
-        faces.push((id, resource));
+        engine.stack = Some(FontStack {
+            system: FontSystem::new_with_locale_and_db(language.into(), db),
+            faces,
+            language: language.into(),
+            glyphs: BTreeMap::new(),
+            glyph_bytes: 0,
+            work_bytes: 0,
+            holds: vec![font_hold],
+        });
     }
-    let first = db.face(faces[0].0).unwrap();
+    let stack = engine.stack.as_mut().unwrap();
+    stack.holds.push(ctx.reserve(workspace)?);
+    stack.work_bytes = stack.work_bytes.saturating_add(workspace);
+    let first = stack.system.db().face(stack.faces[0].0).unwrap();
     let attrs = Attrs::new()
         .family(Family::Name("Geello isolated stack"))
         .weight(first.weight)
         .style(first.style)
         .stretch(first.stretch);
-    let mut fs = FontSystem::new_with_locale_and_db(language.into(), db);
-    let mut buffer = Buffer::new(&mut fs, Metrics::new(size as f32, (size * 1.25) as f32));
+    let mut buffer = Buffer::new(
+        &mut stack.system,
+        Metrics::new(size as f32, (size * 1.25) as f32),
+    );
     buffer.set_wrap(if wrap.is_some() {
         Wrap::WordOrGlyph
     } else {
@@ -160,7 +291,7 @@ pub fn shape_text(
     });
     buffer.set_size(wrap.map(|w| w as f32), None);
     buffer.set_text(text, &attrs, Shaping::Advanced, None);
-    buffer.shape_until_scroll(&mut fs, false);
+    buffer.shape_until_scroll(&mut stack.system, false);
     let mut result = ShapedText {
         glyphs: vec![],
         width: 0.,
@@ -174,46 +305,92 @@ pub fn shape_text(
         result.height = result.height.max((run.line_top + run.line_height) as f64);
         for glyph in run.glyphs {
             ctx.checkpoint(1)?;
-            let resource = faces
+            let (font_index, resource) = stack
+                .faces
                 .iter()
-                .find(|(id, _)| *id == glyph.font_id)
-                .map(|(_, f)| *f)
+                .enumerate()
+                .find(|(_, (identity, _))| *identity == glyph.font_id)
+                .map(|(index, (_, resource))| (index, resource))
                 .ok_or_else(|| invalid("shaper escaped explicit font stack"))?;
             let origin = [
                 (glyph.x + glyph.font_size * glyph.x_offset) as f64,
                 (run.line_y + glyph.y - glyph.font_size * glyph.y_offset) as f64,
             ];
-            let font = FontRef::from_index(&resource.bytes, resource.face_index)
-                .map_err(|_| invalid("invalid font"))?;
-            let mut pen = Pen {
-                path: vec![],
-                position: [0., 0.],
-                origin,
-                ctx,
-                holds: &mut result.holds,
-                error: None,
+            let glyph_key = (font_index, glyph.glyph_id, glyph.font_size.to_bits());
+            let outline = if let Some(outline) = stack.glyphs.get(&glyph_key) {
+                outline.clone()
+            } else {
+                let font = FontRef::from_index(&resource.bytes, resource.face_index)
+                    .map_err(|_| invalid("invalid font"))?;
+                let mut glyph_holds = vec![];
+                let mut pen = Pen {
+                    path: vec![],
+                    position: [0., 0.],
+                    origin: [0., 0.],
+                    ctx,
+                    holds: &mut glyph_holds,
+                    error: None,
+                };
+                if let Some(outline) = font
+                    .outline_glyphs()
+                    .get(GlyphId::new(glyph.glyph_id as u32))
+                {
+                    let _scratch = ctx.reserve(
+                        outline.draw_memory_size(cosmic_text::skrifa::outline::Hinting::None),
+                    )?;
+                    outline
+                        .draw(
+                            DrawSettings::unhinted(
+                                Size::new(glyph.font_size),
+                                LocationRef::default(),
+                            ),
+                            &mut pen,
+                        )
+                        .map_err(|_| invalid("glyph outline decoding failed"))?;
+                }
+                if let Some(error) = pen.error {
+                    return Err(error);
+                }
+                let path = pen.path;
+                let bytes = path
+                    .len()
+                    .saturating_mul(std::mem::size_of::<PathElement>() * 2)
+                    .saturating_add(256);
+                glyph_holds.push(ctx.reserve(256)?);
+                let outline = Arc::new(CachedOutline {
+                    path,
+                    _holds: glyph_holds,
+                });
+                if stack.glyphs.len() < 256
+                    && stack.glyph_bytes.saturating_add(bytes) <= 4 * 1024 * 1024
+                {
+                    stack.glyphs.insert(glyph_key, outline.clone());
+                    stack.glyph_bytes += bytes;
+                }
+                outline
             };
             if glyph.glyph_id == 0 {
                 result.missing_glyphs += 1;
             }
-            if let Some(outline) = font
-                .outline_glyphs()
-                .get(GlyphId::new(glyph.glyph_id as u32))
-            {
-                let _scratch = ctx.reserve(
-                    outline.draw_memory_size(cosmic_text::skrifa::outline::Hinting::None),
-                )?;
-                outline
-                    .draw(
-                        DrawSettings::unhinted(Size::new(glyph.font_size), LocationRef::default()),
-                        &mut pen,
-                    )
-                    .map_err(|_| invalid("glyph outline decoding failed"))?;
-            }
-            if let Some(error) = pen.error {
-                return Err(error);
-            }
-            let path = pen.path;
+            ctx.checkpoint(outline.path.len() as u64)?;
+            result.holds.push(
+                ctx.reserve(
+                    outline
+                        .path
+                        .len()
+                        .checked_mul(2 * std::mem::size_of::<PathElement>())
+                        .ok_or(GeelloError::SizeOverflow)?,
+                )?,
+            );
+            let path = outline
+                .path
+                .iter()
+                .map(|element| {
+                    transform(*element, |point| {
+                        [point[0] + origin[0], point[1] + origin[1]]
+                    })
+                })
+                .collect();
             result.holds.push(
                 ctx.reserve(std::mem::size_of::<GlyphInfo>() + resource.identity.len() + 64)?,
             );
@@ -332,16 +509,108 @@ fn transform(p: PathElement, mut f: impl FnMut([f64; 2]) -> [f64; 2]) -> PathEle
 fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
+#[derive(Default)]
+struct BoundsIndex {
+    entries: Vec<([f64; 4], usize)>,
+    cells: BTreeMap<(i64, i64), Vec<usize>>,
+    wide: Vec<usize>,
+    holds: Vec<crate::operation::Reservation>,
+}
+impl BoundsIndex {
+    fn cells(bounds: [f64; 4]) -> Option<[i64; 4]> {
+        if bounds.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        let cells = bounds.map(|value| (value / 64.).floor() as i64);
+        let width = cells[2] as i128 - cells[0] as i128 + 1;
+        let height = cells[3] as i128 - cells[1] as i128 + 1;
+        (width > 0 && height > 0 && width <= 64 && height <= 64 && width * height <= 64)
+            .then_some(cells)
+    }
+    fn insert(
+        &mut self,
+        bounds: [f64; 4],
+        payload: usize,
+        ctx: &OperationContext,
+    ) -> Result<(), GeelloError> {
+        self.holds.push(ctx.reserve(128)?);
+        let index = self.entries.len();
+        self.entries.push((bounds, payload));
+        if let Some(cells) = Self::cells(bounds) {
+            for row in cells[1]..=cells[3] {
+                for column in cells[0]..=cells[2] {
+                    ctx.checkpoint(1)?;
+                    self.holds.push(ctx.reserve(160)?);
+                    self.cells.entry((column, row)).or_default().push(index);
+                }
+            }
+        } else {
+            self.wide.push(index);
+        }
+        Ok(())
+    }
+    fn any(
+        &self,
+        bounds: [f64; 4],
+        ctx: &OperationContext,
+        mut matches: impl FnMut(usize) -> bool,
+    ) -> Result<bool, GeelloError> {
+        let mut inspect = |index: usize| -> Result<bool, GeelloError> {
+            ctx.checkpoint(1)?;
+            let (other, payload) = self.entries[index];
+            Ok(overlaps(other, bounds) && matches(payload))
+        };
+        if let Some(cells) = Self::cells(bounds) {
+            for &index in &self.wide {
+                if inspect(index)? {
+                    return Ok(true);
+                }
+            }
+            for row in cells[1]..=cells[3] {
+                for column in cells[0]..=cells[2] {
+                    ctx.checkpoint(1)?;
+                    if let Some(indices) = self.cells.get(&(column, row)) {
+                        for &index in indices {
+                            if inspect(index)? {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for index in 0..self.entries.len() {
+                if inspect(index)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+}
 /// One global pass, descending priority and later-drawn tie breaking. Accepted
 /// labels are subsequently painted in original draw order.
 pub(crate) fn layout(
     composition: &MapComposition,
     view: &View,
     obstacles: &[MarkerObstacle],
+    pixel_ratio: f64,
     ctx: &OperationContext,
 ) -> Result<Vec<PlacedLabel>, GeelloError> {
     let mut candidates = vec![];
     let mut workspace = vec![];
+    let mut shaper = ShapeEngine::default();
+    let mut obstacle_index = BoundsIndex::default();
+    let mut marker_sizes = BTreeMap::<(usize, u64), [f64; 2]>::new();
+    for (index, obstacle) in obstacles.iter().enumerate() {
+        obstacle_index.insert(obstacle.bounds, index, ctx)?;
+        if let Some(source) = obstacle.source {
+            workspace.push(ctx.reserve(128)?);
+            let size = marker_sizes.entry(source).or_insert([0., 0.]);
+            size[0] = size[0].max((obstacle.bounds[2] - obstacle.bounds[0]) / 2.);
+            size[1] = size[1].max((obstacle.bounds[3] - obstacle.bounds[1]) / 2.);
+        }
+    }
     let mut group = 0usize;
     for (order, item) in composition.items.iter().enumerate() {
         let DrawItem::Label(label) = item else {
@@ -363,8 +632,12 @@ pub(crate) fn layout(
         }
         let (sx, sy, _, _) = view.scales();
         let size = crate::style::length(label.style.size, (sx * sy).abs().sqrt())?;
-        let shaped = shape_text(&label.text, &label.style, size, label.wrap_width, ctx)?;
-        workspace.extend(shaped.holds);
+        let shaped = shaper.shape(&label.text, &label.style, size, label.wrap_width, ctx)?;
+        let marker_size = label
+            .marker_source
+            .and_then(|source| marker_sizes.get(&source))
+            .copied()
+            .unwrap_or([0., 0.]);
         let mut anchors = vec![];
         collect(&label.geometry, label.placement, view, ctx, &mut anchors, 0)?;
         for anchor in anchors {
@@ -429,27 +702,9 @@ pub(crate) fn layout(
                             Anchor::Point(p) => (
                                 [
                                     p[0] + offset[0]
-                                        * (shaped.width / 2.
-                                            + 2.
-                                            + obstacles
-                                                .iter()
-                                                .filter(|o| {
-                                                    o.source.is_some()
-                                                        && o.source == label.marker_source
-                                                })
-                                                .map(|o| (o.bounds[2] - o.bounds[0]) / 2.)
-                                                .fold(0., f64::max)),
+                                        * (shaped.width / 2. + 2. * pixel_ratio + marker_size[0]),
                                     p[1] + offset[1]
-                                        * (shaped.height / 2.
-                                            + 2.
-                                            + obstacles
-                                                .iter()
-                                                .filter(|o| {
-                                                    o.source.is_some()
-                                                        && o.source == label.marker_source
-                                                })
-                                                .map(|o| (o.bounds[3] - o.bounds[1]) / 2.)
-                                                .fold(0., f64::max)),
+                                        * (shaped.height / 2. + 2. * pixel_ratio + marker_size[1]),
                                 ],
                                 0.,
                             ),
@@ -531,12 +786,11 @@ pub(crate) fn layout(
                         }
                     }
                     holds.push(ctx.reserve(256)?);
-                    ctx.checkpoint(obstacles.len() as u64)?;
                     if !label.allow_overlap
-                        && obstacles.iter().any(|o| {
-                            !(o.source.is_some() && o.source == label.marker_source)
-                                && overlaps(o.bounds, bounds)
-                        })
+                        && obstacle_index.any(bounds, ctx, |index| {
+                            let obstacle = &obstacles[index];
+                            !(obstacle.source.is_some() && obstacle.source == label.marker_source)
+                        })?
                     {
                         continue;
                     }
@@ -560,16 +814,19 @@ pub(crate) fn layout(
             .then(b.order.cmp(&a.order))
     });
     let mut accepted: Vec<Candidate> = vec![];
+    let mut accepted_groups = BTreeSet::new();
+    let mut accepted_index = BoundsIndex::default();
     for candidate in candidates {
-        ctx.checkpoint(accepted.len() as u64 + 1)?;
-        if accepted.iter().any(|c| c.group == candidate.group) {
+        ctx.checkpoint(1)?;
+        if accepted_groups.contains(&candidate.group) {
             continue;
         }
-        if candidate.overlap
-            || !accepted
-                .iter()
-                .any(|c| !c.overlap && overlaps(c.bounds, candidate.bounds))
-        {
+        if candidate.overlap || !accepted_index.any(candidate.bounds, ctx, |_| true)? {
+            workspace.push(ctx.reserve(64)?);
+            accepted_groups.insert(candidate.group);
+            if !candidate.overlap {
+                accepted_index.insert(candidate.bounds, accepted.len(), ctx)?;
+            }
             accepted.push(candidate);
         }
     }
@@ -700,4 +957,94 @@ fn sample(line: &[[f64; 2]], mut distance: f64) -> ([f64; 2], f64) {
         distance -= length;
     }
     (line.last().copied().unwrap_or([0., 0.]), 0.)
+}
+
+#[cfg(test)]
+mod optimization_tests {
+    use super::*;
+
+    fn context() -> OperationContext {
+        OperationContext::new(
+            OperationLimits {
+                max_live_bytes: 128 << 20,
+                max_work: 10_000_000,
+                max_commands: 100_000,
+                max_diagnostics: 16,
+            },
+            None,
+        )
+    }
+
+    #[test]
+    fn request_local_shaping_reuses_text_and_isolates_changed_font_stacks() {
+        let ctx = context();
+        let baseline = ctx.live_bytes();
+        let bytes: Arc<[u8]> =
+            Arc::from(include_bytes!("../tests/fixtures/fonts/latin.ttf").as_slice());
+        let mut style = TextStyle {
+            fonts: vec![Arc::new(FontResource {
+                identity: "latin".into(),
+                bytes: bytes.clone(),
+                face_index: 0,
+            })],
+            size: Length::Pixels(20.),
+            color: Color::BLACK,
+            language: "und".into(),
+        };
+        {
+            let mut engine = ShapeEngine::default();
+            let first = engine.shape("office ffi", &style, 20., None, &ctx).unwrap();
+            let after_first = ctx.live_bytes();
+            let second = engine.shape("office ffi", &style, 20., None, &ctx).unwrap();
+            assert!(Arc::ptr_eq(&first, &second));
+            assert_eq!(ctx.live_bytes(), after_first);
+            let other = engine.shape("office", &style, 20., None, &ctx).unwrap();
+            assert!(!engine.stack.as_ref().unwrap().glyphs.is_empty());
+            assert_eq!(other.glyphs[0].font_identity, "latin");
+            style.fonts = vec![Arc::new(FontResource {
+                identity: "replacement".into(),
+                bytes,
+                face_index: 0,
+            })];
+            let replacement = engine.shape("office ffi", &style, 20., None, &ctx).unwrap();
+            assert!(
+                replacement
+                    .glyphs
+                    .iter()
+                    .all(|glyph| glyph.font_identity == "replacement")
+            );
+            assert!(!Arc::ptr_eq(&first, &replacement));
+        }
+        assert_eq!(ctx.live_bytes(), baseline);
+    }
+
+    #[test]
+    fn indexed_overlap_matches_linear_detection_including_wide_and_negative_bounds() {
+        let ctx = context();
+        let mut index = BoundsIndex::default();
+        let mut entries = vec![];
+        for ordinal in 0..1000 {
+            let horizontal = (ordinal % 50) as f64 * 70. - 1500.;
+            let vertical = (ordinal / 50) as f64 * 70. - 700.;
+            let bounds = [horizontal, vertical, horizontal + 20., vertical + 20.];
+            entries.push(bounds);
+            index.insert(bounds, ordinal, &ctx).unwrap();
+        }
+        let wide = [-2000., -1., 2000., 1.];
+        index.insert(wide, entries.len(), &ctx).unwrap();
+        entries.push(wide);
+        for ordinal in 0..100 {
+            let coordinate = ordinal as f64 * 33. - 1700.;
+            let bounds = [coordinate, -50., coordinate + 25., 50.];
+            assert_eq!(
+                index.any(bounds, &ctx, |_| true).unwrap(),
+                entries.iter().any(|other| overlaps(*other, bounds))
+            );
+        }
+        assert!(
+            index
+                .any([-5000., -5000., 5000., 5000.], &ctx, |_| true)
+                .unwrap()
+        );
+    }
 }

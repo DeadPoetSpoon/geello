@@ -135,6 +135,8 @@ def build():
     etag_header = {"ETag": {"description": "Strong current resource version, quoted.", "schema": STRING}}
     time = param("geello_time", "query", {"type": "number", "minimum": 0, "default": 0},
                  "Finite nonnegative seconds. Case-sensitive. Omitted, 0 and -0 share zero cache identity. Independent of data version.")
+    pixel_ratio = param("geello_pixel_ratio", "query", {"type": "number", "minimum": 0, "exclusiveMinimum": True, "maximum": 4, "default": 1},
+                        "Physical output pixels per CSS pixel. Scales pixel-space symbols, strokes, labels and spacing; map-unit lengths are unchanged. Width/height are physical pixels. Partitions render caches; does not change resource revision.")
     revalidate = param("If-None-Match", "header", STRING,
                        "Encoded-byte ETag(s) or *. Current publication is checked before cached 200/304; weak tags currently do not match.")
     image_headers = {
@@ -211,7 +213,7 @@ def build():
             param("bbox", "query", STRING, "Exactly four finite comma-separated XY values: min-x,min-y,max-x,max-y; strictly positive spans. CRS84/EPSG:4326 use longitude,latitude here.", True),
             param("crs", "query", STRING, "Explicit output CRS allowed by this map; pure Rust projection. Basic route uses XY axes.", True),
             param("width", "query", {"type": "integer", "minimum": 1}, "Pixel width; bounded by profile.max_dimension and max_image_bytes.", True),
-            param("height", "query", {"type": "integer", "minimum": 1}, "Pixel height; bounded by profile.max_dimension and max_image_bytes.", True), time, revalidate,
+            param("height", "query", {"type": "integer", "minimum": 1}, "Pixel height; bounded by profile.max_dimension and max_image_bytes.", True), time, pixel_ratio, revalidate,
         ], images, "PNG, stretch aspect policy. Immutable pinned data/styles/animations. Source-plane geometry animation precedes projection; originals remain unchanged. This is the basic application route; no WMS/OGC conformance claim.")},
         "/tiles/{id}/{z}/{x}/{y}": {"get": operation("renderTile", "Render a WebMercatorQuad tile at explicit time", [
             param("id", "path", RESOURCE_ID, "Published map identity allowing EPSG:3857.", True),
@@ -298,7 +300,7 @@ def build():
         param("FORMAT", "query", {"type": "string", "enum": ["image/png", "image/jpeg"]}, "Final image format; JPEG quality 90."),
         param("TRANSPARENT", "query", {"type":"boolean"}, "Default false; PNG may retain transparency."),
         param("BGCOLOR", "query", STRING, "0xRRGGBB, default white; JPEG flattens once against this color."),
-        param("TIME", "query", {"type":"number", "minimum":0}, "Animation seconds alias; cannot accompany geello_time."), time],
+        param("TIME", "query", {"type":"number", "minimum":0}, "Animation seconds alias; cannot accompany geello_time."), time, pixel_ratio],
         {"200": {"description":"XML capabilities or encoded map image.","content": {"text/xml":{"schema":STRING},"image/png":{"schema":{"type":"string","format":"binary"}},"image/jpeg":{"schema":{"type":"string","format":"binary"}}}}}, protocol_subset)}
     paths["/wmts"] = {"get": operation("wmtsKvp", "Serve the tested WMTS 1.0.0 KVP subset", [
         param("SERVICE", "query", {"type": "string", "enum": ["WMTS"]}, "Must be WMTS.", True), param("VERSION", "query", {"type": "string", "enum": ["1.0.0"]}, "Supported WMTS version.", True),
@@ -313,7 +315,7 @@ def build():
     paths["/ogc/features"] = {"get": operation("ogcFeaturesLanding", "Discover the tested Features subset", [], {"200": schema_response("Features landing document.", {"type":"object", "additionalProperties":True})}, feature_subset)}
     paths["/ogc/features/"] = {"get": operation("ogcFeaturesLandingSlash", "Discover the tested Features subset (trailing slash)", [], {"200": schema_response("Features landing document.", {"type":"object", "additionalProperties":True})}, feature_subset)}
     paths["/ogc/features/conformance"] = {"get": operation("ogcFeaturesConformance", "Inspect tested Features subset status", [], {"200": schema_response("Non-certifying tested subset response.", {"type":"object", "additionalProperties":True})}, feature_subset)}
-    paths["/ogc/features/collections"] = {"get": operation("ogcFeaturesCollections", "List published vector collections", [], {"200": schema_response("Published vector collection list.", {"type":"object", "additionalProperties":True})}, feature_subset)}
+    paths["/ogc/features/collections"] = {"get": operation("ogcFeaturesCollections", "List published vector collections", [param("offset", "query", INTEGER, "Zero-based collection offset; default 0."), param("limit", "query", {"type":"integer", "minimum":1}, "Page size bounded by profile.max_list_items. Responses include self/next links and generation.")], {"200": schema_response("Published vector collection page.", {"type":"object", "additionalProperties":True})}, feature_subset)}
     paths["/ogc/features/collections/{id}"] = {"get": operation("ogcFeaturesCollection", "Read vector collection metadata", [feature_collection_id], {"200": schema_response("Collection metadata.", {"type":"object", "additionalProperties":True})}, feature_subset)}
     feature_query = [feature_id, param("bbox", "query", STRING, "Four finite ordered CRS84 coordinates."), param("offset", "query", INTEGER, "Zero-based source-order offset; cannot accompany cursor."), param("limit", "query", {"type":"integer", "minimum":1}, "Bounded page size."), param("cursor", "query", STRING, "Opaque authenticated v2 token returned by rel=next; must be the only query parameter."),param("datetime","query",STRING,"RFC3339 instant or ordered interval; open endpoints use '..'. Timeless records match valid selections."),param("ids","query",STRING,"Comma-separated typed IDs: n followed by integer, or s followed by UTF-8 hex.")]
     paths["/ogc/features/collections/{id}/items"] = {"get": operation("ogcFeaturesItems", "Query a published vector collection as GeoJSON", feature_query, {"200": schema_response("GeoJSON FeatureCollection with exact numberMatched.", {"type":"object", "additionalProperties":True}, "application/geo+json"), "410": error_response("Snapshot expired, token invalid, or server restarted; restart the query.")}, feature_subset)}
@@ -333,6 +335,7 @@ def build():
         "post": wfs_post,
     }
     ws_subset = "One-map WebSocket protocol 1. No URL query. Hello precedes init; init/update/retry use ASCII request IDs up to 128 bytes and atomic complete view/variant/playback/output groups. Variant is {id:'default'}. Output supports png or jpeg (explicit jpeg_quality 1-100), default 30 fps and profile ceiling. Accepted controls receive ack in receive order; superseded unstarted frames are discarded, so each ack does not promise a frame. One pending render and one serial writer bound backpressure; a started frame metadata/image pair completes before any later control/event. Metadata carries frame_id, control revision, resource render_revision, time, content_type and bytes. Playing uses a monotonic speed-scaled clock; paused updates redraw. Refresh emits resource-changed and redraws paused state; unpublish finishes any started pair then emits resource-unpublished and closes. Render failure suspends automatic frames until valid update/retry succeeds. Animation work bypasses HTTP caches. Init and each send have operation deadlines; timeout closes. Reconnect is client-owned with complete init against current resources."
+    ws_subset += " Independent profile.max_websocket_sessions admission applies for the entire connection; full capacity returns 503. Session buffers retain memory reservations, growing by outgoing image high-water mark. Inbound control frames/messages are limited to 64 KiB; outgoing images use max_image_bytes. Ping runs every websocket_idle_timeout_ms / 3; only received messages/Pong reset the idle timer, and idle expiry sends Close. Missing profile fields default to 64 sessions and 120000 ms idle (minimum 100 ms)."
     paths["/ws/maps/{id}"] = {"get": operation("websocketMap", "Upgrade to the tested WebSocket map subset", [param("id", "path", RESOURCE_ID, "Published map identity bound to this connection.", True)], {"101": {"description":"WebSocket upgrade; hello is sent first, followed by ack/frame pairs after valid controls."}}, ws_subset)}
     for path in ["/wms", "/wmts", "/wfs"]:
         for op in paths[path].values():

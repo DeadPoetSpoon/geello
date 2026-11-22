@@ -101,6 +101,39 @@ fn fgb_companions_restore_full_source_order_and_native_queries() {
         3
     );
 }
+
+#[test]
+fn spatial_exemptions_keep_offscreen_animation_targets_and_source_order() {
+    let ctx = context();
+    let directory = tempfile::tempdir().unwrap();
+    let snapshot = vector(&ctx);
+    let store = DerivedVector::build(directory.path(), &snapshot, limits(), &ctx).unwrap();
+    let query = VectorQuery {
+        spatial: Some((
+            Bounds {
+                min_x: -1.,
+                min_y: -1.,
+                max_x: 1.,
+                max_y: 1.,
+            },
+            SpatialMatch::BoundingBoxCandidates,
+        )),
+        ..VectorQuery::default()
+    };
+    let baseline = ctx.live_bytes();
+    {
+        let mut cursor = store
+            .query_with_spatial_exemptions(query, &[FeatureId::U64(u64::MAX)], &ctx)
+            .unwrap();
+        let first = cursor.next_batch(1, 1 << 20, &ctx).unwrap().unwrap();
+        assert_eq!(first.features[0].source_ordinal, 0);
+        assert_eq!(first.features[0].id, Some(FeatureId::U64(u64::MAX)));
+        let second = cursor.next_batch(1, 1 << 20, &ctx).unwrap().unwrap();
+        assert_eq!(second.features[0].source_ordinal, 3);
+        assert!(cursor.next_batch(1, 1 << 20, &ctx).unwrap().is_none());
+    }
+    assert_eq!(ctx.live_bytes(), baseline);
+}
 #[test]
 fn derived_corruption_and_disk_exhaustion_do_not_replace_a_complete_store() {
     let ctx = context();

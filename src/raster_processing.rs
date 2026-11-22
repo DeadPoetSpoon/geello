@@ -294,8 +294,22 @@ pub fn resample(
         )
         .ok_or(GeelloError::SizeOverflow)?,
     )?;
-    let mut selections = vec![None; n];
-    let mut output: Vec<Vec<f64>> = block.bands.iter().map(|_| vec![0.; n]).collect();
+    let mut selections = if method == Resampling::Nearest {
+        vec![None; n]
+    } else {
+        vec![]
+    };
+    let mut output: Vec<Vec<f64>> = block
+        .bands
+        .iter()
+        .map(|_| {
+            if method == Resampling::Nearest {
+                vec![]
+            } else {
+                vec![0.; n]
+            }
+        })
+        .collect();
     let mut masks: Vec<Vec<bool>> = block.bands.iter().map(|_| vec![false; n]).collect();
     let mut alpha = vec![0f32; n];
     let _scratch = context.reserve(
@@ -306,6 +320,9 @@ pub fn resample(
             .ok_or(GeelloError::SizeOverflow)?,
     )?;
     let source_pixel = pixel_mapper(&block.grid, &grid, &target_to_source);
+    let mut sums = vec![0.; block.bands.len()];
+    let mut band_weights = vec![0.; block.bands.len()];
+    let mut band_alpha = vec![0.; block.bands.len()];
     for y in 0..height {
         for x in 0..width {
             context.checkpoint(1)?;
@@ -319,11 +336,34 @@ pub fn resample(
                     Err(error) => return Err(error),
                 }
             };
+            if method == Resampling::Nearest {
+                let source_x = p[0].floor() as i64;
+                let source_y = p[1].floor() as i64;
+                if source_x >= 0
+                    && source_y >= 0
+                    && source_x < block.width as i64
+                    && source_y < block.height as i64
+                {
+                    context.checkpoint(1)?;
+                    let index = (source_y * block.width as i64 + source_x) as usize;
+                    selections[out] = Some(index);
+                    let mut any_valid = false;
+                    for (band_index, band) in block.bands.iter().enumerate() {
+                        let valid = valid_sample(band, index);
+                        masks[band_index][out] = valid;
+                        any_valid |= valid;
+                    }
+                    if any_valid {
+                        alpha[out] = block.alpha.as_ref().map_or(1., |values| values[index]);
+                    }
+                }
+                continue;
+            }
+            sums.fill(0.);
+            band_weights.fill(0.);
+            band_alpha.fill(0.);
             let mut common_weight = 0.;
             let mut alpha_sum = 0.;
-            let mut sums = vec![0.; block.bands.len()];
-            let mut band_weights = vec![0.; block.bands.len()];
-            let mut band_alpha = vec![0.; block.bands.len()];
             // Stream overlaps: a single output cell can cover the entire source,
             // so retaining a list of source weights would be unbounded scratch.
             let mut add = |sx: i64, sy: i64, w: f64| -> Result<(), GeelloError> {
@@ -335,22 +375,15 @@ pub fn resample(
                     && w > 0.
                 {
                     let i = (sy * block.width as i64 + sx) as usize;
-                    if method == Resampling::Nearest {
-                        selections[out] = Some(i);
-                    }
                     let a = block.alpha.as_ref().map_or(1., |a| a[i] as f64);
                     let mut any = false;
-                    for (j, band) in block.bands.iter().enumerate() {
-                        let value = if method == Resampling::Nearest {
-                            valid_sample(band, i).then_some(0.)
-                        } else {
-                            straight_value(block, j, i)
-                        };
+                    for band_index in 0..block.bands.len() {
+                        let value = straight_value(block, band_index, i);
                         if let Some(value) = value {
                             any = true;
-                            band_weights[j] += w;
-                            band_alpha[j] += w * a;
-                            sums[j] += value * w * a;
+                            band_weights[band_index] += w;
+                            band_alpha[band_index] += w * a;
+                            sums[band_index] += value * w * a;
                         }
                     }
                     if any {
@@ -361,7 +394,7 @@ pub fn resample(
                 Ok(())
             };
             match method {
-                Resampling::Nearest => add(p[0].floor() as i64, p[1].floor() as i64, 1.)?,
+                Resampling::Nearest => unreachable!(),
                 Resampling::Bilinear => {
                     let px = p[0] - 0.5;
                     let py = p[1] - 0.5;

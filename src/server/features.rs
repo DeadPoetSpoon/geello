@@ -1,4 +1,5 @@
 //! OGC API Features core-shaped discovery and GeoJSON output subset.
+use super::http_extract::CheckedQuery as Query;
 use super::{api, *};
 use crate::{Feature, FeatureId};
 use axum::{Router, extract::State, response::Response, routing::get};
@@ -42,15 +43,45 @@ async fn conformance(State(s): State<Arc<ServerState>>) -> Result<Response> {
 fn base(s: &ServerState) -> String {
     s.config.public_base_url.trim_end_matches('/').to_owned()
 }
-async fn collections(State(s): State<Arc<ServerState>>) -> Result<Response> {
-    let (_generation, records, _) = s
-        .catalog
-        .public_datasets(0, s.config.profile.max_list_items)?;
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CollectionsQuery {
+    offset: Option<usize>,
+    limit: Option<usize>,
+}
+async fn collections(
+    State(s): State<Arc<ServerState>>,
+    Query(query): Query<CollectionsQuery>,
+) -> Result<Response> {
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(s.config.profile.max_list_items);
+    let (generation, records, more) = s.catalog.public_datasets(offset, limit)?;
     let values = records.iter().map(|r| serde_json::json!({"id":r.key.id,"title":r.key.id,"itemType":"feature","crs":["http://www.opengis.net/def/crs/OGC/1.3/CRS84"],"links":[{"href":format!("{}/ogc/features/collections/{}",base(&s),r.key.id),"rel":"self"},{"href":format!("{}/ogc/features/collections/{}/items",base(&s),r.key.id),"rel":"items"}]})).collect::<Vec<_>>();
     json(
         &s,
-        &serde_json::json!({"collections":values,"links":[{"href":format!("{}/ogc/features/collections",base(&s)),"rel":"self"}]}),
+        &serde_json::json!({"collections":values,"links":collection_links(&s, offset, limit, records.len(), more)?,"x-geello-generation":generation}),
     )
+}
+fn collection_links(
+    state: &ServerState,
+    offset: usize,
+    limit: usize,
+    count: usize,
+    more: bool,
+) -> Result<Vec<serde_json::Value>> {
+    let root = format!("{}/ogc/features/collections", base(state));
+    let mut links = vec![
+        serde_json::json!({"href":format!("{root}?offset={offset}&limit={limit}"),"rel":"self"}),
+    ];
+    if more {
+        let next = offset
+            .checked_add(count)
+            .ok_or(crate::GeelloError::SizeOverflow)?;
+        links.push(
+            serde_json::json!({"href":format!("{root}?offset={next}&limit={limit}"),"rel":"next"}),
+        );
+    }
+    Ok(links)
 }
 fn dataset(s: &ServerState, id: &str) -> Result<crate::Accounted<ResourceRecord>> {
     let r = s

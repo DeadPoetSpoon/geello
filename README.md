@@ -71,6 +71,7 @@ It manages datasets, fonts, styles, maps and animations, tracks preparation
 tasks and previews published maps with WMTS, OGC Maps or WMS.
 See the [design and implementation status](docs/admin-ui-design.md) and
 [administration deployment guide](docs/admin-ui.md).
+See also the [performance optimization implementation notes](docs/performance-optimizations.md).
 
 Build with `cargo build --release --features server-full` and start with
 `./target/release/geello --config examples/open-data/server.toml` (or your existing

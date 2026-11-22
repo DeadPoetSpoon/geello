@@ -6,6 +6,8 @@ import { resolve } from "node:path";
 const base = new URL(process.env.GEELLO_ADMIN_BASE || "http://127.0.0.1:3000/");
 const debugURL = process.env.CHROME_DEBUG_URL || "http://127.0.0.1:9223";
 const output = resolve(process.env.GEELLO_ADMIN_RESULTS || "assets/test/admin-ui/results");
+const deviceScaleFactor = Number(process.env.GEELLO_ADMIN_DEVICE_SCALE_FACTOR || 1);
+assert.ok(Number.isFinite(deviceScaleFactor) && deviceScaleFactor > 0);
 await mkdir(output, { recursive: true });
 const tabs = await (await fetch(`${debugURL}/json`)).json();
 const tab = tabs.find((candidate) => candidate.type === "page");
@@ -109,7 +111,7 @@ try {
   await send("Page.enable");
   await send("Runtime.enable");
   await send("Network.enable");
-  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor, mobile: false });
   await send("Page.navigate", { url: new URL("admin/", base).href });
   await until(() => document.querySelector("main h1")?.textContent === "服务概览" && document.querySelector(".metrics"));
   const readiness = await (await fetch(new URL("health/ready", base))).json();
@@ -185,6 +187,27 @@ try {
   });
   await until(() => document.querySelector(".map-note")?.textContent.includes("正式服务图像已加载"));
   checks.push("OGC Maps image preview");
+  const markerPixels = () => {
+    const canvas = document.querySelector(".map canvas");
+    if (!canvas) return;
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let minimum = canvas.width;
+    let maximum = -1;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      if (Math.abs(pixels[offset] - 8) > 5 || Math.abs(pixels[offset + 1] - 127) > 5 || Math.abs(pixels[offset + 2] - 131) > 5 || pixels[offset + 3] < 200) continue;
+      const column = offset / 4 % canvas.width;
+      minimum = Math.min(minimum, column);
+      maximum = Math.max(maximum, column);
+    }
+    return maximum >= minimum ? maximum - minimum + 1 : undefined;
+  };
+  await until(markerPixels);
+  const markerWidth = await evaluate(markerPixels);
+  const expectedMarkerWidth = 12 * deviceScaleFactor;
+  assert.ok(Math.abs(markerWidth - expectedMarkerWidth) <= 3 * deviceScaleFactor, `Image placement at DPR=${deviceScaleFactor}: marker width ${markerWidth}, expected ${expectedMarkerWidth}`);
+  const imageRequest = new URL(requests.findLast((entry) => entry.url.includes("/map?")).url);
+  assert.equal(Number(imageRequest.searchParams.get("geello_pixel_ratio")), Math.min(2, deviceScaleFactor));
+  checks.push(`OGC Maps DPR=${deviceScaleFactor}: native marker width ${markerWidth}px without placement stretching`);
   await evaluate(() => {
     const controls = document.querySelectorAll(".preview-toolbar select");
     controls[0].value = "wms"; controls[1].value = "OGC:CRS84";
@@ -218,9 +241,11 @@ try {
   for (const recovery of ["定位范围", "全图"]) {
     await evaluate(() => {
       const originalFetch = window.fetch;
+      window.__geelloRestoreFetch = () => { window.fetch = originalFetch; };
+      window.__geelloInjectedFailures = 0;
       window.fetch = function (url, options) {
         if (/\/map\?/.test(String(url))) {
-          window.fetch = originalFetch;
+          window.__geelloInjectedFailures += 1;
           return Promise.resolve(new Response(JSON.stringify({ detail: "Injected preview failure" }), { status: 422, headers: { "Content-Type": "application/problem+json" } }));
         }
         return originalFetch.call(this, url, options);
@@ -230,8 +255,11 @@ try {
       protocol.dispatchEvent(new Event("change"));
     });
     await until(() => document.querySelector("main")?.textContent.includes("Injected preview failure"));
+    const injectedFailures = await evaluate(() => window.__geelloInjectedFailures);
     await new Promise((done) => setTimeout(done, 600));
     assert.ok(await evaluate(() => document.querySelector(".map-note")?.textContent.includes("预览请求失败")), "Failed preview must not automatically retry");
+    assert.equal(await evaluate(() => window.__geelloInjectedFailures), injectedFailures);
+    await evaluate(() => { window.__geelloRestoreFetch(); delete window.__geelloRestoreFetch; delete window.__geelloInjectedFailures; });
     if (recovery === "定位范围") {
       await evaluate(() => {
         const extent = [...document.querySelectorAll("main input")].find((candidate) => candidate.placeholder === "minX,minY,maxX,maxY");
