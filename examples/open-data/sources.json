@@ -1,0 +1,55 @@
+{
+  "license": "Public domain for Natural Earth; see the landsat entry for its CC0 dedication",
+  "terms": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "sources": [
+    {
+      "id": "countries",
+      "file": "ne_110m_admin_0_countries.zip",
+      "url": "https://naturalearth.s3.amazonaws.com/110m_cultural/ne_110m_admin_0_countries.zip",
+      "page": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/",
+      "sha256": "0f243aeac8ac6cf26f0417285b0bd33ac47f1b5bdb719fd3e0df37d03ea37110",
+      "features": 177
+    },
+    {
+      "id": "cities",
+      "file": "ne_110m_populated_places.zip",
+      "url": "https://naturalearth.s3.amazonaws.com/110m_cultural/ne_110m_populated_places.zip",
+      "page": "https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-populated-places/",
+      "sha256": "29b901a2ae0a745741c0642123480e31101ed723086c4d0cae657a8d722c3b28",
+      "features": 243
+    },
+    {
+      "id": "rivers",
+      "file": "ne_110m_rivers_lake_centerlines.zip",
+      "url": "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_rivers_lake_centerlines.zip",
+      "page": "https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-rivers-lake-centerlines/",
+      "sha256": "1a010128c0801de738307eda7fd0ad3533a5985bc7e223c6640bdd749495f655",
+      "features": 13
+    },
+    {
+      "id": "raster",
+      "file": "50-natural-earth-1-downsampled.png",
+      "url": "https://api.github.com/repos/SciTools/cartopy/git/blobs/2a67fc47372f10ae41496ffd2cabf1548f01e99a",
+      "transport": "github-blob",
+      "page": "https://www.naturalearthdata.com/downloads/50m-raster-data/50m-natural-earth-1/",
+      "provenance": "https://github.com/SciTools/cartopy/blob/main/lib/cartopy/data/raster/natural_earth/images.json",
+      "provenance_git_blob": "104deb9ab693137fc675600a3bf80c86557c26bf",
+      "sha256": "49c66a4db7f5a5cfd12bd344850e8c6e433ed1a4afad73f44e6e1a9aa13fa726",
+      "bounds": [-180, -90, 180, 90],
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "landsat",
+      "file": "RGB.byte.tif",
+      "url": "https://api.github.com/repos/rasterio/rasterio/git/blobs/fa1c0317f5126e23a96d9045cf8558eefd19235e",
+      "transport": "github-raw-blob",
+      "page": "https://github.com/rasterio/rasterio/blob/main/tests/data/RGB.byte.tif",
+      "provenance": "https://api.github.com/repos/rasterio/rasterio/git/blobs/0bb1a39f8e3c8155d9c7d2a18c1c5317a9835039",
+      "license": "CC0 1.0 Universal Public Domain Dedication, as stated in Rasterio tests/data/README.rst",
+      "sha256": "d7cbe932c7ed74a627706a9e9df99f706df3e5abc7d45a49e9d00677a6b09eb4",
+      "crs": "EPSG:32618",
+      "bounds": [101985, 2611485, 339315, 2826915],
+      "dimensions": [791, 718]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+schema_version = 1
+id = "open:borders"
+
+[[rules]]
+id = "borders"
+[[rules.symbols]]
+id = "border"
+kind = "line"
+rings = "all"
+width = { value = 1.0, unit = "px" }
+color = "#f8f5df"

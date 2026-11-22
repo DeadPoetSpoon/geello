@@ -143,6 +143,7 @@ pub struct ServerState {
     /// hits and makes one request own the neighbor fan-out.
     warm_groups: Mutex<std::collections::BTreeSet<String>>,
     warm_slots: Arc<tokio::sync::Semaphore>,
+    warm_workers: Arc<tokio::sync::Semaphore>,
     cache_hits: std::sync::atomic::AtomicU64,
     warmed: std::sync::atomic::AtomicU64,
     preparation_commit: Mutex<()>,
@@ -340,6 +341,7 @@ impl ServerState {
         let warm_slots = Arc::new(tokio::sync::Semaphore::new(
             p.active_background + p.queued_per_class,
         ));
+        let warm_workers = Arc::new(tokio::sync::Semaphore::new(p.active_background));
         let feature_cursors =
             super::features::CursorStore::new(&config.profile, memory.clone(), activities.clone());
         Ok(Arc::new(Self {
@@ -357,6 +359,7 @@ impl ServerState {
             encode_flights: Mutex::new(BTreeMap::new()),
             warm_groups: Mutex::new(std::collections::BTreeSet::new()),
             warm_slots,
+            warm_workers,
             cache_hits: std::sync::atomic::AtomicU64::new(0),
             warmed: std::sync::atomic::AtomicU64::new(0),
             preparation_commit: Mutex::new(()),
@@ -1545,6 +1548,9 @@ impl ServerState {
                     let revision = revision.clone();
                     let versions = worker_versions.clone();
                     async move {
+                        let Ok(_worker) = state.warm_workers.acquire().await else {
+                            return;
+                        };
                         if state.activities.is_closed() || !state.versions_current(&versions) {
                             return;
                         }
@@ -1597,7 +1603,7 @@ impl ServerState {
             &self.scheduler.context(),
         )?;
         Ok(super::catalog::identity(&[
-            b"geello-raster-overview-v6",
+            b"geello-render-v7",
             revision.as_bytes(),
             self.backend_name.as_bytes(),
             &bytes,
@@ -2043,8 +2049,18 @@ impl ServerState {
                 }
                 (flight.result.subscribe(), flight.foreground.clone())
             } else {
-                if flights.len()
-                    >= self.config.profile.queued_per_class + self.config.profile.active_http
+                let foreground = *priority.borrow();
+                let limit = self.config.profile.queued_per_class
+                    + if foreground {
+                        self.config.profile.active_http
+                    } else {
+                        self.config.profile.active_background
+                    };
+                if flights
+                    .values()
+                    .filter(|flight| *flight.foreground.borrow() == foreground)
+                    .count()
+                    >= limit
                 {
                     return Err(ServerError::new(
                         503,
@@ -2054,7 +2070,7 @@ impl ServerState {
                 }
                 let activity = self.activities.enter()?;
                 let (tx, rx) = watch::channel(None);
-                let (area_priority, render_priority) = watch::channel(*priority.borrow());
+                let (area_priority, render_priority) = watch::channel(foreground);
                 flights.insert(
                     key.clone(),
                     PixelFlight {
@@ -2946,6 +2962,61 @@ mod tests {
         warm_idle(&state).await;
         assert_eq!(state.execution_counts(), (6, 30));
         state.shutdown().await.unwrap();
+    }
+    #[tokio::test]
+    async fn wmts_multiple_windows_share_background_capacity() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        let (release, tasks) = occupy_background(&state).await;
+        let grid = super::super::tile_grid::TileGrid::WebMercatorQuad;
+        for time in 0..6 {
+            state
+                .render_protocol_tile_at("test:warm", grid, [4, 6, 6], f64::from(time))
+                .await
+                .unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if state.encode_flights.lock().unwrap().len()
+                    >= state.config.profile.active_background
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let background_tiles = state.encode_flights.lock().unwrap().len();
+        let groups = state.warm_groups.lock().unwrap().len();
+        release.send_replace(true);
+        for task in tasks {
+            task.await.unwrap().unwrap();
+        }
+        warm_idle(&state).await;
+        state.shutdown().await.unwrap();
+        assert_eq!(groups, 6);
+        assert_eq!(background_tiles, state.config.profile.active_background);
+    }
+    #[tokio::test]
+    async fn wmts_background_areas_do_not_consume_foreground_capacity() {
+        let root = tempfile::tempdir().unwrap();
+        let state = warm_test_state(root.path(), 4 << 20).await;
+        let capacity =
+            state.config.profile.active_background + state.config.profile.queued_per_class;
+        for index in 0..capacity {
+            state.render_flights.lock().unwrap().insert(
+                format!("background-{index}"),
+                PixelFlight {
+                    result: watch::channel(None).0,
+                    foreground: watch::channel(false).0,
+                },
+            );
+        }
+        let response = state.render_tile("test:warm", 4, 6, 6).await;
+        state.render_flights.lock().unwrap().clear();
+        state.shutdown().await.unwrap();
+        assert!(response.is_ok(), "{:?}", response.err());
     }
     #[tokio::test]
     async fn wmts_failed_foreground_does_not_warm_or_cache() {

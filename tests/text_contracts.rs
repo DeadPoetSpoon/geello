@@ -237,6 +237,80 @@ fn wrapping_collision_polygon_holes_and_scene_ownership() {
 }
 
 #[test]
+fn viewport_culling_does_not_select_another_point_label_position() {
+    let ctx = context();
+    let composition = MapComposition {
+        items: vec![DrawItem::Label(label(
+            "北京 Beijing",
+            Point::new(513., 128.).into(),
+            LabelPlacement::Point,
+        ))],
+        background: None,
+    };
+    let prepared = prepare_scene(&composition, &view(), &ctx).unwrap();
+    assert_eq!(prepared.summary().command_count, 0);
+    drop(prepared);
+    assert_eq!(ctx.live_bytes(), 0);
+}
+
+#[cfg(feature = "render-cpu")]
+#[test]
+fn adjacent_buffered_tiles_match_a_single_label_layout() {
+    for padding in [0, 32, 128] {
+        let edge = 256. + f64::from(padding) - 2.;
+        for position in [[edge, 128.], [128., 512. - edge], [edge, 512. - edge]] {
+            let ctx = context();
+            let composition = MapComposition {
+                items: vec![DrawItem::Label(label(
+                    "北京 Beijing 上海 Shanghai",
+                    Point::new(position[0], position[1]).into(),
+                    LabelPlacement::Point,
+                ))],
+                background: None,
+            };
+            let mut full_view = view();
+            full_view.bounds.max_y = 512.;
+            full_view.height = 512;
+            let prepared = prepare_scene(&composition, &full_view, &ctx).unwrap();
+            let mut renderer = CpuRenderer::new(1);
+            let full = renderer.render(&prepared, &ctx).unwrap();
+            assert!(full.pixels().chunks_exact(4).any(|pixel| pixel[3] > 0));
+            for row in 0..2 {
+                for column in 0..2 {
+                    let padding_pixels = f64::from(padding);
+                    let tile_view = View {
+                        bounds: Bounds {
+                            min_x: f64::from(column * 256) - padding_pixels,
+                            max_x: f64::from((column + 1) * 256) + padding_pixels,
+                            min_y: 512. - f64::from((row + 1) * 256) - padding_pixels,
+                            max_y: 512. - f64::from(row * 256) + padding_pixels,
+                        },
+                        width: 256 + 2 * padding,
+                        height: 256 + 2 * padding,
+                        ..full_view.clone()
+                    };
+                    let prepared = prepare_scene(&composition, &tile_view, &ctx).unwrap();
+                    let tile = renderer.render(&prepared, &ctx).unwrap();
+                    for pixel_row in 0..256 {
+                        let tile_start =
+                            (((pixel_row + padding) * tile.width() + padding) * 4) as usize;
+                        let full_start =
+                            (((row * 256 + pixel_row) * full.width() + column * 256) * 4) as usize;
+                        assert!(
+                            tile.pixels()[tile_start..tile_start + 256 * 4]
+                                .iter()
+                                .zip(&full.pixels()[full_start..full_start + 256 * 4])
+                                .all(|(tile, full)| tile.abs_diff(*full) <= 1),
+                            "padding={padding}, label={position:?}, tile=({column},{row}), row={pixel_row}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn curved_repeat_midpoint_upright_and_reject_wrapping() {
     let ctx = context();
     let line = LineString::from(vec![(10., 128.), (502., 128.)]);

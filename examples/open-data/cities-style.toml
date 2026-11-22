@@ -1,0 +1,20 @@
+schema_version = 1
+id = "open:cities"
+
+[[rules]]
+id = "cities"
+[[rules.symbols]]
+id = "city"
+kind = "point"
+size = { value = 5.0, unit = "px" }
+fill = "#b62921"
+[[rules.symbols]]
+id = "name"
+kind = "label"
+field = "/NAMEASCII"
+fonts = [{ resource = "open:latin", face_index = 0 }]
+size = { value = 13.0, unit = "px" }
+color = "#17212b"
+language = "en"
+placement = "point"
+priority = 1.0

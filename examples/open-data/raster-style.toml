@@ -1,0 +1,12 @@
+schema_version = 1
+id = "open:raster"
+
+[[rules]]
+id = "relief"
+[[rules.symbols]]
+id = "rgb"
+kind = "raster"
+mode = "rgb"
+bands = [1, 2, 3]
+range = { kind = "explicit", min = 0, max = 255 }
+resampling = { enlarge = "nearest", reduce = "nearest" }

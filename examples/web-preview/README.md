@@ -35,6 +35,14 @@ unavailable service, unsupported CRS and render errors have explicit messages.
 This page does not upload or publish resources. To populate an empty server,
 follow [the protocol demo](../m4-protocols/README.md).
 
+For downloadable public-domain vector datasets, shaded relief and a real Landsat
+GeoTIFF, see [the open-data demo](../open-data/README.md). Run
+`python -B tools/publish_open_data_demo.py --require-gpu --preview http://127.0.0.1:8080`
+against a running GPU server with the sample's resource budgets. Sources and
+checksums are recorded; downloads stay under ignored `assets/test/open-data/`.
+The preview's default `open:overlay` combines this relief with countries, rivers
+and city labels; existing map-specific query URLs remain available.
+
 To publish the owner-provided `assets/test/jd.tif` imagery, start Geello using
 the experimental configuration above, then run:
 
@@ -93,6 +101,17 @@ API routes and does not host this independent example. Upstream JSON links
 are preserved; the viewer maps discovery links through its proxy.
 The proxy's default response timeout is 1800 seconds to accommodate the
 first render of large imagery; override it with `--timeout SECONDS`.
+The proxy forwards at most two upstream requests at a time and queues the rest,
+so an eight-tile browser burst does not exhaust the development profile's five
+HTTP admission slots. This limit is shared across preview clients, including
+requests still running upstream after a browser cancels them. Override it with
+`--upstream-concurrency COUNT` only when the upstream profile has enough capacity;
+keep headroom for discovery and other clients. Queue waits use the same timeout.
+
+Label candidates are selected and collision-tested before viewport culling, so
+adjacent tiles retain the same placement even when a preferred label lies outside
+one tile's padded view. Only the selected label is clipped; an offscreen label
+does not trigger an alternative placement that would duplicate it across a seam.
 
 ## Imagery and Shapefile outlines, with WFS
 

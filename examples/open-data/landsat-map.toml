@@ -1,0 +1,11 @@
+schema_version = 1
+id = "open:landsat"
+title = "公开测试 · Landsat 7 ETM 真实影像"
+output_crs = ["OGC:CRS84", "EPSG:3857", "EPSG:32618"]
+background = "#edf3f1"
+tiles = { matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"], min_zoom = 0, max_zoom = 12 }
+
+[[items]]
+id = "landsat"
+dataset = "open:landsat"
+style = "open:raster"

@@ -1,0 +1,23 @@
+schema_version = 1
+id = "open:overlay"
+title = "公开测试 · 栅格 + 国界 + 河流 + 城市注记"
+output_crs = ["OGC:CRS84", "EPSG:3857"]
+background = "#b9d8ef"
+tiles = { matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"], min_zoom = 0, max_zoom = 8 }
+
+[[items]]
+id = "relief"
+dataset = "open:raster"
+style = "open:raster"
+[[items]]
+id = "borders"
+dataset = "open:countries"
+style = "open:borders"
+[[items]]
+id = "rivers"
+dataset = "open:rivers"
+style = "open:rivers"
+[[items]]
+id = "cities"
+dataset = "open:cities"
+style = "open:cities"

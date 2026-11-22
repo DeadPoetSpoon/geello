@@ -4,6 +4,7 @@ import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+from threading import BoundedSemaphore
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import Request, urlopen
@@ -18,9 +19,14 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--timeout", type=float, default=1800,
                         help="Upstream response timeout in seconds (default: 1800)")
+    parser.add_argument("--upstream-concurrency", type=int, default=2,
+                        help="Maximum concurrent upstream requests (default: 2)")
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
+    if args.upstream_concurrency <= 0:
+        parser.error("--upstream-concurrency must be positive")
+    upstream_slots = BoundedSemaphore(args.upstream_concurrency)
     upstream = args.upstream.rstrip("/")
     parsed = urlsplit(upstream)
     if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.query or parsed.fragment:
@@ -63,6 +69,14 @@ def main():
             if not allowed or "\\" in decoded or any(part in (".", "..") for part in decoded.split("/")):
                 return self.reply(404, b"Not found", "text/plain")
             target = upstream + path + ("?" + route.query if route.query else "")
+            if not upstream_slots.acquire(timeout=args.timeout):
+                return self.reply(504, b"Preview upstream queue timed out", "text/plain")
+            try:
+                self.proxy(target)
+            finally:
+                upstream_slots.release()
+
+        def proxy(self, target):
             try:
                 with urlopen(Request(target, headers={"Accept": self.headers.get("Accept", "*/*")}), timeout=args.timeout) as response:
                     body = response.read(MAX_RESPONSE + 1)

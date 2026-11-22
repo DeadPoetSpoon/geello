@@ -1,0 +1,10 @@
+schema_version = 1
+id = "open:rivers"
+
+[[rules]]
+id = "rivers"
+[[rules.symbols]]
+id = "river"
+kind = "line"
+width = { value = 1.5, unit = "px" }
+color = "#268ccc"

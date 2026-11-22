@@ -100,4 +100,44 @@ exactly five PNGs, taking encodes from 25 to 30; region renders stayed at 4.
 Health reported GPU and zero cache failures. Raw result:
 `target/wmts-centered-validation.json`.
 
-Current automated suite: 95 passed, 4 opt-in checks ignored.
+The centered-window validation above predates the capacity regression below.
+
+## Continuous browsing capacity regression
+
+Rapidly replacing WMTS views exposed a gap in the earlier single-window and
+batch checks. Each centered 5×5 window independently started
+`active_background` tiles. With multiple windows alive, the resulting work
+could fill the shared area-render singleflight limit before the scheduler's
+separate foreground/background queues were reached. Foreground requests then
+returned HTTP 503 (`Area render capacity exhausted`). The WMTS XML error
+response hid that detail behind `Request failed`.
+
+All windows now share one tile-worker semaphore of `active_background` permits.
+Waiting windows do not register encoding or area flights until they acquire a
+permit. Area-flight admission also counts foreground and background work
+separately, matching encoding-flight admission. Existing cache joins, foreground
+promotion, resource replacement and shutdown behavior remain unchanged.
+
+Regression tests hold every background scheduler worker busy while six fresh
+windows are submitted, and verify that only the global background tile budget
+is registered. A separate test fills background area admission and verifies
+that an unrelated foreground tile still succeeds. These limits prevent
+background prewarming from consuming foreground admission; they do not promise
+success under arbitrary foreground overload or exhausted memory.
+
+Local GPU verification on November 22, 2026 used `open:overlay` in headless
+Chromium at 1920×1080. Eight integer animation-time updates, 1.1 seconds apart,
+created fresh WMTS views without reusing completed time-keyed responses. The
+old service returned eight HTTP 503 responses out of 55 service responses and
+left the viewer in its failed state. Repeating the same sequence after the fix
+produced 60 service responses with zero HTTP or JavaScript errors; the viewer
+finished with 28 loaded WMTS tiles. Readiness still reported `backend=gpu` and
+zero cache failures. This is a reproduction check, not a throughput benchmark.
+
+The library, server and HTTP contract suite passed 87 tests, with four opt-in
+tests ignored. The open-data live check also passed all 31 checks through the
+running GPU server and preview proxy. Run it with:
+
+```text
+python -B tools/publish_open_data_demo.py --verify-only --require-gpu --preview http://127.0.0.1:8080
+```

@@ -530,13 +530,6 @@ pub(crate) fn layout(
                             continue;
                         }
                     }
-                    if bounds[2] < 0.
-                        || bounds[3] < 0.
-                        || bounds[0] > view.width as f64
-                        || bounds[1] > view.height as f64
-                    {
-                        continue;
-                    }
                     holds.push(ctx.reserve(256)?);
                     ctx.checkpoint(obstacles.len() as u64)?;
                     if !label.allow_overlap
@@ -580,6 +573,12 @@ pub(crate) fn layout(
             accepted.push(candidate);
         }
     }
+    accepted.retain(|candidate| {
+        candidate.bounds[2] >= 0.
+            && candidate.bounds[3] >= 0.
+            && candidate.bounds[0] <= view.width as f64
+            && candidate.bounds[1] <= view.height as f64
+    });
     accepted.sort_by_key(|c| c.order);
     Ok(accepted
         .into_iter()

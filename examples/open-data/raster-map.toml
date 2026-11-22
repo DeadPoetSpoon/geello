@@ -1,0 +1,11 @@
+schema_version = 1
+id = "open:raster"
+title = "公开测试 · Natural Earth 栅格地形底图"
+output_crs = ["OGC:CRS84", "EPSG:3857"]
+background = "#b9d8ef"
+tiles = { matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"], min_zoom = 0, max_zoom = 8 }
+
+[[items]]
+id = "relief"
+dataset = "open:raster"
+style = "open:raster"

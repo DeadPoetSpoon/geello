@@ -1,6 +1,22 @@
 {
-  "defaultMap": "preview:jd-annotations",
+  "defaultMap": "open:overlay",
   "maps": {
+    "open:vector": {
+      "bounds": [70, 15, 140, 55],
+      "wfsDataset": "open:countries",
+      "baseMap": "open:raster"
+    },
+    "open:raster": {
+      "bounds": [-179, -75, 179, 80]
+    },
+    "open:overlay": {
+      "bounds": [70, 15, 140, 55],
+      "wfsDataset": "open:countries",
+      "baseMap": "open:raster"
+    },
+    "open:landsat": {
+      "bounds": [-79.1, 23.4, -76.4, 25.7]
+    },
     "preview:jd": {
       "bounds": [
         121.56852722167943,

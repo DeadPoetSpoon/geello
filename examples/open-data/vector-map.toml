@@ -1,0 +1,19 @@
+schema_version = 1
+id = "open:vector"
+title = "公开测试 · 国家 / 河流 / 城市注记"
+output_crs = ["OGC:CRS84", "EPSG:3857"]
+background = "#c4e3ed"
+tiles = { matrix_sets = ["WebMercatorQuad", "WorldCRS84Quad"], min_zoom = 0, max_zoom = 8 }
+
+[[items]]
+id = "countries"
+dataset = "open:countries"
+style = "open:countries"
+[[items]]
+id = "rivers"
+dataset = "open:rivers"
+style = "open:rivers"
+[[items]]
+id = "cities"
+dataset = "open:cities"
+style = "open:cities"
