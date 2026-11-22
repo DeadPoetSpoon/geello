@@ -88,8 +88,8 @@ pub trait RasterBlockCache {
 }
 impl DerivedRaster {
     /// Plan against the complete native grid, load only the required window,
-    /// then execute the shared layer-one resampler. Projection failures and
-    /// excessive footprints fail explicitly; source coverage is never guessed.
+    /// then execute the shared layer-one resampler. Undefined projection samples
+    /// are NoData; other projection failures and excessive footprints fail explicitly.
     #[allow(clippy::too_many_arguments)]
     pub fn resample_view(
         &self,

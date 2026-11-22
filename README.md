@@ -64,6 +64,21 @@ alongside the server and open <http://127.0.0.1:8080>. The
 [web preview example](examples/web-preview/README.md) discovers maps and supports
 pan/zoom, OGC Maps/WMS rendering, published CRS selection and animation time.
 
+The integrated administration console is served by Geello itself at
+<http://127.0.0.1:3000/admin/>. It uses handwritten CSS, browser ES modules and
+vendored OpenLayers 10.7.0, without a framework, CDN, Node build or Python proxy.
+It manages datasets, fonts, styles, maps and animations, tracks preparation
+tasks and previews published maps with WMTS, OGC Maps or WMS.
+See the [design and implementation status](docs/admin-ui-design.md) and
+[administration deployment guide](docs/admin-ui.md).
+
+Build with `cargo build --release --features server-full` and start with
+`./target/release/geello --config examples/open-data/server.toml` (or your existing
+server configuration). The configured backend remains authoritative; browser
+OpenLayers does not select the server GPU. Protect **all** `/admin/` paths,
+including assets and `/admin/v1`, with reverse-proxy authentication. Browser
+writes must match the origin configured in `public_base_url`.
+
 ## M1 library example
 
 ```rust
@@ -100,7 +115,8 @@ cargo run --locked --features server-full -- --config examples/server.experiment
 
 The experimental profile binds to loopback and requires the GPU backend.
 Uploads create managed immutable files; local registration retains
-external ownership. Reverse-proxy protection is required for `/admin/v1`.
+external ownership. Reverse-proxy protection is required for `/admin/`, including
+the integrated page, static assets and `/admin/v1`.
 This example retains experimental settings. The development/small profiles and
 benchmark targets have [G-07 owner approval](docs/refactor/18-g07-approved-targets.md);
 performance validation remains specific to each workload, platform and backend.

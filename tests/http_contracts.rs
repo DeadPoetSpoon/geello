@@ -478,6 +478,12 @@ async fn served_openapi_describes_real_routes_schemas_and_configured_proxy_prefi
     );
     check_references(&document, &document);
     let expected = [
+        ("/admin", "get"),
+        ("/admin/", "get"),
+        ("/admin/assets/{file}", "get"),
+        ("/admin/v1/operations", "get"),
+        ("/admin/v1/configurations/{kind}/parse", "post"),
+        ("/admin/v1/configurations/{kind}/serialize", "post"),
         ("/api", "get"),
         ("/api.html", "get"),
         ("/health/ready", "get"),
@@ -486,6 +492,7 @@ async fn served_openapi_describes_real_routes_schemas_and_configured_proxy_prefi
         ("/admin/v1/resources/{kind}/{id}", "get"),
         ("/admin/v1/resources/{kind}/{id}", "delete"),
         ("/admin/v1/resources/{kind}/{id}:unpublish", "post"),
+        ("/admin/v1/resources/{kind}/{id}:publish", "post"),
         ("/admin/v1/resources/{kind}/{id}/content", "put"),
         ("/admin/v1/resources/{kind}/{id}/content", "delete"),
         ("/admin/v1/resources/{kind}/{id}/source", "put"),

@@ -389,6 +389,152 @@ fn projection_known_coordinates_roundtrip_and_source_immutability() {
 }
 
 #[test]
+fn raster_projection_domain_is_nodata_but_other_errors_propagate() {
+    use geello::raster_processing::*;
+    let ctx = context();
+    let block = RasterBlock {
+        width: 2,
+        height: 1,
+        grid: RasterGrid {
+            crs: crs(),
+            affine: [0., 1., 0., 1., 0., -1.],
+            interpretation: PixelInterpretation::Area,
+        },
+        bands: vec![RasterBand {
+            samples: RasterSamples::U8(Arc::from([100, 200])),
+            no_data: None,
+            validity: None,
+            scale: 1.,
+            offset: 0.,
+        }],
+        alpha: None,
+        alpha_association: AlphaAssociation::Straight,
+    };
+    for method in [
+        Resampling::Nearest,
+        Resampling::Bilinear,
+        Resampling::AreaAverage,
+    ] {
+        let partial = |point: [f64; 2]| {
+            if point[0] < 1. {
+                Err(GeelloError::ProjectionDomain("outside test domain".into()))
+            } else {
+                Ok(point)
+            }
+        };
+        let window = sampling_window(&block.grid, 2, 1, &block.grid, 2, 1, method, partial, &ctx)
+            .unwrap()
+            .unwrap();
+        assert_eq!(window.width, 2);
+        let sampled = resample(
+            &block,
+            2,
+            1,
+            block.grid.clone(),
+            RasterKind::Continuous,
+            method,
+            partial,
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(
+            sampled.bands[0].validity.as_deref(),
+            Some([false, true].as_slice())
+        );
+        assert_eq!(sampled.alpha.as_deref(), Some([0., 1.].as_slice()));
+        let outside = |_| Err(GeelloError::ProjectionDomain("outside test domain".into()));
+        assert!(
+            sampling_window(&block.grid, 2, 1, &block.grid, 2, 1, method, outside, &ctx)
+                .unwrap()
+                .is_none()
+        );
+        let sampled = resample(
+            &block,
+            2,
+            1,
+            block.grid.clone(),
+            RasterKind::Continuous,
+            method,
+            outside,
+            &ctx,
+        )
+        .unwrap();
+        assert_eq!(sampled.alpha.as_deref(), Some([0., 0.].as_slice()));
+        for failure in ["grid unavailable", "invalid operation"] {
+            let failed = |_| Err(GeelloError::Projection(failure.into()));
+            assert!(
+                matches!(sampling_window(&block.grid, 2, 1, &block.grid, 2, 1, method, failed, &ctx), Err(GeelloError::Projection(message)) if message == failure)
+            );
+            assert!(
+                matches!(resample(&block, 2, 1, block.grid.clone(), RasterKind::Continuous, method, failed, &ctx), Err(GeelloError::Projection(message)) if message == failure)
+            );
+        }
+    }
+    let partial_cell = |point: [f64; 2]| {
+        if point[0] < 0.75 {
+            Err(GeelloError::ProjectionDomain("edge".into()))
+        } else {
+            Ok(point)
+        }
+    };
+    let sampled = resample(
+        &block,
+        2,
+        1,
+        block.grid.clone(),
+        RasterKind::Continuous,
+        Resampling::AreaAverage,
+        partial_cell,
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        sampled.bands[0].validity.as_deref(),
+        Some([true, true].as_slice())
+    );
+    assert_eq!(sampled.alpha.as_deref(), Some([1., 1.].as_slice()));
+}
+
+#[cfg(feature = "rust-proj")]
+#[test]
+fn utm_projection_domain_stays_strict_for_coordinates_and_vectors() {
+    use geello::projection::RustProjection;
+    let operation = RustProjection::new(
+        crs(),
+        Crs::new("EPSG:32618", CoordinateSpace::Planar).unwrap(),
+    )
+    .unwrap();
+    assert!(operation.transform_xy([-75., 24.]).is_ok());
+    assert!(matches!(
+        operation.transform_xy([15., 0.]),
+        Err(GeelloError::ProjectionDomain(_))
+    ));
+    assert!(matches!(
+        operation.transform_xy([181., 0.]),
+        Err(GeelloError::Projection(_))
+    ));
+    assert!(matches!(
+        operation.transform_xy([f64::NAN, 0.]),
+        Err(GeelloError::Projection(_))
+    ));
+    let batch = VectorBatch {
+        crs: crs(),
+        features: vec![Feature {
+            source_id: None,
+            id: None,
+            geometry: Some(geo_types::Point::new(15., 0.).into()),
+            properties: Properties::new(),
+            source_ordinal: 0,
+            source_ordinates: vec![],
+        }],
+    };
+    assert!(matches!(
+        operation.project_batch(&batch, &context()),
+        Err(GeelloError::ProjectionDomain(_))
+    ));
+}
+
+#[test]
 fn native_raster_nodata_alpha_calibration_and_nearest_integer_precision() {
     use geello::raster_processing::*;
     let ctx = context();

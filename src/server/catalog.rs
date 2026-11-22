@@ -396,14 +396,29 @@ impl Catalog {
         &self,
         offset: usize,
         limit: usize,
-    ) -> Result<(u64, crate::Accounted<Vec<ResourceRecord>>)> {
+        kind: Option<ResourceKind>,
+        query: Option<&str>,
+        published: Option<bool>,
+    ) -> Result<(u64, usize, crate::Accounted<Vec<ResourceRecord>>)> {
         if limit == 0 || limit > self.profile.max_list_items {
             return Err(ServerError::invalid("List limit exceeds profile"));
         }
         let state = self.state.lock().unwrap();
         let mut holds = vec![];
         let mut records = vec![];
-        for record in state.records.values().skip(offset).take(limit) {
+        if query.is_some_and(|query| query.len() > 256) {
+            return Err(ServerError::invalid("Resource query exceeds 256 bytes"));
+        }
+        let query = query.unwrap_or("").to_ascii_lowercase();
+        let matching = || {
+            state.records.values().filter(|record| {
+                kind.is_none_or(|kind| record.key.kind == kind)
+                    && published.is_none_or(|published| record.published == published)
+                    && record.key.id.to_ascii_lowercase().contains(&query)
+            })
+        };
+        let total = matching().count();
+        for record in matching().skip(offset).take(limit) {
             holds.push(self.memory.reserve(memory::model_bytes(record)?)?);
             records.push(record.clone());
         }
@@ -411,6 +426,7 @@ impl Catalog {
         // publication occurs immediately after this critical section ends.
         Ok((
             state.generation.number,
+            total,
             crate::Accounted::new(records, holds),
         ))
     }
@@ -505,6 +521,12 @@ impl Catalog {
     }
     /// Pin all roots and their dependencies from one authoritative generation.
     pub(crate) fn pin_many(self: &Arc<Self>, keys: &[ResourceKey]) -> Result<ResourcePin> {
+        self.pin_records(keys, true)
+    }
+    pub(crate) fn pin_registered(self: &Arc<Self>, key: &ResourceKey) -> Result<ResourcePin> {
+        self.pin_records(std::slice::from_ref(key), false)
+    }
+    fn pin_records(self: &Arc<Self>, keys: &[ResourceKey], published: bool) -> Result<ResourcePin> {
         let mut s = self.state.lock().unwrap();
         let mut holds = vec![];
         let mut records = BTreeMap::new();
@@ -513,9 +535,13 @@ impl Catalog {
             if records.contains_key(&k) {
                 continue;
             }
-            let r = s.records.get(&k).filter(|r| r.published).ok_or_else(|| {
-                ServerError::new(404, "resource-unpublished", "Resource is not published")
-            })?;
+            let r = s
+                .records
+                .get(&k)
+                .filter(|r| !published || r.published)
+                .ok_or_else(|| {
+                    ServerError::new(404, "resource-unpublished", "Resource is not published")
+                })?;
             holds.push(self.memory.reserve(memory::model_bytes(r)?)?);
             todo.extend(r.dependencies.clone());
             records.insert(k, r.clone());

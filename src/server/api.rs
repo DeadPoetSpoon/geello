@@ -17,6 +17,7 @@ use std::{fs::File, io::Write, sync::Arc};
 pub fn router(state: Arc<ServerState>) -> Router {
     let admission_state = state.clone();
     Router::new()
+        .merge(super::admin::routes())
         .route("/health/ready", get(ready))
         .route("/health/live", get(live))
         .route("/api", get(super::http_docs::openapi))
@@ -24,7 +25,7 @@ pub fn router(state: Arc<ServerState>) -> Router {
         .route("/admin/v1/resources", get(list))
         .route(
             "/admin/v1/resources/{kind}/{id}",
-            get(resource).delete(remove).post(unpublish),
+            get(resource).delete(remove).post(resource_action),
         )
         .route(
             "/admin/v1/resources/{kind}/{id}/content",
@@ -80,6 +81,7 @@ async fn admit_request(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Result<Response> {
+    super::admin::check_origin(&s, &request)?;
     let _activity = s.activities.enter()?;
     let _request_slot = s.requests.clone().try_acquire_owned().map_err(|_| {
         ServerError::new(
@@ -112,21 +114,29 @@ async fn live(State(s): State<Arc<ServerState>>) -> Result<Json<serde_json::Valu
 struct ListQuery {
     offset: Option<usize>,
     limit: Option<usize>,
+    kind: Option<ResourceKind>,
+    q: Option<String>,
+    published: Option<bool>,
 }
 async fn list(State(s): State<Arc<ServerState>>, Query(q): Query<ListQuery>) -> Result<Response> {
-    let (generation, records) = s.catalog.list_accounted(
+    let (generation, total, records) = s.catalog.list_accounted(
         q.offset.unwrap_or(0),
         q.limit.unwrap_or(s.config.profile.max_list_items),
+        q.kind,
+        q.q.as_deref(),
+        q.published,
     )?;
     #[derive(serde::Serialize)]
     struct Page<'a> {
         generation: u64,
+        total: usize,
         resources: &'a [ResourceRecord],
     }
     json_response(
         &s,
         &Page {
             generation,
+            total,
             resources: &records,
         },
     )
@@ -170,7 +180,14 @@ async fn register(
     let source: SourceSpec = serde_json::from_slice(&bytes)
         .map_err(|_| ServerError::invalid("Invalid source registration JSON"))?;
     let op = s.new_operation(key)?;
-    s.start_prepare(op.clone(), source, Ownership::External, precondition, None)?;
+    s.start_prepare(
+        op.clone(),
+        source,
+        Ownership::External,
+        precondition,
+        None,
+        None,
+    )?;
     let mut response = json_response(&s, &op)?;
     *response.status_mut() = StatusCode::ACCEPTED;
     Ok(response)
@@ -335,6 +352,7 @@ async fn upload(
         Ownership::Managed,
         precondition,
         Some(stage),
+        None,
     )?;
     upload_guard.operation = None;
     let mut response = json_response(&s, &op)?;
@@ -368,11 +386,39 @@ impl Drop for UploadGuard {
         }
     }
 }
-async fn unpublish(
+async fn resource_action(
     State(s): State<Arc<ServerState>>,
     Path((kind, id)): Path<(String, String)>,
     headers: HeaderMap,
+    body: Body,
 ) -> Result<Response> {
+    if let Some(id) = id.strip_suffix(":publish") {
+        let bytes = to_bytes(body, 1)
+            .await
+            .map_err(|_| ServerError::invalid("Publish requires an empty body"))?;
+        if !bytes.is_empty() {
+            return Err(ServerError::invalid("Publish requires an empty body"));
+        }
+        let key = key(&kind, id)?;
+        let condition = Precondition::from_headers(&headers)?;
+        if !matches!(condition, Precondition::Version(_)) {
+            return Err(ServerError::new(
+                428,
+                "precondition-required",
+                "Publish requires If-Match",
+            ));
+        }
+        let pin = s.catalog.pin_registered(&key)?;
+        s.catalog.check(&key, &condition)?;
+        let record = pin.records.get(&key).unwrap();
+        let source = record.source.clone();
+        let ownership = record.ownership;
+        let op = s.new_operation(key)?;
+        s.start_prepare(op.clone(), source, ownership, condition, None, Some(pin))?;
+        let mut response = json_response(&s, &op)?;
+        *response.status_mut() = StatusCode::ACCEPTED;
+        return Ok(response);
+    }
     let id = id
         .strip_suffix(":unpublish")
         .ok_or_else(|| ServerError::invalid("Expected :unpublish action"))?;

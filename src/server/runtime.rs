@@ -397,6 +397,38 @@ impl ServerState {
             .reserve(memory::model_bytes(&entry.operation)?)?;
         Ok(Accounted::new(entry.operation.clone(), vec![hold]))
     }
+    pub(crate) fn operations_accounted(
+        &self,
+        offset: usize,
+        limit: usize,
+        status: Option<OperationStatus>,
+        kind: Option<ResourceKind>,
+        resource_id: Option<&str>,
+    ) -> Result<(usize, Accounted<Vec<ResourceOperation>>)> {
+        if limit == 0 || limit > self.config.profile.max_list_items {
+            return Err(ServerError::invalid("List limit exceeds profile"));
+        }
+        let operations = self.operations.lock().unwrap();
+        let matching = || {
+            operations.values().rev().filter(|entry| {
+                status.is_none_or(|status| entry.status == status)
+                    && kind.is_none_or(|kind| entry.resource.kind == kind)
+                    && resource_id.is_none_or(|id| entry.resource.id == id)
+            })
+        };
+        let total = matching().count();
+        let mut holds = vec![];
+        let mut page = vec![];
+        for entry in matching().skip(offset).take(limit) {
+            holds.push(
+                self.scheduler
+                    .memory_context()
+                    .reserve(memory::model_bytes(&entry.operation)?)?,
+            );
+            page.push(entry.operation.clone());
+        }
+        Ok((total, Accounted::new(page, holds)))
+    }
     /// Indexed catalog maintenance is explicit and separate from public lookup.
     /// It does not register or remove detached original content.
     pub fn collect_garbage(&self) -> Result<usize> {
@@ -568,6 +600,7 @@ impl ServerState {
         ownership: Ownership,
         condition: Precondition,
         staging: Option<Arc<tempfile::TempDir>>,
+        existing: Option<ResourcePin>,
     ) -> Result<()> {
         let activity = match self.activities.enter() {
             Ok(activity) => activity,
@@ -587,6 +620,7 @@ impl ServerState {
             let result = state
                 .scheduler
                 .blocking(WorkClass::Background, ctx, move |ctx| {
+                    let existing = existing;
                     // Serialize disk-producing preparation separately from the
                     // catalog mutex. Readers keep serving the complete old graph.
                     let _disk = worker.preparation_commit.lock().unwrap();
@@ -623,10 +657,16 @@ impl ServerState {
                         // Source validation precedes ownership publication. A failed
                         // version remains private staging and cannot replace live data.
                         final_directory = Some((final_path, relative));
-                    } else {
+                    } else if ownership == Ownership::External {
                         source.path = worker.validate_external(&source.path, &source.format)?;
                     }
                     let mut record = worker.prepare_resource(key, source, ownership, &ctx)?;
+                    if let Some(pin) = &existing {
+                        record.managed_directory = pin
+                            .records
+                            .get(&record.key)
+                            .and_then(|record| record.managed_directory.clone());
+                    }
                     record.version = opid;
                     if let Some((dest, relative)) = final_directory {
                         let stage = staging.as_ref().unwrap();
@@ -658,7 +698,9 @@ impl ServerState {
                     match publication {
                         Ok(r) => Ok(r),
                         Err(e) => {
-                            if let Some(path) = &record.managed_directory {
+                            if staging.is_some()
+                                && let Some(path) = &record.managed_directory
+                            {
                                 let resolved = path.canonicalize().map_err(ServerError::io)?;
                                 if resolved.parent()
                                     == Some(worker.catalog.root().join("managed").as_path())

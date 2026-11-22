@@ -61,6 +61,7 @@ def operation(operation_id, summary, parameters, success, description="", write=
     })
     if write:
         responses.update({
+            "403": error_response("Cross-origin browser administration writes are forbidden. No-Origin CLI requests remain supported."),
             "408": error_response("Upload or registration body timed out."),
             "409": error_response("Stale precondition, referenced resource or ownership conflict; authority is unchanged."),
             "413": error_response("Request or upload exceeds the configured profile."),
@@ -119,7 +120,11 @@ def build():
                           "area_renders": INTEGER, "tile_encodes": INTEGER,
                           "prewarm_completed": INTEGER, "prewarm_groups_active": INTEGER,
                       })}),
-        "ResourcePage": obj({"generation": INTEGER, "resources": array(ref("ResourceRecord"))}),
+        "ResourcePage": obj({"generation": INTEGER, "total": INTEGER, "resources": array(ref("ResourceRecord"))}),
+        "OperationPage": obj({"total": INTEGER, "operations": array(ref("Operation"))}),
+        "ConfigurationParse": obj({"text": STRING}),
+        "ConfigurationSerialize": obj({"document": {"type": "object", "additionalProperties": True}}),
+        "ConfigurationResult": obj({"text": STRING, "document": {"type": "object", "additionalProperties": True}}),
     }
     key_params = [param("kind", "path", KINDS, "Resource kind.", True),
                   param("id", "path", RESOURCE_ID, "Case-sensitive namespace:local resource identity.", True)]
@@ -145,6 +150,9 @@ def build():
     resource_success = {"200": schema_response("Current resource record.", ref("ResourceRecord"), headers=etag_header)}
     accepted = {"202": schema_response("Upload/registration accepted; poll /admin/v1/operations/{operation_id} until ready or failed. 202 does not imply successful publication.", ref("Operation"))}
     paths = {
+        "/admin": {"get": operation("redirectAdmin", "Redirect to the integrated administration page", [], {"307": {"description": "Relative ./admin/ redirect preserves reverse-proxy prefixes."}})},
+        "/admin/": {"get": operation("getAdmin", "Open the embedded administration interface", [], {"200": schema_response("Offline Chinese administration UI. Protect both /admin/ and /admin/v1 using proxy authentication.", STRING, "text/html"), "304": {"description": "HTML ETag matched."}})},
+        "/admin/assets/{file}": {"get": operation("getAdminAsset", "Get a whitelisted embedded administration asset", [param("file", "path", STRING, "Whitelisted JS, CSS or pinned OpenLayers assets; nested vendor paths supported. No arbitrary files.", True)], {"200": schema_response("Static asset with MIME, strong ETag and browser security headers.", STRING, "application/octet-stream"), "304": {"description": "Asset ETag matched."}})},
         "/api": {"get": operation("getOpenApi", "Get this OpenAPI 3.0 contract", [],
                                   {"200": schema_response("OpenAPI 3.0.3 document. servers uses only configured public_base_url; x-geello-enabled describes this binary/profile.", {"type": "object", "additionalProperties": True})})},
         "/api.html": {"get": operation("getApiHtml", "Read offline static API documentation", [],
@@ -156,6 +164,9 @@ def build():
         "/admin/v1/resources": {"get": operation("listResources", "List registered resources", [
             param("offset", "query", {**INTEGER, "default": 0}, "Administrative offset in the current ordered catalog; not a fixed-snapshot feature cursor."),
             param("limit", "query", {"type": "integer", "minimum": 1}, "Defaults to profile.max_list_items; cannot exceed that limit."),
+            param("kind", "query", KINDS, "Optional resource kind filter."),
+            param("q", "query", {"type": "string", "maxLength": 256}, "ASCII case-insensitive ID substring, at most 256 UTF-8 bytes."),
+            param("published", "query", {"type": "boolean"}, "Optional exact publication-state filter."),
         ], {"200": schema_response("Page and the exact catalog generation used for this page.", ref("ResourcePage"))})},
         "/admin/v1/resources/{kind}/{id}": {
             "get": operation("getResource", "Read a registered resource", key_params, resource_success),
@@ -166,6 +177,17 @@ def build():
             "post": operation("unpublishResource", "Unpublish a resource atomically", key_params + preconditions, resource_success,
                               "Current If-Match required. Stop new use; existing pins may finish. Referenced resources return 409. No cascading unpublish.", write=True),
         },
+        "/admin/v1/resources/{kind}/{id}:publish": {
+            "post": operation("publishRegisteredResource", "Prepare and publish the registered source", key_params + preconditions, accepted,
+                              "Requires If-Match and an empty body. Revalidates external roots and preserves managed/external ownership. Can refresh an already-published resource. Preparation failure leaves old publication and source intact. No automatic retry.", write=True),
+        },
+        "/admin/v1/operations": {"get": operation("listOperations", "List resource operations in reverse operation ID order", [
+            param("offset", "query", INTEGER, "Page offset."),
+            param("limit", "query", {"type": "integer", "minimum": 1}, "At most profile.max_list_items."),
+            param("status", "query", {"type": "string", "enum": ["staging", "preparing", "ready", "failed", "unpublished"]}, "Exact status filter."),
+            param("kind", "query", KINDS, "Exact resource kind filter."),
+            param("resource_id", "query", STRING, "Exact resource ID filter."),
+        ], {"200": schema_response("Filtered total and bounded operation page; no fabricated timestamps or progress.", ref("OperationPage"))})},
         "/admin/v1/resources/{kind}/{id}/source": {"put": operation(
             "registerExternalSource", "Create or replace an external source registration", key_params + preconditions, accepted,
             "Deployment proxy protects administration. Registered regular files must be inside configured external roots. Original files remain externally owned.", write=True,
@@ -198,6 +220,13 @@ def build():
             param("y", "path", INTEGER, "Row downward from top-left; must be less than 2^z.", True), time, revalidate,
         ], images, "256px PNG in EPSG:3857; configured aligned metatile/buffer, deduplicated area render and encoding only requested tiles. This basic route does not implement WMTS or OGC Tiles discovery.")},
     }
+    for action, schema in [("parse", "ConfigurationParse"), ("serialize", "ConfigurationSerialize")]:
+        paths[f"/admin/v1/configurations/{{kind}}/{action}"] = {"post": operation(
+            f"{action}Configuration", f"{action.title()} a TOML configuration without publication",
+            [param("kind", "path", {"type": "string", "enum": ["style", "map", "animation"]}, "Configuration model.", True)],
+            {"200": schema_response("Validated full tree and TOML text. Unsafe browser integers, datetimes and nonfinite values return 422; keep original TOML in that case.", ref("ConfigurationResult"))},
+            "Bounded by max_registry_bytes and normal memory/work admission. Does not write a catalog or start preparation. Forms may reorder comments/formatting but must preserve the full semantic tree.", write=True,
+            requestBody={"required": True, "content": {"application/json": {"schema": ref(schema)}}})}
     schemas.update({
         "Link": obj({"href": STRING, "rel": STRING, "type": STRING, "templated": {"type": "boolean"}}, ["href", "rel"]),
         "OgcLanding": obj({"title": STRING, "description": STRING, "links": array(ref("Link"))}),

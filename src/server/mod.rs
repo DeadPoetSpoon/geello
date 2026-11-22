@@ -3,6 +3,7 @@
 #[cfg(not(any(feature = "render-cpu", feature = "render-gpu")))]
 compile_error!("the server feature requires render-cpu or render-gpu");
 mod activity;
+mod admin;
 mod api;
 mod archive;
 mod catalog;

@@ -310,7 +310,15 @@ pub fn resample(
         for x in 0..width {
             context.checkpoint(1)?;
             let out = (y * width + x) as usize;
-            let p = source_pixel(x as f64 + 0.5, y as f64 + 0.5)?;
+            let p = if method == Resampling::AreaAverage {
+                [0.; 2]
+            } else {
+                match source_pixel(x as f64 + 0.5, y as f64 + 0.5) {
+                    Ok(pixel) => pixel,
+                    Err(GeelloError::ProjectionDomain(_)) => continue,
+                    Err(error) => return Err(error),
+                }
+            };
             let mut common_weight = 0.;
             let mut alpha_sum = 0.;
             let mut sums = vec![0.; block.bands.len()];
@@ -490,7 +498,11 @@ pub fn sampling_window(
                     context,
                 )?;
             } else {
-                let p = map(x as f64 + 0.5, y as f64 + 0.5)?;
+                let p = match map(x as f64 + 0.5, y as f64 + 0.5) {
+                    Ok(pixel) => pixel,
+                    Err(GeelloError::ProjectionDomain(_)) => continue,
+                    Err(error) => return Err(error),
+                };
                 include([p; 4])?;
             }
         }
@@ -501,7 +513,7 @@ pub fn sampling_window(
     let y0 = (bounds[1].floor() - 2.).clamp(0., source_height as f64) as u32;
     let x1 = (bounds[2].ceil() + 2.).clamp(0., source_width as f64) as u32;
     let y1 = (bounds[3].ceil() + 2.).clamp(0., source_height as f64) as u32;
-    Ok((x1 > x0 && y1 > y0).then_some(SamplingWindow {
+    Ok((x1 > x0 && y1 > y0).then(|| SamplingWindow {
         column: x0,
         row: y0,
         width: x1 - x0,
@@ -532,6 +544,8 @@ fn pixel_mapper<'a>(
 }
 /// Adaptive inverse footprints use a 1/64 source-pixel curvature tolerance.
 /// A discontinuity that cannot meet it within eight subdivisions fails explicitly.
+/// Projection-domain edges are subdivided to the same limit; undefined pieces
+/// contribute no samples, consistently in window planning and resampling.
 /// Affine footprints, including rotations, use exact polygon/cell intersections.
 fn visit_footprints(
     cell: [f64; 4],
@@ -543,16 +557,44 @@ fn visit_footprints(
     context.checkpoint(1)?;
     let [x0, y0, x1, y1] = cell;
     let (xm, ym) = ((x0 + x1) * 0.5, (y0 + y1) * 0.5);
-    let p = [map(x0, y0)?, map(x1, y0)?, map(x1, y1)?, map(x0, y1)?];
-    let mid = [map(xm, y0)?, map(x1, ym)?, map(xm, y1)?, map(x0, ym)?];
-    let center = map(xm, ym)?;
+    let mut samples = [[0.; 2]; 9];
+    let mut defined = 0;
+    for (index, (x, y)) in [
+        (x0, y0),
+        (x1, y0),
+        (x1, y1),
+        (x0, y1),
+        (xm, y0),
+        (x1, ym),
+        (xm, y1),
+        (x0, ym),
+        (xm, ym),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        match map(x, y) {
+            Ok(pixel) => {
+                samples[index] = pixel;
+                defined += 1;
+            }
+            Err(GeelloError::ProjectionDomain(_)) => {}
+            Err(error) => return Err(error),
+        }
+    }
+    if defined == 0 || (defined < 9 && depth == 8) {
+        return Ok(());
+    }
+    let p: [[f64; 2]; 4] = samples[..4].try_into().unwrap();
+    let mid: [[f64; 2]; 4] = samples[4..8].try_into().unwrap();
+    let center = samples[8];
     let curved = (0..4).any(|i| {
         (0..2)
             .any(|axis| (mid[i][axis] - (p[i][axis] + p[(i + 1) % 4][axis]) * 0.5).abs() > 1. / 64.)
     }) || (0..2).any(|axis| {
         (center[axis] - p.iter().map(|p| p[axis]).sum::<f64>() * 0.25).abs() > 1. / 64.
     });
-    if curved {
+    if defined < 9 || curved {
         if depth == 8 {
             return Err(GeelloError::Projection(
                 "raster footprint tolerance exceeded".into(),

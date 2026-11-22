@@ -369,6 +369,8 @@ pub enum GeelloError {
     InvalidConfiguration(String),
     #[error("projection error: {0}")]
     Projection(String),
+    #[error("projection error: {0}")]
+    ProjectionDomain(String),
     #[error("invalid target: {0}")]
     InvalidTarget(String),
     #[error("backend error: {0}")]

@@ -156,15 +156,24 @@ impl RustProjection {
             (xy[0], xy[1])
         };
         let mut point = (x, y, 0.);
-        proj4rs::transform::transform(&self.from, &self.to, &mut point)
-            .map_err(|e| GeelloError::Projection(e.to_string()))?;
+        proj4rs::transform::transform(&self.from, &self.to, &mut point).map_err(
+            |error| match error {
+                proj4rs::errors::Error::CoordTransOutsideProjectionDomain
+                | proj4rs::errors::Error::CoordinateOutOfRange
+                | proj4rs::errors::Error::LatitudeOutOfRange
+                | proj4rs::errors::Error::LatOrLongExceedLimit => {
+                    GeelloError::ProjectionDomain(error.to_string())
+                }
+                _ => GeelloError::Projection(error.to_string()),
+            },
+        )?;
         let out = if self.to.is_latlong() {
             [point.0.to_degrees(), point.1.to_degrees()]
         } else {
             [point.0, point.1]
         };
         if out.iter().any(|v| !v.is_finite()) {
-            return Err(GeelloError::Projection(
+            return Err(GeelloError::ProjectionDomain(
                 "coordinate outside projection domain".into(),
             ));
         }

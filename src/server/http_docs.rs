@@ -33,6 +33,7 @@ pub(super) async fn openapi(State(s): State<Arc<ServerState>>) -> Result<Respons
         "max-dimension": s.config.profile.max_dimension,
         "max-upload-bytes": s.config.profile.max_upload_bytes,
         "max-list-items": s.config.profile.max_list_items,
+        "max-active-http": s.config.profile.active_http,
         "text": cfg!(feature = "text"),
         "max-animation-fps": s.config.profile.max_animation_fps,
         "max-feature-cursors": s.config.profile.max_feature_cursors,

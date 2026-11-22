@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Geello · 管理台</title>
+  <link rel="stylesheet" href="assets/vendor/ol.css">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/vendor/ol.js" defer></script>
+  <script src="assets/app.js" type="module"></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳转到内容</a>
+  <aside class="sidebar">
+    <a class="brand" href="#/overview"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 30 10v12l-14 8L2 22V10Z"/><path d="m9 12 7-4 7 4v8l-7 4-7-4Z"/></svg><span>geello<small>地理服务管理台</small></span></a>
+    <nav aria-label="主导航">
+      <a href="#/overview">服务概览</a>
+      <span class="nav-heading">资源管理</span>
+      <a href="#/resources/dataset">数据集</a>
+      <a href="#/resources/font">字体</a>
+      <a href="#/resources/style">样式</a>
+      <a href="#/resources/map">地图</a>
+      <a href="#/resources/animation">动画</a>
+      <span class="nav-heading">运行与服务</span>
+      <a href="#/operations">异步任务</a>
+      <a href="#/service">服务信息</a>
+    </nav>
+    <div class="sidebar-foot">内置服务 · 同源管理<br>认证由反向代理提供</div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span id="breadcrumb">管理台</span><span id="health" role="status">正在连接…</span></header>
+    <main id="main" tabindex="-1"><p class="empty">正在加载管理台…</p></main>
+    <footer>Geello · 原始数据留在服务器，渲染由服务端完成</footer>
+  </div>
+  <noscript>管理台需要 JavaScript。API 文档可通过服务的 api.html 访问。</noscript>
+</body>
+</html>

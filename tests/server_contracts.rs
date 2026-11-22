@@ -565,6 +565,108 @@ async fn stateless_style_animation_keys_time_and_rejects_broken_dependency_updat
 
 #[cfg(feature = "read-geotiff")]
 #[tokio::test]
+async fn local_utm_raster_world_previews_and_outside_tiles_return_images() {
+    use tiff::{
+        encoder::{TiffEncoder, colortype},
+        tags::Tag,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("utm.tif");
+    {
+        let mut encoder = TiffEncoder::new(std::fs::File::create(&path).unwrap()).unwrap();
+        let mut image = encoder.new_image::<colortype::Gray8>(8, 8).unwrap();
+        image
+            .encoder()
+            .write_tag(Tag::ModelPixelScaleTag, &[25000f64, 25000., 0.][..])
+            .unwrap();
+        image
+            .encoder()
+            .write_tag(
+                Tag::ModelTiepointTag,
+                &[0f64, 0., 0., 400000., 2800000., 0.][..],
+            )
+            .unwrap();
+        image.write_data(&[200; 64]).unwrap();
+    }
+    let s = state(root.path()).await;
+    let app = router(s.clone());
+    let response = request(&app, "PUT", "/admin/v1/resources/dataset/test:utm/source", Some("*"), Some("application/json"), serde_json::json!({"path":path,"format":"geotiff","crs":"EPSG:32618","sample_kind":"continuous"}).to_string()).await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let op = wait(&s, json(response).await).await;
+    assert_eq!(op.status, OperationStatus::Ready, "{op:?}");
+    for method in ["nearest", "bilinear"] {
+        let style = format!(
+            "schema_version=1\nid='test:{method}'\n[[rules]]\nid='base'\n[[rules.symbols]]\nid='image'\nkind='raster'\nmode='gray'\nband=1\nrange={{kind='explicit',min=0,max=255}}\nresampling={{enlarge='{method}',reduce='{method}'}}\n"
+        );
+        let map = format!(
+            "schema_version=1\nid='test:{method}'\noutput_crs=['OGC:CRS84','EPSG:3857']\ntiles={{matrix_sets=['WebMercatorQuad','WorldCRS84Quad'],min_zoom=0,max_zoom=5}}\n[[items]]\nid='raster'\ndataset='test:utm'\nstyle='test:{method}'\n"
+        );
+        for (kind, body) in [("style", style), ("map", map)] {
+            let op = upload(
+                &s,
+                &app,
+                kind,
+                &format!("test:{method}"),
+                "application/toml",
+                body,
+            )
+            .await;
+            assert_eq!(op.status, OperationStatus::Ready, "{op:?}");
+        }
+        for (uri, has_coverage) in [
+            (
+                format!(
+                    "/ogc/maps/collections/test:{method}/map?bbox=-180,-90,180,90&crs=OGC:CRS84&width=128&height=64"
+                ),
+                None,
+            ),
+            (
+                format!(
+                    "/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=test:{method}&STYLES=&CRS=EPSG:3857&BBOX=-20037508.342789244,-20037508.342789244,20037508.342789244,20037508.342789244&WIDTH=128&HEIGHT=128&FORMAT=image/png&TRANSPARENT=TRUE"
+                ),
+                None,
+            ),
+            (
+                format!(
+                    "/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=test:{method}&STYLE=default&TILEMATRIXSET=WebMercatorQuad&TILEMATRIX=1&TILEROW=1&TILECOL=1&FORMAT=image/png"
+                ),
+                Some(false),
+            ),
+            (
+                format!("/ogc/maps/collections/test:{method}/map/tiles/WorldCRS84Quad/0/0/1"),
+                Some(false),
+            ),
+            (
+                format!(
+                    "/ogc/maps/collections/test:{method}/map?bbox=-77,23,-73,26&crs=OGC:CRS84&width=128&height=96"
+                ),
+                Some(true),
+            ),
+        ] {
+            let response = request(&app, "GET", &uri, None, None, Body::empty()).await;
+            let status = response.status();
+            let bytes = to_bytes(response.into_body(), 4 << 20).await.unwrap();
+            assert_eq!(
+                status,
+                StatusCode::OK,
+                "{uri}: {}",
+                String::from_utf8_lossy(&bytes)
+            );
+            let image = image::load_from_memory(&bytes).unwrap().into_rgba8();
+            if let Some(expected) = has_coverage {
+                assert_eq!(
+                    image.pixels().any(|pixel| pixel.0[3] > 0),
+                    expected,
+                    "{uri}"
+                );
+            }
+        }
+    }
+    s.shutdown().await.unwrap();
+}
+
+#[cfg(feature = "read-geotiff")]
+#[tokio::test]
 async fn raster_animation_changes_only_opacity_and_keeps_native_source_bytes() {
     use tiff::{
         encoder::{TiffEncoder, colortype},
